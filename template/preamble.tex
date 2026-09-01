@@ -1,0 +1,40 @@
+% Shared, topic-agnostic preamble for all three papers.
+% Keep formatting changes here conservative: ICML forbids modifications that
+% create a space advantage.
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{xurl}
+\usepackage{hyperref}
+
+% Improve interoperability between hyperref and algorithmic.
+\newcommand{\theHalgorithm}{\arabic{algorithm}}
+
+% Review mode is intentionally the default. Change this to
+% \usepackage[accepted]{icml2026} only after acceptance.
+\usepackage{icml2026}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+\usepackage{amsthm}
+\usepackage[capitalize,noabbrev]{cleveref}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{assumption}[theorem]{Assumption}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\graphicspath{{figures/}}
+
+% Visible by design: no template should be mistaken for a completed paper.
+\newcommand{\placeholder}[1]{%
+  \par\noindent\textit{Template note: #1}\par%
+}

@@ -1,0 +1,598 @@
+\documentclass{article}
+
+% The root Makefile supplies the path to the unmodified ICML style files.
+\input{../template/preamble}
+
+\icmltitlerunning{Packing-Aware, Reference-Constrained SFT Scheduling}
+
+\begin{document}
+
+\twocolumn[
+  \icmltitle{Packing-Aware, Reference-Constrained Data Scheduling for
+  Supervised Fine-Tuning}
+
+  % Author details remain hidden in review mode. Replace these placeholders
+  % only when preparing the camera-ready version.
+  \begin{icmlauthorlist}
+    \icmlauthor{Anonymous Author(s)}{anon}
+  \end{icmlauthorlist}
+  \icmlaffiliation{anon}{Anonymous Institution}
+  \icmlcorrespondingauthor{Anonymous Author}{anonymous@example.com}
+
+  \icmlkeywords{supervised fine-tuning, data selection, sequence packing,
+  multi-objective optimization}
+
+  \vskip 0.3in
+]
+
+\printAffiliationsAndNotice{}
+
+\begin{abstract}
+Instruction-tuning mixtures contain examples with different sequence lengths,
+hardware costs, and effects on downstream capabilities, yet data selection and
+physical sequence packing are normally optimized separately. We study
+packing-aware, reference-constrained online scheduling: each optimizer step
+maximizes predicted target-reference improvement while limiting regression
+on protected reference losses under an end-to-end compute budget. Our method
+uses low-dimensional, optimizer-state-conditioned gradient proxies to plan an
+isolated pack, then evaluates the \emph{actual} candidate AdamW displacement on
+fresh gate examples before committing the update. A standard smoothness
+argument gives conditional one-step loss control only on a joint event of
+valid score, norm, and local-curvature bounds; the empirical gate does not by
+itself establish that event or imply general capability safety. This
+methods-first draft specifies the estimator, algorithm, falsification tests,
+and matched-budget protocol, while deliberately withholding empirical claims
+until the predeclared experiments are executed.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:introduction}
+
+Supervised fine-tuning (SFT) converts a pretrained language model into an
+instruction-following system, but the available supervision is rarely
+homogeneous. A single training pool may mix code, mathematics, dialogue,
+tool-use, and safety data; examples within each source differ by orders of
+magnitude in length and may induce conflicting updates. Training on every
+example is expensive, while selecting examples only by semantic similarity or
+loss can improve one target and silently regress others.
+
+Recent selectors estimate target influence from optimizer-aware gradients
+\cite{xia2024less}, training trajectories \cite{yang2024smalltolarge}, Shapley
+approximations \cite{he2024shed}, or Fisher information
+\cite{deb2025fishersft}. Token-level cleaning further shows that useful and
+informative and potentially harmful supervision can coexist within one response
+\cite{pang2025tokencleaning}. These methods largely treat the training cost of
+an example as additive. In practice, the cost of a batch depends on sequence
+length, padding, packing, kernels, and the accumulation schedule. Selecting a
+fixed set and packing it afterward should change execution cost but, under
+correct isolation, not its gradient. Under a compute budget, however, that
+cost changes which windows are feasible and thereby couples selection to
+packing through the feasible set.
+
+A second difficulty is multi-capability control. Online weighting and mixture
+methods adapt data use as the model changes
+\cite{yu2025dynamicbilevel,tan2026fastmix,ming2026ideal,zhao2026adapt}, but a
+weighted average objective can hide a severe regression on one protected
+slice. Conversely, a hard constraint based only on a planning proxy may be
+misleading: an additive frozen-preconditioner approximation cannot reconstruct
+the candidate-dependent second moment of AdamW.
+
+We ask the following falsifiable question:
+\emph{after charging all selection, packing, verification, and rejected-update
+costs, does joint pack-level scheduling improve the target-loss versus
+worst-protected-loss frontier over selecting first and packing second?}
+The question concerns specified reference distributions, not an undefined
+notion of general model ``safety.''
+
+This paper makes four scoped contributions:
+\begin{itemize}
+  \item We formulate SFT scheduling over a complete optimizer accumulation
+  window, with a profiled non-additive pack cost and explicit constraints for
+  multiple protected reference losses.
+  \item We derive an optimizer-state-conditioned planning score while making
+  clear why per-example sketches cannot exactly predict an AdamW update.
+  \item We apply an independent post-selection gate that evaluates the
+  actual candidate displacement before optimizer state is committed, and give
+  a conditional one-step loss bound.
+  \item We specify a matched end-to-end compute protocol designed to distinguish
+  a genuine selection--packing interaction from selector overhead, proxy error,
+  and ordinary best-fit packing.
+\end{itemize}
+
+\paragraph{Evidence status.}
+The mathematical statements below follow from stated assumptions. All result
+cells remain unfilled: no throughput, loss, or benchmark advantage is claimed
+before running the protocol in \cref{sec:experiments}.
+
+% Camera-ready only: if the work evaluates technology developed by an author's
+% employer or has another substantive financial conflict, place the required
+% "Conflict of Interest Disclosure" paragraph at the end of this section.
+
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Offline selection and valuation.}
+LESS stores low-rank, Adam-aware gradient features and retrieves examples
+aligned with target examples \cite{xia2024less}. SmallToLarge summarizes proxy
+model loss trajectories \cite{yang2024smalltolarge}; SHED moves Shapley
+valuation to cluster representatives \cite{he2024shed}; FisherSFT selects for
+last-layer-linearized information gain \cite{deb2025fishersft}; and influence
+distillation amortizes expensive influence computations through landmarks
+\cite{nikdan2025influence}. Large-pool studies caution that expensive selectors
+can underperform simple representation-similarity selection
+\cite{ivison2025largescale}.
+SPICE is especially close: it combines Fisher information with a penalty for
+gradient conflict \cite{chang2026spice}. Our target-gradient proxy is not
+presented as new. The distinction under study is joint physical-pack
+construction, protected constraints, and an actual-update gate.
+
+\paragraph{Online allocation.}
+Dynamic bilevel weighting \cite{yu2025dynamicbilevel}, source-mixture
+optimization \cite{tan2026fastmix}, capability equilibrium adaptation
+\cite{ming2026ideal}, online per-example reweighting \cite{zhao2026adapt}, and
+bandit-based mixture scheduling \cite{shin2026dynamixsft} all recognize that
+data value changes during training. Layer-wise studies find family-specific
+gradient patterns even when relative quality trends persist
+\cite{li2026gradients}. Unlike source-level mixture adaptation, our decision
+variable is a complete physical pack plan for one optimizer step.
+
+\paragraph{Compute-aware selection.}
+Compute-constrained data selection charges selection and fine-tuning jointly
+\cite{yin2025compute}. We adopt that accounting principle and extend the
+decision to a profiled pack cost. Merely adding this cost to an existing
+selector is not sufficient evidence of novelty: the central experiment must
+show an interaction between which examples are selected and how they are
+packed.
+
+\section{Problem Setting}
+\label{sec:setting}
+
+Let $\theta_t\in\mathbb{R}^p$ be the trainable parameters at step $t$; $p$ may
+denote an adapter subspace rather than all model parameters. Candidate
+instruction $i=(x_i,y_i)$ has packed length $n_i$ and supervised response-token
+indices $\mathcal R_i$. Define its unnormalized supervised loss
+$\ell_i(\theta)=\sum_{r\in\mathcal R_i}
+-\log p_\theta(y_{ir}\mid x_i,y_{i,<r})$ and
+$N_B=\sum_{i\in B}|\mathcal R_i|$. For an accumulation window $B$, the
+implementation uses the response-token-normalized loss
+\begin{equation}
+L^{\mathrm{tr}}_B(\theta)=
+\frac{1}{N_B}\sum_{i\in B}\ell_i(\theta).
+\label{eq:train-loss}
+\end{equation}
+The global denominator is fixed across microbatches so that, with dropout
+disabled, isolated examples have additive gradients.
+
+Reference distributions are represented by disjoint datasets
+$V_0,V_1,\ldots,V_C$. $V_0$ measures the target behavior; $V_{1:C}$ are
+protected slices. Their differentiable losses are $L_c(\theta)$.
+$V^{\mathrm{score}}$ may be queried repeatedly by the scheduler,
+$V^{\mathrm{gate}}$ supplies fresh post-selection checks, and
+$V^{\mathrm{audit}}$ remains sealed until every hyperparameter and stopping
+rule is frozen. Source- and template-level deduplication is required across
+these resources and the final benchmarks.
+
+A packing assignment $\pi$ maps examples to physical packs and obeys
+\begin{equation}
+\sum_{i:\pi(i)=j} n_i\le L_{\max}\quad\text{for every pack }j.
+\label{eq:packing}
+\end{equation}
+Boundary-masked attention and reset position identifiers prevent cross-example
+information flow. The profiled cost $\widehat C_t(B,\pi)$ includes padding,
+kernel choice, gradient accumulation, and launch overhead. The global budget
+also charges reference gradients, candidate scoring, solving, gate forwards,
+and rejected updates. The goal is not to minimize example count, but to
+maximize target improvement subject to protected-loss and total-cost
+constraints.
+
+\section{Method}
+\label{sec:method}
+
+At each refresh round we sample a candidate pool, construct feasible pack plans
+with a beam-search heuristic, score those plans with a frozen optimizer
+surrogate, and select the best feasible plan. We then compute the selected
+window's exact gradient, construct the exact AdamW displacement without
+committing optimizer state, and apply an independent gate. Rejected work is
+counted against the same budget.
+
+\subsection{Training Objective}
+
+For any candidate window $B$, let
+\begin{equation}
+\Delta_t(B)=\theta_{t+1}(B)-\theta_t
+\end{equation}
+denote the complete optimizer displacement, including momentum,
+preconditioning, clipping, weight decay, and learning-rate scaling. The
+first-order predicted improvement on reference $c$ is
+\begin{equation}
+S_{c,t}(B)=-\nabla L_c(\theta_t)^\top\Delta_t(B).
+\label{eq:exact-score}
+\end{equation}
+Thus $S_c>0$ predicts a loss decrease. For SGD,
+$\Delta=-\eta\nabla L_B^{\mathrm{tr}}$ and positive gradient alignment is
+beneficial.
+
+Writing $G_B=N_B^{-1}\sum_{i\in B}\nabla\ell_i$, the exact AdamW displacement
+is not additive in per-example gradients because its candidate second moment
+contains ${G_B}^{\odot 2}$. For planning only, we freeze the
+previous denominator and use the affine surrogate
+\begin{equation}
+\widetilde\Delta_t(B)=d_t-\eta_t A_tG_B,
+\label{eq:surrogate}
+\end{equation}
+where diagonal $A_t\succeq0$ is fixed at the pre-update state and $d_t$
+contains known momentum and weight-decay terms. We never call
+$\widetilde\Delta$ the exact AdamW update.
+
+To reduce storage, a fresh Rademacher projection
+$R_t\in\{\pm1/\sqrt{k}\}^{k\times p}$ stores
+$u_{c,t}=R_t\nabla L_c(\theta_t)$ and
+$q_{i,t}=R_tA_t\nabla\ell_i$. A plan aggregates
+\begin{equation}
+q_{B,t}=\frac1{N_B}\sum_{i\in B}q_{i,t},\qquad v_t=R_td_t,
+\end{equation}
+and uses
+\begin{equation}
+\widehat S_{c,t}(B)=-u_{c,t}^\top v_t+
+\eta_tu_{c,t}^\top q_{B,t}.
+\label{eq:sketch-score}
+\end{equation}
+This includes response-token weighting and the candidate-independent optimizer
+term. The projection reduces matching cost, not the backward passes needed to
+obtain individual gradients, and any claim applies
+only to the trainable subspace used for the sketches.
+
+\subsection{Data Construction}
+
+The candidate pool preserves source labels, license metadata, tokenized
+lengths, and near-duplicate clusters. Candidate sampling uses a fixed
+source-coverage floor so that the scheduler cannot permanently starve a source
+before it has evidence to do so. Personally identifying fields, benchmark
+solutions, and examples without a documented redistribution or research-use
+basis are excluded before any selection method sees the pool.
+
+Reference sets measure losses rather than benchmark exact match because the
+gate requires differentiability. For each capability, score, gate, audit, and
+benchmark splits are disjoint at the source-template and semantic-cluster
+levels. The scheduling sets are explicitly treated as training resources:
+repeatedly querying $V^{\mathrm{score}}$ can overfit it, which is why no final
+claim uses that set.
+
+\subsection{Implementation}
+
+For each proposed plan, \cref{eq:sketch-score} yields an estimated score. We
+subtract separately calibrated margins for projection, reference sampling,
+optimizer-surrogate error, and staleness:
+\begin{equation}
+\underline S_{c,t}(B)=\widehat S_{c,t}(B)-e_{c,t}(B).
+\end{equation}
+These margins are called empirical prediction margins unless their coverage
+conditions are verified; an ensemble standard deviation is not a confidence
+bound.
+
+Cost and step-norm error are bounded separately as
+$\overline C_t=\widehat C_t+e_t^C$ and
+$\overline q_t=\widehat q_t+e_t^q$. The ideal round-level decision is
+\begin{align}
+\max_{B,\pi}\quad &\underline S_{0,t}(B) \label{eq:selection}\\
+\text{s.t.}\quad
+&\underline S_{0,t}(B)\ge0,\nonumber\\
+&\underline S_{c,t}(B)\ge
+\tfrac{\overline\beta_{c,t}}{2}\overline q_t(B)-\tau_{c,t},
+\quad c=1{:}C,\nonumber\\
+&\overline q_t(B)\le \rho_t^2,\qquad
+\overline C_t^{\mathrm{all}}(B,\pi)\le B_t^{\mathrm{rem}},\nonumber\\
+&\text{\cref{eq:packing} and source-coverage constraints.}\nonumber
+\end{align}
+Here $\overline q_t$ estimates a trust-radius bound on
+$\|\widetilde\Delta_t\|^2$, $\tau_{c,t}$ is an allowed one-step reference-loss
+increase, and $B_t^{\mathrm{rem}}$ reserves the worst-case gate cost before
+selection. A no-op plan is always feasible. The binary selection,
+packing, norm, and non-additive cost terms make \cref{eq:selection} NP-hard.
+Our beam search retains the best partial plans by cost and pack-count buckets,
+then performs drop--swap repair. We claim no approximation ratio and compare
+against an exact small-pool oracle.
+
+\paragraph{Actual-update gate.}
+After one backward pass on the selected window, we construct AdamW moments
+$m^+=\beta_1m+(1-\beta_1)G_B$ and
+$v^+=\beta_2v+(1-\beta_2)G_B^{\odot2}$ without committing them. Bias-corrected
+moments define direction
+$a_t=-\widehat m^+/(\sqrt{\widehat v^+}+\epsilon)-\lambda\theta_t$ and candidate
+displacement $\Delta_t(\alpha)=\alpha\eta_ta_t$. For the finite grid
+$\mathcal A=\{2^{-j}:j=0,\ldots,J\}$, fresh gate examples evaluate
+\begin{equation}
+D_{c,j}(\alpha)=
+\phi_c(z_j;\theta_t+\Delta_t(\alpha))-
+\phi_c(z_j;\theta_t).
+\end{equation}
+Here $\phi_c$ is example-average NLL clipped to $[0,M_\phi]$ solely for the
+gate. With $n_c$ fresh IID gate examples and at most $T_{\max}$ rounds, define
+\begin{equation}
+U_{c,t}(\alpha)=\overline D_{c,t}(\alpha)+
+M_\phi\sqrt{\frac{2\log(C|\mathcal A|T_{\max}/\delta_g)}{n_c}}.
+\label{eq:gate}
+\end{equation}
+The union-bound interpretation requires fixed $T_{\max}$ and fresh gate draws;
+otherwise \cref{eq:gate} is only a heuristic. We commit the largest $\alpha$
+with $U_{c,t}(\alpha)\le\tau_{c,t}$ for all protected slices, applying learning
+rate $\alpha\eta_t$ while committing $m^+,v^+$ and the step counter exactly
+once. If none passes, all parameter, optimizer, and scheduler state is restored
+and the charged update is discarded. Target improvement remains a planning
+criterion; it is not certified unless $c=0$ is included in the gate.
+
+\begin{algorithm}[t]
+\caption{One Scheduling and Update Round}
+\label{alg:scheduler}
+\begin{algorithmic}[1]
+\STATE Sample candidates within the remaining scoring budget.
+\STATE Compute lengths, trainable-subspace gradients, and sketches.
+\STATE Build feasible isolated pack plans with beam search.
+\STATE Select the best plan satisfying \cref{eq:selection}.
+\STATE Compute its exact gradient, moments, and scaled AdamW candidates.
+\FOR{$\alpha\in\mathcal A$ from largest to smallest}
+  \STATE Evaluate fresh protected gate losses.
+  \IF{all upper statistics are below their tolerances}
+    \STATE Commit $\Delta_t(\alpha)$ and optimizer state; \textbf{break}.
+  \ENDIF
+\ENDFOR
+\STATE Charge scoring, solving, gating, training, and rejection costs.
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Conditional One-Step Control}
+
+\begin{proposition}
+\label{prop:control}
+Suppose $L_c$ is $\beta_c$-smooth on the segment from $\theta_t$ to
+$\theta_t+\Delta$. Assume jointly that
+$-\nabla L_c(\theta_t)^\top\Delta\ge\widehat S_c-r_c$,
+$\|\Delta\|^2\le\overline q$, and
+$\beta_c\le\overline\beta_c$. If
+\begin{equation}
+\widehat S_c-r_c\ge
+\tfrac{\overline\beta_c}{2}\overline q-\tau_c,
+\end{equation}
+then
+$L_c(\theta_t+\Delta)-L_c(\theta_t)\le\tau_c$.
+\end{proposition}
+
+The proof is the descent lemma and appears in
+\cref{app:reproducibility}. The proposition must use the actual displacement;
+substituting \cref{eq:surrogate} invalidates it. It controls one specified
+reference loss, not accuracy, harmlessness, population generalization, or
+multiple steps without accumulated tolerances. The practical gate controls a
+clipped empirical loss under its own conditions; it does not establish the
+score, norm, and curvature event required by \cref{prop:control}.
+
+\section{Experiments}
+\label{sec:experiments}
+
+The study tests three predeclared hypotheses. \textbf{H1}: joint
+selection--packing gives a better target-loss/worst-protected-loss frontier than
+the same score followed by best-fit packing. \textbf{H2}: any gain remains after
+charging selector, gate, and rejected-update costs. \textbf{H3}: the
+actual-update gate reduces audit regressions relative to proxy-only
+constraints. Failure of any hypothesis is a substantive negative result.
+The primary statistic is the paired difference in dominated hypervolume over a
+fixed tolerance and budget grid with a fixed reference box. H1 succeeds only
+if its simultaneous 95\% lower bound exceeds zero. H3 compares protected
+regression at a predeclared noninferior target-NLL change so that shrinking all
+updates cannot win trivially.
+
+\subsection{Experimental Setup}
+
+We freeze a source-labeled, license-audited instruction mixture before tuning.
+Two target settings---mathematics and code---swap which source is targeted and
+which capabilities are protected. Development uses a roughly 1--2B parameter
+model; confirmatory runs use a roughly 7--8B model and one second model family.
+The planned trainable configuration is rank-64 adapters on attention and MLP
+projections, BF16 AdamW, response-only loss, $L_{\max}=4096$, and isolated
+packing. Exact model revisions, tokenizer hashes, data hashes, optimizer
+coefficients, and kernel versions must be frozen in the artifact before the
+first confirmatory run.
+
+Let $B_{50M}$ be the measured accelerator cost of random, isolated,
+best-fit-packed SFT on 50 million response tokens. We evaluate total budgets
+$\{0.25,0.5,1.0\}B_{50M}$. Each method stops at the same end-to-end cost,
+including method-specific preprocessing and validation. Final common
+evaluation is excluded from training cost; every method-specific query is
+included.
+
+Baselines are random plus identical packing, representation-similarity
+selection, LESS, FisherSFT, influence distillation, SPICE, DynamixSFT, a
+source-level dynamic allocator, online target-gradient alignment followed by
+packing, and the proposed joint scheduler. Every feasible baseline is reported
+both ungated and with the identical actual-update gate. The decisive decoupled
+comparator uses the same candidates, scores, protected constraints, and
+training code, differing only by additive selection followed by deterministic
+best-fit packing. Candidate streams, initial checkpoints, data order seeds, and
+hyperparameter search budgets are paired.
+
+Primary endpoints are target audit NLL, the worst protected audit regression
+\begin{equation}
+\max_{c\ge1}
+\left[L_c^{\mathrm{audit}}(\theta_T)-
+L_c^{\mathrm{audit}}(\theta_0)\right],
+\end{equation}
+end-to-end allocated accelerator-seconds, CPU resource-seconds, wall time, and
+packing throughput. Downstream benchmarks
+are secondary because they are not optimized by the gate. We use at least five
+development seeds and five confirmatory seeds, report paired differences with
+95\% intervals, and retain every run rather than selecting the best seed.
+
+\subsection{Main Results}
+
+\begin{table*}[t]
+\caption{Confirmatory matched-budget endpoints. Lower target NLL, protected
+regression, and cost are better; higher throughput is better. Dashes are
+intentional: no measurements had been run when this draft was written.}
+\label{tab:main}
+\centering
+\begin{small}
+\begin{tabular}{lcccc}
+\toprule
+Method & Target audit NLL & Worst protected $\Delta$NLL
+& Accelerator-seconds & Packed tokens/s \\
+\midrule
+Random + best-fit packing & -- & -- & -- & -- \\
+Representation similarity + best-fit & -- & -- & -- & -- \\
+LESS + best-fit packing & -- & -- & -- & -- \\
+FisherSFT + best-fit packing & -- & -- & -- & -- \\
+SPICE + best-fit packing & -- & -- & -- & -- \\
+DynamixSFT & -- & -- & -- & -- \\
+Online alignment + best-fit packing & -- & -- & -- & -- \\
+Joint scheduler without gate & -- & -- & -- & -- \\
+Joint scheduler with gate & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{small}
+\end{table*}
+
+No ranking is inferred from \cref{tab:main}. Before values are inserted, each
+cell must link to a run manifest and the aggregation script. The primary
+comparison is a paired frontier contrast between score-then-pack and joint
+scheduling, not the single best endpoint.
+
+\subsection{Ablations and Mechanistic Analysis}
+
+Predeclared one-factor contrasts compare offline versus online refresh,
+score-then-pack versus joint planning, target-only versus protected constraints,
+SGD geometry versus frozen-Adam geometry, additive token cost versus measured
+cost, and proxy-only versus actual-update gating. A small fractional factorial
+on the development model checks the largest interactions. Sketch dimensions
+and refresh intervals are tuned only on that model.
+
+Mechanistic diagnostics compare sketches with exact adapter-space dot
+products, surrogate and actual AdamW displacements, first-order predictions and
+realized gate losses, predicted and measured pack cost, solver plans and a
+small-pool exact oracle, and score-set versus sealed-audit regressions. If
+packing costs are effectively additive or joint plans match score-then-pack,
+the packing-aware claim is removed.
+
+\subsection{Robustness and Generalization}
+
+Robustness tests transfer the frozen scheduler configuration across model size
+and family, perturb source proportions, tighten each protected tolerance, and
+replace reference templates with semantically matched held-out templates.
+Numerical controls compare isolated packed and unpacked gradients with dropout
+disabled. Contamination audits combine exact, normalized, and semantic
+near-duplicate search between candidates, all references, and final benchmarks.
+Results are disaggregated by source, length decile, language, and license class;
+no subgroup conclusion is made where sample support is inadequate.
+
+\section{Limitations}
+\label{sec:limitations}
+
+The method may spend more compute scoring and gating than it saves in training.
+Its pack heuristic is neither optimal nor approximation-guaranteed. Frozen
+Adam geometry can rank windows incorrectly, while computing individual
+gradients may dominate runtime. Reference losses are incomplete proxies for
+capabilities and can themselves be gamed; repeated score queries make them
+training data. A gate based on finite fresh samples can miss rare regressions,
+and formal simultaneous coverage may be too conservative to be useful.
+
+The conditional bound is a standard local smoothness consequence, not a safety
+theorem. It applies only to the measured trainable subspace and one actual
+update. It does not control downstream metrics, generation behavior, or
+long-horizon accumulation unless every tolerance and failure probability is
+accounted for. Finally, evidence from open 1--8B models may not transfer to
+full-parameter or frontier-scale training.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+We defined a narrow test of whether data selection should be coupled to
+physical packing when SFT must preserve specified reference losses under a
+true compute budget. The proposed scheduler combines known gradient-proxy
+ingredients with non-additive pack planning and a gate on the actual optimizer
+displacement. The analysis clarifies what this construction can and cannot
+guarantee. Whether the interaction is practically valuable remains an
+empirical question; the decisive next step is the paired score-then-pack versus
+joint-planning experiment with all overhead charged.
+
+% Acknowledgements must not appear in the anonymous review submission.
+% \section*{Acknowledgements}
+
+\section*{Impact Statement}
+
+Compute-aware scheduling could reduce the resources needed to specialize
+language models and make controlled adaptation accessible to smaller research
+groups. The same efficiency can accelerate the creation of models optimized
+for harmful applications. Protected losses may create false assurance if they
+omit affected languages, communities, or failure modes, and optimization
+against fixed references can shift harm outside the measured set. Candidate
+data may contain private, copyrighted, or exploitative labor-derived material;
+selection does not cure those provenance problems. We therefore require
+license and privacy audits before scoring, disaggregated untouched audits,
+transparent reporting of gate coverage, and no use of the phrase
+``capability-safe.'' All selector and rejected-update compute is reported so
+environmental benefits are not overstated.
+
+\bibliography{references}
+\bibliographystyle{../template/icml2026/icml2026}
+
+\clearpage
+\appendix
+\onecolumn
+
+\section{Reproducibility Details}
+\label{app:reproducibility}
+
+\subsection{Proof of \cref{prop:control}}
+By $\beta_c$-smoothness along the update segment,
+\begin{align}
+L_c(\theta_t+\Delta)
+&\le L_c(\theta_t)+\nabla L_c(\theta_t)^\top\Delta
+  +\frac{\beta_c}{2}\|\Delta\|^2\\
+&\le L_c(\theta_t)-(\widehat S_c-r_c)
+  +\frac{\overline\beta_c}{2}\overline q\\
+&\le L_c(\theta_t)+\tau_c.
+\end{align}
+The first inequality is deterministic. Any probabilistic claim enters only
+through the joint event that the assumed score, norm, and curvature bounds
+hold.
+
+\subsection{Required Run Manifest}
+Every run records the base checkpoint and revision, tokenizer hash, trainable
+parameter names, optimizer and scheduler state, precision, gradient clipping,
+random seeds, data and deduplication hashes, candidate stream, score/gate/audit
+split identifiers, sketch seed and dimension, beam width, cost-model version,
+packing order, kernel and compiler versions, hardware identifier, accepted and
+rejected displacements, and cumulative accelerator time. A failed or
+preempted run remains in the ledger.
+
+\subsection{Numerical Packing Check}
+Before training, randomly sampled windows are evaluated both unpacked and with
+isolated packing. We compare response-token counts, losses, and every
+trainable-parameter gradient. A discrepancy above a predeclared numerical
+tolerance blocks the experiment rather than being absorbed into scheduler
+noise.
+
+\section{Additional Results}
+\label{app:additional}
+
+\begin{table}[h]
+\caption{Required diagnostic report; values remain pending execution.}
+\centering
+\begin{tabular}{lc}
+\toprule
+Diagnostic & Value \\
+\midrule
+Sketch versus exact inner-product error & -- \\
+Surrogate versus actual update cosine & -- \\
+Gate rejection rate & -- \\
+Empirical protected-bound coverage & -- \\
+Cost-model absolute percentage error & -- \\
+Solver overhead / total cost & -- \\
+Score--audit generalization gap & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Secondary per-task tables, full tolerance frontiers, every seed, negative
+results, and examples of rejected plans will be added without filtering once
+the protocol is run. Exploratory analyses will be labeled and will not replace
+the confirmatory endpoints in \cref{tab:main}.
+
+\end{document}
