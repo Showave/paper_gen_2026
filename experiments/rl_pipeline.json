@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "paper": "rl",
+  "purpose": "Frozen-policy estimator audit followed by one-update-per-batch RLVR training.",
+  "stages": [
+    {
+      "name": "acquire",
+      "objective": "Freeze a finite prompt frame, verifier suites, current and stale checkpoints, and contamination boundaries.",
+      "inputs": [
+        "Versioned math and code prompt identifiers with known target masses",
+        "Current-policy, stale-policy, tokenizer, and decoder revisions",
+        "Public and hidden verifier source hashes"
+      ],
+      "artifacts": [
+        "acquire/data_manifest.json"
+      ],
+      "checks": [
+        "Prompt support is finite, normalized, and reconstructible",
+        "Hidden tests are disjoint from SFT, nuisance, and allocator data",
+        "Licenses and sandbox requirements are recorded"
+      ],
+      "costs": [
+        "cpu_seconds",
+        "wall_seconds",
+        "bytes_downloaded"
+      ]
+    },
+    {
+      "name": "process",
+      "objective": "Normalize verifier outcomes and validate exact sampler/scorer probability agreement.",
+      "inputs": [
+        "acquire/data_manifest.json",
+        "Temperature-softmax decoder specification and maximum response length",
+        "Parser, timeout, sandbox-error, EOS, and truncation reward rules"
+      ],
+      "artifacts": [
+        "process/trajectory_schema.json"
+      ],
+      "checks": [
+        "Sampler frequencies agree with scored masses in finite-vocabulary conformance tests",
+        "Prompt and sequence mixture masses normalize in high precision",
+        "No verifier outcome is retried or silently dropped"
+      ],
+      "costs": [
+        "cpu_seconds",
+        "wall_seconds",
+        "accelerator_seconds",
+        "verifier_calls"
+      ]
+    },
+    {
+      "name": "build",
+      "objective": "Construct policy, stale actor, frozen reward/length predictors, prompt baseline, and adaptive proposal.",
+      "inputs": [
+        "process/trajectory_schema.json",
+        "Frozen alpha grid, proposal support floor, length target, and dual schedule",
+        "Projection, nuisance-training, and stale-KL configurations"
+      ],
+      "artifacts": [
+        "build/model_manifest.json"
+      ],
+      "checks": [
+        "Nuisance and proposal models use only prior-iteration disjoint data",
+        "Current and behavior scorers share tokenizer, masks, and decoder semantics",
+        "Policy and nuisance tensor hashes are frozen before each audit"
+      ],
+      "costs": [
+        "cpu_seconds",
+        "wall_seconds",
+        "accelerator_seconds"
+      ]
+    },
+    {
+      "name": "train",
+      "objective": "Audit projected bias/variance at frozen policies, freeze alpha, then run single-use one-update batches.",
+      "inputs": [
+        "build/model_manifest.json",
+        "Independent large current-policy reference samples",
+        "Matched token, verifier-call, hyperparameter, and batch-admission budgets"
+      ],
+      "artifacts": [
+        "train/trajectory_ledger.jsonl"
+      ],
+      "checks": [
+        "Every theorem-facing trajectory is generated after iteration choices freeze and has use_count one",
+        "The numerical mixture-weight bound and source-specific ESS are checked",
+        "Batch admission reserves worst-case cost and reports terminal undershoot"
+      ],
+      "costs": [
+        "cpu_seconds",
+        "wall_seconds",
+        "accelerator_seconds",
+        "generated_tokens",
+        "verifier_calls",
+        "likelihood_tokens"
+      ]
+    },
+    {
+      "name": "evaluate",
+      "objective": "Aggregate gradient MSE, held-out reward, reward-length frontiers, and deliberate theorem violations.",
+      "inputs": [
+        "train/trajectory_ledger.jsonl",
+        "Frozen intervals, thresholds, seed pairing, and multiplicity rules",
+        "Hidden verifier variants and shuffled/random/anti-correlated controls"
+      ],
+      "artifacts": [
+        "evaluate/summary.json"
+      ],
+      "checks": [
+        "Monte Carlo reference uncertainty is propagated",
+        "Prefix reuse and repeated replay are labeled as different or biased objectives",
+        "Endpoint comparisons use the largest common realized-cost checkpoint without interpolation",
+        "Every seed, parser failure, support failure, and negative result is retained"
+      ],
+      "costs": [
+        "cpu_seconds",
+        "wall_seconds",
+        "accelerator_seconds",
+        "evaluated_checkpoints",
+        "verifier_calls"
+      ]
+    }
+  ]
+}
