@@ -3,12 +3,13 @@
 % The root Makefile supplies the path to the unmodified ICML style files.
 \input{../template/preamble}
 
-\icmltitlerunning{A Descriptive Title for Reinforcement Learning Research}
+\icmltitlerunning{Adaptive-Mixture Policy Gradients for Length-Constrained RLVR}
 
 \begin{document}
 
 \twocolumn[
-  \icmltitle{A Descriptive Title for Reinforcement Learning Research}
+  \icmltitle{Adaptive-Mixture Augmented Policy Gradients for
+  Expected-Length-Constrained Reinforcement Learning with Verifiable Rewards}
 
   % Author details remain hidden in review mode. Replace these placeholders
   % only when preparing the camera-ready version.
@@ -18,7 +19,8 @@
   \icmlaffiliation{anon}{Anonymous Institution}
   \icmlcorrespondingauthor{Anonymous Author}{anonymous@example.com}
 
-  \icmlkeywords{reinforcement learning, post-training, language models}
+  \icmlkeywords{reinforcement learning, verifiable rewards, importance
+  sampling, post-training, language models}
 
   \vskip 0.3in
 ]
@@ -26,19 +28,72 @@
 \printAffiliationsAndNotice{}
 
 \begin{abstract}
-  \placeholder{Write one self-contained paragraph of four to six sentences.
-  State the decision problem, the algorithmic idea, the evaluation regime, the
-  principal measured result, and the boundary of the claim. Do not include
-  citations, undefined acronyms, or unsupported numbers.}
+Reinforcement learning with verifiable rewards spends most of its compute on
+fresh language-model trajectories, while ordinary replay is statistically
+problematic because sequence likelihood ratios become unstable and previously
+consumed samples depend on the current policy. We study a narrower alternative:
+at each frozen policy, combine fresh on-policy trajectories with newly
+generated, single-use trajectories from a known stale actor and an adaptive
+prompt distribution. A current-policy mixture component bounds the exact joint
+importance ratio, and frozen reward and length models supply an
+augmented control variate; under explicit independence, support, and decoding
+assumptions, the resulting one-update gradient estimator is conditionally
+unbiased. A Lagrangian expected-response-length constraint makes length part of the
+declared objective rather than an implicit per-token normalization. This
+methods-first draft gives the estimator audit and matched-budget training
+protocol, but reports no performance gain before those experiments are run.
 \end{abstract}
 
 \section{Introduction}
 \label{sec:introduction}
 
-\placeholder{Identify a concrete failure of current reinforcement-learning
-methods and formulate the research question. Explain the proposed idea at a
-high level, then list two to four contributions that are independently
-testable and supported by results in \cref{sec:experiments}.}
+Language-model reinforcement learning with verifiable rewards (RLVR) can train
+reasoning behavior from executable tests or exact answer checks. Its simplicity
+does not remove the cost of generation: a policy update may require many long
+trajectories, most of which are discarded after one use. Critic-free
+descendants of REINFORCE \cite{williams1992reinforce}, such as RLOO
+\cite{ahmadian2024back} and GRPO
+\cite{shao2024deepseekmath} reduce value-model overhead, while large-scale
+systems add clipping, prompt filtering, and token-level aggregation
+\cite{yu2025dapo}. These choices improve engineering behavior but change which
+prompt, rollout, or token population receives weight.
+
+Reusing trajectories appears attractive, yet ``off-policy'' covers distinct
+statistical settings. A replay-buffer trajectory may have selected itself into
+the buffer through its reward and may already have changed the current policy.
+Recomputing its likelihood does not restore independence. Sequence-level
+importance ratios can have extreme variance; token-level ratios do not
+represent the sampling probability of a sequence-rewarded trajectory.
+Practical off-policy methods therefore use tapering, buffers, or adaptive
+clipping \cite{leroux2025topr,wan2026buffer,xi2026bapo}, knowingly trading bias
+for stability.
+
+We ask whether a controlled source of stale data can improve gradient
+efficiency without making an inaccurate replay-unbiasedness claim. At iteration
+$t$, a live stale actor or sealed queue produces \emph{new}, never-consumed
+trajectories from a logged policy and prompt distribution. These are combined
+with a positive fraction of current-policy trajectories. An augmented
+importance estimator uses a frozen outcome predictor to reduce residual
+variance, then takes exactly one policy update and consumes the data.
+
+Our contributions are deliberately scoped:
+\begin{itemize}
+  \item We define the target joint trajectory law, including the prompt and
+  decoding distributions, and derive a stratified adaptive-mixture augmented
+  policy-gradient estimator with bounded exact density ratio.
+  \item We state sufficient conditions for conditional unbiasedness and the
+  precise two-route bias identity. The result excludes ordinary replay,
+  multiple epochs, clipping, and group standardization.
+  \item We couple the estimator to an explicit expected-token constraint and
+  provide logging and diagnostics that can falsify its assumptions.
+  \item We specify a frozen-policy estimator audit and a one-update-per-batch
+  matched-budget study across model families and verifier domains.
+\end{itemize}
+
+\paragraph{Evidence status.}
+No downstream or efficiency result is asserted in this draft. The theorem
+concerns one raw gradient estimate at a frozen policy; it neither guarantees a
+better optimizer step nor policy improvement.
 
 % Camera-ready only: if the work evaluates technology developed by an author's
 % employer or has another substantive financial conflict, place the required
@@ -47,118 +102,411 @@ testable and supported by results in \cref{sec:experiments}.}
 \section{Related Work}
 \label{sec:related}
 
-\placeholder{Synthesize the closest work on policy optimization, value or
-advantage estimation, preference and verifiable rewards, exploration,
-off-policy learning, and language-model post-training as applicable. Compare
-assumptions, feedback requirements, and compute rather than relying on broad
-claims of novelty. Cite only verified sources.}
+\paragraph{On-policy and group-relative RL.}
+Careful PPO reproduction shows that reward whitening, KL treatment, clipping,
+and response length are implementation-sensitive
+\cite{huang2024nplus}. RLOO gives a simple leave-one-out REINFORCE baseline
+\cite{ahmadian2024back}; GRPO standardizes rewards within prompt groups
+\cite{shao2024deepseekmath}; Dr.\ GRPO questions group-standard-deviation and
+response-length normalization \cite{liu2025critical}; and DAPO adds dynamic
+sampling, asymmetric clipping, and token-level aggregation
+\cite{yu2025dapo}. GSPO uses a length-normalized geometric mean of token ratios
+with response-level clipping \cite{zheng2025gspo}. Recent analyses expose
+negative-gradient pathologies
+\cite{deng2025negative}, U-statistic structure \cite{zhou2026ustatistic}, and
+the interaction between clipping, entropy, and misaligned rewards
+\cite{chen2026exploration}. Our estimator intentionally omits group
+normalization and PPO clipping so its target expectation remains explicit.
+
+\paragraph{Allocation, baselines, and length.}
+Adaptive rollout allocation predicts prompt difficulty and assigns rollout
+counts under a fixed budget \cite{nguyen2026adaptive}. Cross-prompt shrinkage
+baselines reduce variance while preserving a policy-gradient target
+\cite{zeng2026shrinkage}. Group-relative reward rescaling addresses length
+inflation \cite{li2026length}. We instead represent length as a constrained
+cost and adapt the stale-source prompt proposal; these components are not
+claimed to subsume those methods.
+
+\paragraph{Off-policy stability and reward validity.}
+TOPR treats positive examples with an SFT/log-ratio-like term and truncates
+importance weighting for negative examples \cite{leroux2025topr};
+buffer-based and balanced policy optimization improve
+practical reuse \cite{wan2026buffer,xi2026bapo}. Such stabilized estimators may
+be preferable even when biased. Separately, spurious-reward controls show that
+benchmark gains need not demonstrate learning from the intended verifier
+\cite{shao2026spurious}. The protocol includes those controls and treats exact statistical
+assumptions, not empirical stability alone, as the object of the first study.
 
 \section{Formal Setting}
 \label{sec:setting}
 
-\placeholder{Define states or contexts, actions or generated sequences,
-transition assumptions, rewards, policy class, horizon, and optimization
-criterion. State what feedback is observed, how it is generated, and whether
-the setting is online, offline, on-policy, or off-policy.}
+Let $Z=(X,Y)$ contain prompt $X$ and a complete generated sequence $Y$,
+including EOS or a declared truncation event. The target prompt distribution is
+$D$ with density $d(x)$, and the exact rollout distribution is
+$\pi_\theta(y\mid x)$. Thus
+\begin{equation}
+P_\theta(z)=d(x)\pi_\theta(y\mid x).
+\label{eq:target-law}
+\end{equation}
+The rollout decoder is part of $\pi_\theta$. Temperature, truncation, and any
+rejection rule must be represented by its normalized sampling probability;
+raw base-model logits are not automatically the rollout density. The
+theorem-facing implementation uses temperature-softmax sampling without
+top-$k$ or top-$p$, with fixed maximum length and EOS included in the outcome.
+
+The verifier deterministically maps every complete $Z$, including parse,
+timeout, sandbox-error, and truncation statuses, to bounded reward $R(Z)$; no
+outcome is retried or dropped. Interactive or stochastic environments are
+outside the core formulation. Generation incurs $C(Y)=|Y|$ response tokens.
+For fixed expected-response budget $\kappa$, we optimize the Lagrangian
+\begin{equation}
+\mathcal L(\theta,\lambda)=
+\mathbb E_{P_\theta}[R]-
+\lambda\{\mathbb E_{P_\theta}[C]-\kappa\},
+\quad \lambda\ge0.
+\label{eq:lagrangian}
+\end{equation}
+Define $U_\lambda=R-\lambda C$ and the raw sequence score
+\begin{align}
+s_\theta(Z)
+&=\left.\nabla_\vartheta
+\log\pi_\vartheta^{\mathrm{decoder}}(Y\mid X)
+\right|_{\vartheta=\theta}\nonumber\\
+&=\sum_{\ell=1}^{|Y|}
+\left.\nabla_\vartheta\log
+\pi_\vartheta^{\mathrm{decoder}}(Y_\ell\mid X,Y_{<\ell})
+\right|_{\vartheta=\theta}.
+\label{eq:score}
+\end{align}
+We do not divide \cref{eq:score} by realized length. Under standard
+score-function conditions,
+$\nabla_\theta\mathcal L=\mathbb E_{P_\theta}[U_\lambda s_\theta]$.
 
 \section{Method}
 \label{sec:method}
 
-\placeholder{Specify the algorithm so that another group can implement it.
-Define rollout collection, estimators, normalization and clipping, update
-frequency, replay or filtering, stopping conditions, and all loss terms.
-Separate the core contribution from stabilizing engineering choices.}
+Condition on the pre-update history $\mathcal F_t$. The current policy
+$\theta_t$, dual variable, nuisance models, and all sampling distributions are
+frozen before trajectories are drawn. A logged adaptive prompt distribution
+$Q_t$ and a stale behavior policy $\mu_t$ define
+\begin{equation}
+G_t(z)=q_t(x)\mu_t(y\mid x).
+\end{equation}
+$G_t$ is a live actor or a sealed, never-used queue; a reward-selected replay
+buffer does not satisfy the core assumptions.
+
+For fixed $\alpha\in(0,1]$, define the joint mixture
+\begin{equation}
+M_t(z)=\alpha P_{\theta_t}(z)+(1-\alpha)G_t(z)
+\end{equation}
+and exact detached weight
+\begin{equation}
+w_t(z)=\frac{P_{\theta_t}(z)}{M_t(z)}
+\le \frac{1}{\alpha}.
+\label{eq:weight}
+\end{equation}
+The prompt density is part of \cref{eq:weight}. A conditional policy ratio is
+valid only when $Q_t=D$.
+Defensive mixtures and augmented importance estimators are established
+statistical tools \cite{owen2000safe,dudik2011doubly}; our contribution is
+their restricted, auditable instantiation for fresh stale-actor RLVR, not the
+general identities themselves.
 
 \subsection{Learning Objective}
 
-\placeholder{Write the exact optimization objective and define every
-expectation, ratio, baseline, coefficient, and gradient path. Explain the
-relationship to a standard reference algorithm and identify the expected
-source of improvement.}
+Let $h_t^R(z)$ and $h_t^C(z)$ be frozen action-conditional predictors of reward
+and length, and set $h_t=h_t^R-\lambda_th_t^C$. This separation allows the
+dual variable to change without retraining the two predictors. Let $b_t(x)$ be
+a frozen prompt-only baseline. In stale-source conditions, fix integers
+$n_P,n_G\ge1$ and $\alpha=n_P/(n_P+n_G)$ before sampling. Draw
+$Z_i^P\sim P_{\theta_t}$ and $Z_j^G\sim G_t$. For $\alpha<1$, deterministic
+stratification gives
+\begin{align}
+\widehat g_t={}&
+\frac1{n_P}\sum_{i=1}^{n_P}
+\Big[(h_i-b_i)s_i+
+\alpha w_i(U_i-h_i)s_i\Big]\nonumber\\
+&+\frac{1-\alpha}{n_G}\sum_{j=1}^{n_G}
+w_j(U_j-h_j)s_j.
+\label{eq:estimator}
+\end{align}
+The first line uses current-policy samples and the second uses stale-source
+samples. All $w,h,b$ are stop-gradient quantities. The $\alpha=1$ limit omits
+the stale-source sum and sets $n_G=0$; it reduces exactly to ordinary on-policy
+$(U-b)s$. The outcome predictor is critic-like infrastructure; we do not call
+the method critic-free.
+
+$h_t^R,h_t^C,b_t$, and $q_t$ are trained only from data available before iteration
+$t$, then frozen. A convenient adaptive proposal is
+\begin{equation}
+q_t(x)=\epsilon d(x)+(1-\epsilon)\overline q_t(x),\qquad
+\overline q_t(x)=
+\frac{d(x)\sqrt{\widehat v_t(x)/\widehat c_t(x)}}
+{\sum_{x'}d(x')\sqrt{\widehat v_t(x')/\widehat c_t(x')}},
+\end{equation}
+where $\widehat c_t(x)>0$ predicts generation cost and $\widehat v_t(x)$ uses
+prior-iteration random projections to predict stale-source residual-gradient
+second moment. Because $q$ also changes the mixture weight and its covariance
+with the direct term, this square-root rule is a heuristic, not an optimum for
+\cref{eq:estimator}. Incorrect predictors may reduce efficiency but do not
+alter the density-route expectation when the logged distribution and ratio are
+exact.
 
 \subsection{Feedback and Credit Assignment}
 
-\placeholder{Describe the source, granularity, calibration, and possible
-leakage of rewards. If using learned judges or reward models, document their
-training data, held-out validation, uncertainty, and susceptibility to reward
-hacking. Explain how credit is assigned across actions or tokens.}
+The main study uses deterministic programmatic verifiers: normalized answer
+checking for mathematics and isolated executable tests for code. Parser
+failures, timeouts, sandbox errors, and truncations are separate logged outcomes
+with predeclared scalar rewards rather than silently dropped samples. Hidden
+tests are disjoint from the authors' SFT, nuisance-model, and prompt-allocation
+data; unknown base-model pretraining contamination remains a limitation.
+
+Terminal $U_\lambda$ multiplies the unnormalized sequence score in
+\cref{eq:score}; the theorem does not assign token-level causal credit. Reward
+shaping, group centering, group standardization, token-average losses, ratio
+clipping, and gradient clipping all change either the estimand or estimator and
+are excluded from the theorem-facing condition. They may be evaluated as
+clearly labeled practical variants. Shuffled, random, weakly related, and
+anti-correlated verifier controls test whether improvement follows the intended
+signal rather than pretrained behavior or evaluation leakage.
 
 \subsection{Algorithm and Complexity}
 
-\placeholder{Provide pseudocode and a complexity analysis covering model
-updates, generated samples, wall-clock-critical operations, and memory.
-Identify any synchronization or systems assumptions that affect scaling.}
+\begin{algorithm}[t]
+\caption{One Adaptive-Mixture Update}
+\label{alg:am}
+\begin{algorithmic}[1]
+\STATE Freeze $\theta_t,\lambda_t,h_t^R,h_t^C,b_t,q_t,\mu_t,$ and $\alpha$.
+\STATE Draw $n_P$ complete trajectories from $D\pi_{\theta_t}$.
+\STATE Draw $n_G$ new, single-use trajectories from $Q_t\mu_t$.
+\STATE Log exact prompt, source, decoder, and sequence probabilities.
+\STATE Evaluate verifier reward and token cost; form $U=R-\lambda_tC$.
+\STATE Compute detached $w=P_{\theta_t}/M_t$ and \cref{eq:estimator}.
+\STATE Finish accumulation at $\theta_t$; call \texttt{optimizer.step()} once.
+\STATE Consume every trajectory; no microbatch update or second epoch.
+\STATE Update $\lambda$ from fresh current-policy token costs.
+\STATE Add consumed data only to future nuisance-model training.
+\end{algorithmic}
+\end{algorithm}
+
+Relative to on-policy REINFORCE, the method adds stale-actor generation, current
+and stale sequence log-probabilities under both policies, and nuisance-model
+inference. The cost ledger includes all generated tokens, verifier calls,
+likelihood evaluations, nuisance training, and policy forwards/backwards.
+Storage is linear in the single-use queue. A practical repeated-replay variant
+can reduce rollout cost, but is outside the theorem and is reported as biased.
 
 \section{Analysis}
 \label{sec:analysis}
 
-\placeholder{State theoretical results only when their assumptions illuminate
-the practical method. Otherwise provide a focused empirical or conceptual
-analysis of bias, variance, stability, and fixed points. Distinguish proved
-properties from hypotheses to be tested.}
+\begin{theorem}
+\label{thm:unbiased}
+Condition on $\mathcal F_t$. Assume (i) all policies, prompt laws, nuisance
+models, counts, and $\alpha$ are fixed before sampling; (ii)
+\cref{eq:target-law} is differentiable and differentiation and expectation may
+be interchanged; (iii) the deterministic reward does not directly depend on
+$\theta$; (iv) $b_t$ depends only on $X$; (v) current and stale samples are
+conditionally independent, newly drawn, and have not influenced $\theta_t$;
+(vi) $P_t$ and $G_t$ have exactly evaluable masses on a common sample space, so
+$M_t$ is computed exactly; and (vii) required moments are finite. With exact
+\cref{eq:weight} and none of the clipping or normalization operations excluded
+above,
+\begin{equation}
+\mathbb E[\widehat g_t\mid\mathcal F_t]
+=\nabla_\theta\mathcal L(\theta_t,\lambda_t).
+\end{equation}
+\end{theorem}
+
+The proof expands the two strata:
+\begin{align}
+\mathbb E[\widehat g_t]
+&=\mathbb E_P[(h-b)s]
++\alpha\mathbb E_P[w(U-h)s]\nonumber\\
+&\quad +(1-\alpha)\mathbb E_G[w(U-h)s]\\
+&=\mathbb E_P[(h-b)s]+\mathbb E_M[w(U-h)s]\nonumber\\
+&=\mathbb E_P[(U-b)s]=\mathbb E_P[Us].
+\end{align}
+The last equality is the prompt-baseline identity.
+
+If $\widetilde w(z)$ is the same fixed, pointwise implemented weight in both
+strata and
+$m_0(z)=\mathbb E[U\mid Z=z]$, the population bias is
+\begin{equation}
+\mathbb E_M[(\widetilde w-w)(m_0-h)s].
+\label{eq:bias}
+\end{equation}
+Thus either an exact density ratio or an exact action-conditional outcome model
+removes this bias. Low prediction error or calibration alone is insufficient,
+and batch-normalized or data-dependent weights are not covered. In
+deterministic RLVR, $m_0(z)=U(z)$, so an exact outcome model makes the stale
+residual vanish and leaves an on-policy direct estimator. We therefore
+describe \cref{eq:estimator} as augmented importance sampling rather than
+relying on a broad ``doubly robust replay'' label.
+
+\paragraph{Scope of the result.}
+\Cref{thm:unbiased} applies before one update. After the policy changes, the
+current component of $M_t$ is no longer the target policy, the
+$1/\alpha$ bound need not hold, and the same data influenced the updated
+policy. Multiple epochs, ratio recomputation, or small KL do not restore the
+theorem. Optimizer momentum and clipping may still be useful, but the theorem
+is about the raw estimator rather than the transformed displacement or
+monotonic improvement.
 
 \section{Experiments}
 \label{sec:experiments}
 
-\placeholder{Predefine hypotheses and use environments or task suites that can
-falsify them. Match rollout, training-token, model, and hyperparameter-search
-budgets across baselines. Specify independent seeds and confidence intervals,
-and report both learning efficiency and final performance.}
+Evaluation has two gates. Phase A must establish estimator behavior at a frozen
+policy before Phase B makes training claims. The primary hypotheses are:
+\textbf{H1}, exact adaptive-mixture augmentation reduces projected gradient MSE
+relative to on-policy estimation at matched total compute; \textbf{H2}, any
+reduction translates to better held-out reward per generated token under
+one-update-per-batch training; and \textbf{H3}, the expected-response-length constraint
+produces a better reward--length frontier than implicit response-length
+normalization. Each can fail independently.
 
 \subsection{Experimental Setup}
 
-\placeholder{Document model checkpoints, environments or prompts, reward
-implementations, train--test separation, baselines, evaluator versions,
-decoding, optimizer settings, hardware, software, and total compute. Explain
-checkpoint selection without consulting the test set.}
+\paragraph{Frozen-policy audit.}
+For each of two model families and both math and code verifiers, freeze a
+current policy, one stale policy, nuisance models, prompts, and decoders.
+Generate an independent, much larger $P$-only reference sample and propagate
+its Monte Carlo uncertainty when estimating the target gradient on fixed
+adapter layers and projections frozen before outcomes. Nuisance and proposal
+models are trained on disjoint data. Repeated subsamples compare on-policy
+policy gradient, ordinary
+importance sampling, bounded mixture importance sampling, augmentation with
+several predictor qualities, and adaptive versus uniform $Q_t$. Endpoints are
+bias, variance, MSE, interval coverage, effective sample size (ESS), and
+compute. Fault injection deliberately omits prompt ratios, uses base-model
+rather than decoder probabilities, fits the focal nuisance outcome, clips
+weights, and reuses data that formed the target policy.
+
+\paragraph{End-to-end training.}
+Confirmatory training uses two open model families at small and medium scale,
+one exact-answer math suite and one sandboxed code suite. Prompts, hidden
+verifiers, maximum generation length, temperature, optimizer, and checkpoint
+selection rules are frozen before the main runs. Each collected batch produces
+one update and is never used again by the theorem-facing method. Staleness is
+stratified by measured policy KL, not checkpoint age.
+
+Baselines are on-policy RLOO, Dr.\ GRPO, separately tuned DAPO and GSPO, TOPR,
+variance-informed prompt allocation (VIP),
+plain bounded-mixture importance sampling, augmented sampling with uniform
+$Q$, and the full adaptive proposal. All generated prefixes and complete
+sequences, verifier calls, likelihood passes, nuisance training, policy
+updates, and hyperparameter searches are charged. Each configuration receives
+the same token and verifier-call budget, while total allocated accelerator and
+CPU time is reported as a Pareto cost rather than assumed equal. We use five
+independent development seeds and five frozen confirmatory seeds.
+Source-isolation controls set $\mu_t=\pi_t$ while adapting $Q_t$, and set
+$Q_t=D$ while varying policy staleness. Rollout counts are fixed before each
+batch; collection never stops early because a realized token total is reached.
 
 \subsection{Main Results}
 
-\placeholder{Report learning curves as well as aggregate endpoint metrics.
-State the unit of replication and uncertainty calculation. Include a strong
-non-RL or supervised baseline where it helps identify whether interaction is
-responsible for the gain.}
+\begin{table*}[t]
+\caption{Primary matched-budget results. Higher held-out reward is better;
+lower projected gradient MSE and generated tokens to threshold are better.
+Dashes mark measurements that have not yet been run.}
+\label{tab:main}
+\centering
+\begin{small}
+\begin{tabular}{lcccc}
+\toprule
+Method & Gradient MSE & Held-out reward & Tokens to threshold
+& Mean response tokens \\
+\midrule
+On-policy RLOO & -- & -- & -- & -- \\
+Bounded mixture IS & -- & -- & -- & -- \\
+Augmented mixture, uniform $Q$ & -- & -- & -- & -- \\
+Augmented mixture, adaptive $Q$ & -- & -- & -- & -- \\
+Practical repeated-replay variant & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{small}
+\end{table*}
+
+Every value in \cref{tab:main} will aggregate independent runs with a
+predeclared interval and link to immutable trajectory manifests. The
+repeated-replay row is explicitly not covered by \cref{thm:unbiased}; it tests
+whether a biased engineering variant is nevertheless more useful.
 
 \subsection{Ablations and Diagnostics}
 
-\placeholder{Remove each algorithmic component, vary sensitive coefficients,
-and compare alternate estimators under matched samples. Track entropy,
-divergence from the reference policy, reward-model disagreement, gradient
-statistics, and other diagnostics needed to explain stability.}
+We ablate the on-policy anchor fraction $\alpha$, augmentation, adaptive prompt
+proposal, prompt baseline, cross-iteration nuisance freezing, and length dual.
+A separate deliberate-violation study runs 1, 2, 4, and 8 epochs; uses fresh,
+previously consumed, and reward-selected stale data; and compares unclipped and
+clipped ratios. After each update, a large fresh on-policy batch estimates the
+resulting approximation error.
+
+Required diagnostics include the numerical $1/\alpha$ bound; mixture
+normalization; joint and source-specific ESS; maximum weight and support
+failures; direct and residual gradient norms and cosine; outcome calibration by
+length, difficulty, and source; fresh versus augmented projected gradients;
+pre/post-update KL; entropy; sign-conditioned update mass; policy-to-behavior
+KL; dual trajectory; reward--token frontier; parser errors; and verifier
+disagreement. Reporting only reward curves is insufficient to test the method.
 
 \subsection{Generalization and Safety}
 
-\placeholder{Test held-out tasks, reward perturbations, evaluator changes,
-longer horizons, and scale transfer. Measure reward hacking, specification
-gaming, capability regressions, unsafe behavior, and loss of response
-diversity where relevant. Include representative failures selected by a
-documented procedure.}
+Generalization holds the estimator configuration fixed across model family,
+scale, prompt difficulty, context length, and verifier domain. Hidden verifier
+variants alter answer formatting, unit tests, parser implementation, and
+timeouts. Reward controls include shuffled labels, random rewards, weak
+heuristics, and anti-correlated signals. We measure train/hidden reward gaps,
+pass@1 and pass@$k$, response-length quantiles, invalid-output rates,
+memorized-answer indicators, and diversity. Safety claims are not inferred
+from verifier reward; the protocol will report separate capability and
+harmful-behavior audits as possible regressions.
 
 \section{Limitations}
 \label{sec:limitations}
 
-\placeholder{Describe dependence on reward quality, simulators, judge models,
-proprietary checkpoints, or large compute. State unresolved confounds and
-conditions under which optimization may amplify undesirable behavior. Narrow
-all conclusions accordingly.}
+The assumptions intentionally exclude the main appeal of replay: repeated use
+of old data. Single-use stale actors may add systems complexity without enough
+variance reduction to justify it. Exact sequence probabilities are expensive
+and fragile when production decoders use top-$p$, rejection, tool calls, or
+environment transitions. Adaptive prompt density must be logged exactly.
+Importance weights remain high-variance despite their bound, especially for
+small $\alpha$ and long horizons.
+
+The outcome predictor is a critic by another name and may consume substantial
+compute. The two-route property in \cref{eq:bias} is practically asymmetric:
+behavior likelihoods are logged, whereas an exact sequence-conditional verifier
+predictor is unrealistic. Conditional gradient unbiasedness does not imply
+low MSE, stable Adam updates, monotonic improvement, or resistance to reward
+hacking. Finally, math and code evidence may not generalize to subjective
+human-feedback rewards or frontier models.
 
 \section{Conclusion}
 \label{sec:conclusion}
 
-\placeholder{Answer the research question using the demonstrated comparisons.
-Summarize the algorithmic and empirical findings without introducing new
-claims, and identify the most important unresolved test.}
+We separated statistically controlled stale generation from ordinary replay
+and specified an adaptive-mixture augmented policy gradient for
+expected-response-length-constrained RLVR. The estimator has a simple
+conditional expectation identity under
+strong, auditable restrictions, and fails to inherit that identity after data
+reuse or multiple updates. This clarity is useful only if the estimator
+actually reduces gradient error after all added compute is charged. The
+frozen-policy audit is therefore the next decisive step; downstream training
+should proceed only if that test succeeds.
 
 % Acknowledgements must not appear in the anonymous review submission.
 % \section*{Acknowledgements}
 
 \section*{Impact Statement}
 
-\placeholder{Discuss benefits and risks from stronger reward optimization,
-including reward hacking, scalable oversight failures, misuse, behavioral
-homogenization, annotator exposure, data provenance, and compute costs.
-Describe monitoring or release mitigations and the remaining affected
-stakeholders.}
+More sample-efficient RL could reduce the compute required to improve
+reasoning systems, but it can equally accelerate optimization toward flawed or
+harmful verifiers. Exact-looking tests can encode incomplete specifications,
+reward insecure code, or favor brittle answer formats. Adaptive allocation may
+also neglect rare prompts unless its support floor is enforced. We therefore
+require hidden-verifier variants, random and adversarial reward controls,
+minimum prompt support, full token and energy accounting, and separate safety
+audits. Stale trajectories and prompts may contain sensitive content and must
+follow the same retention and access controls as training data. The paper does
+not equate verifiability with correctness, harmlessness, or social value.
 
 \bibliography{references}
 \bibliographystyle{../template/icml2026/icml2026}
@@ -170,16 +518,63 @@ stakeholders.}
 \section{Algorithmic and Reproducibility Details}
 \label{app:algorithm}
 
-\placeholder{Provide full pseudocode, derivations, reward prompts or programs,
-hyperparameter grids, per-seed configurations, compute accounting, and
-implementation details. Keep information necessary to judge the main claims
-in the eight-page main body.}
+\subsection{Dual Update}
+The expected-response-length dual uses only fresh target-policy trajectories:
+\begin{equation}
+\lambda_{t+1}=
+\left[\lambda_t+\eta_\lambda
+\left\{\frac1{n_P}\sum_{i=1}^{n_P}C(Y_i^P)-\kappa\right\}\right]_+.
+\end{equation}
+$\kappa$ is fixed before training. Policy and dual updates both estimate
+quantities at $(\theta_t,\lambda_t)$ and are committed after collection.
+Reward, response length, and violation are reported separately rather than
+only through $U_\lambda$. This constraint does not cover prompt tokens,
+likelihood passes, verifier cost, or total training compute; those belong to
+the experimental ledger.
+
+\subsection{Logging Contract}
+Each trajectory records prompt identifier and probability, source component,
+current and behavior checkpoint hashes, tokenizer, temperature, EOS and
+truncation rule, random seed, exact current and behavior sequence
+log-probabilities, reward components, parser status, generated tokens, verifier
+version, nuisance-model revision, use count, and policy-update identifier. The
+run aborts if a supposedly theorem-facing trajectory has use count above one
+or if its source probability cannot be reconstructed.
+
+\subsection{Optional Prefix Gate}
+Prefix continuation is excluded from the core experiments. A later extension
+may draw a prefix $H\sim\mu_t$, choose a predictable
+$p_t(H)\in[p_{\min},1]$ before observing the suffix or reward, and include a
+completed stale-source residual with factor $I/p_t(H)$. The denominator remains
+the fixed number of candidate prefixes, not the number completed. Every
+discarded prefix is charged. Sequential gates require the product of all
+conditional continuation probabilities; group-relative estimators additionally
+require joint inclusion probabilities.
 
 \section{Additional Results and Failures}
 \label{app:additional}
 
-\placeholder{Include complete learning curves, per-task measurements,
-sensitivity analyses, qualitative trajectories selected by a stated rule, and
-failure cases. Clearly label exploratory analyses that were not prespecified.}
+\begin{table}[h]
+\caption{Mandatory estimator-audit diagnostics; pending execution.}
+\centering
+\begin{tabular}{lc}
+\toprule
+Diagnostic & Value \\
+\midrule
+Projected bias relative to fresh target & -- \\
+Projected variance and MSE & -- \\
+Maximum mixture weight / $1/\alpha$ & -- \\
+Joint effective sample size & -- \\
+Direct--residual gradient cosine & -- \\
+Prompt-density reconstruction error & -- \\
+Outcome calibration error & -- \\
+Added compute / on-policy compute & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Complete learning curves, per-seed endpoints, theorem-violation results,
+reward-control trajectories, parser failures, and examples selected by a
+fixed random seed will be released whether they favor the method or not.
 
 \end{document}

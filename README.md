@@ -6,9 +6,11 @@ This repository develops three independent ICML-style research papers:
 - `rl_paper`: reinforcement-learning methods; and
 - `eval_paper`: evaluation methods and benchmarks.
 
-The repository is currently at the first automation stage. It contains
-formatting and paper-structure templates only; scientific claims, citations,
-experiments, and results must be added and verified in later iterations.
+The repository is currently at the methods-first drafting stage. Each paper
+contains a research question, verified related-work bibliography, detailed
+method, scoped formal analysis, and preregistered experimental protocol.
+Empirical result tables are intentionally blank until the corresponding
+experiments are executed; the drafts are not submission-ready results papers.
 
 ## Build
 
@@ -45,8 +47,8 @@ make clean
 - Keep each abstract to one self-contained paragraph, ideally four to six
   sentences.
 - Do not modify the ICML style files or compress spacing.
-- Replace every visible `Template note` before treating a paper as a
-  submission draft.
+- Never replace `--` or `pending` result cells without an immutable run
+  artifact and aggregation script.
 - Add only verified citations and measured results. Never retain invented
   references, numbers, baselines, or implementation details.
 
