@@ -57,6 +57,25 @@ make sft_paper/main.pdf
 make clean
 ```
 
+## Experiment Protocols
+
+Each methods-first draft has a machine-readable five-stage plan covering data
+acquisition, processing, model construction, training, and evaluation:
+
+```bash
+python3 scripts/run_experiment_pipeline.py \
+  --plan experiments/sft_pipeline.json
+python3 scripts/run_experiment_pipeline.py \
+  --plan experiments/rl_pipeline.json
+python3 scripts/run_experiment_pipeline.py \
+  --plan experiments/eval_pipeline.json
+```
+
+These commands validate and display the plans. Site-local execution commands,
+required artifacts, cost ledgers, and immutable output hashing are documented
+in `experiments/README.md`. The repository does not claim that the pending
+experiments have run.
+
 ## Authoring Rules
 
 - Keep review submissions anonymous and leave `\usepackage{icml2026}` in
