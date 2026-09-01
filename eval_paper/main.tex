@@ -1,0 +1,190 @@
+\documentclass{article}
+
+% Resolve the shared preamble and the unmodified ICML style while compiling
+% from this paper's directory (the root Makefile does this automatically).
+\makeatletter
+\def\input@path{{../template/}{../template/icml2026/}}
+\makeatother
+\input{../template/preamble}
+
+\icmltitlerunning{A Descriptive Title for Evaluation Research}
+
+\begin{document}
+
+\twocolumn[
+  \icmltitle{A Descriptive Title for Evaluation Research}
+
+  % Author details remain hidden in review mode. Replace these placeholders
+  % only when preparing the camera-ready version.
+  \begin{icmlauthorlist}
+    \icmlauthor{Anonymous Author(s)}{anon}
+  \end{icmlauthorlist}
+  \icmlaffiliation{anon}{Anonymous Institution}
+  \icmlcorrespondingauthor{Anonymous Author}{anonymous@example.com}
+
+  \icmlkeywords{evaluation, benchmarking, language models, validity}
+
+  \vskip 0.3in
+]
+
+\printAffiliationsAndNotice{}
+
+\begin{abstract}
+  \placeholder{Write one self-contained paragraph of four to six sentences.
+  State the evaluation gap, the proposed methodology or benchmark, the
+  validation design, the principal empirical finding, and the intended scope.
+  Do not include citations, undefined acronyms, or unsupported numbers.}
+\end{abstract}
+
+\section{Introduction}
+\label{sec:introduction}
+
+\placeholder{Explain the decision that current evaluations fail to support and
+why the failure matters. Formulate the target construct and research question,
+summarize the evaluation contribution, and list two to four claims validated
+by evidence in \cref{sec:validation,sec:results}.}
+
+% Camera-ready only: if the work evaluates technology developed by an author's
+% employer or has another substantive financial conflict, place the required
+% "Conflict of Interest Disclosure" paragraph at the end of this section.
+
+\section{Related Work}
+\label{sec:related}
+
+\placeholder{Organize prior benchmarks and evaluation methods by construct,
+measurement process, and validity evidence. Cover human evaluation, automated
+metrics, model-based judges, dynamic or contamination-resistant evaluation,
+and statistical aggregation as relevant. State precisely what decision the
+new evaluation enables.}
+
+\section{Evaluation Goal and Desiderata}
+\label{sec:goal}
+
+\placeholder{Define the target construct, population of systems and inputs,
+unit of analysis, intended use, and non-goals. Translate validity, reliability,
+discriminative power, robustness, efficiency, and reproducibility into
+testable criteria before presenting the method.}
+
+\section{Evaluation Method}
+\label{sec:method}
+
+\placeholder{Specify task generation or sampling, response collection,
+scoring, aggregation, missing-data handling, and uncertainty estimation.
+Separate choices required by the construct from conveniences of the
+implementation. State which conclusions each score does and does not support.}
+
+\subsection{Data and Task Construction}
+
+\placeholder{Document source populations, sampling frames, inclusion and
+exclusion rules, licenses, deduplication, contamination controls, annotation
+protocols, quality checks, and versioning. Report category distributions and
+known coverage gaps. Preserve a genuinely held-out test set.}
+
+\subsection{Scoring and Aggregation}
+
+\placeholder{Define scores mathematically, including normalization, weighting,
+ties, abstentions, invalid outputs, and multiple attempts. Justify aggregation
+against the intended use and report disaggregated results whenever an average
+can hide important failures.}
+
+\subsection{Human or Model-Based Judging}
+
+\placeholder{Specify rubrics, rater recruitment and training, blinding,
+randomization, adjudication, judge prompts and versions, position-bias
+controls, and agreement measures. Never treat agreement with a model judge as
+ground truth without independent validation.}
+
+\section{Validation}
+\label{sec:validation}
+
+\placeholder{Present evidence for construct, content, criterion, and
+convergent validity as applicable. Measure test--retest and inter-rater
+reliability, sensitivity to meaningful system differences, and invariance to
+nuisance transformations. Predefine acceptable thresholds where possible.}
+
+\subsection{Contamination and Gaming Resistance}
+
+\placeholder{Audit overlap with training-accessible sources using more than
+exact string matching. Test prompt leakage, memorization, evaluator
+overfitting, judge manipulation, and benchmark-specific optimization. Explain
+the refresh or secure-evaluation plan.}
+
+\subsection{Statistical Protocol}
+
+\placeholder{Define the sampling unit, estimand, confidence interval or test,
+multiple-comparison treatment, power or precision target, and ranking
+stability analysis. Use paired comparisons when systems answer the same
+items, and avoid treating items as independent when clusters exist.}
+
+\section{Empirical Study}
+\label{sec:results}
+
+\placeholder{Select systems to span relevant capabilities, architectures,
+access levels, and release dates without turning the paper into a leaderboard.
+Fix model versions, prompts, sampling settings, and budgets. Use the study to
+test the evaluation method's claims rather than to market individual systems.}
+
+\subsection{Main Findings}
+
+\placeholder{Report effect sizes and uncertainty, not ranks alone. Include
+per-category outcomes, ties, invalid-response rates, and sensitivity to
+reasonable scoring choices. Distinguish confirmatory findings from
+post-hoc observations.}
+
+\subsection{Robustness and Ablations}
+
+\placeholder{Vary prompts, judges, task subsets, aggregation rules, and random
+seeds. Remove each design component and test whether conclusions survive
+plausible nuisance changes. Analyze disagreement cases rather than discarding
+them.}
+
+\section{Limitations}
+\label{sec:limitations}
+
+\placeholder{Describe construct undercoverage, cultural or language limits,
+annotator and judge biases, inaccessible model details, contamination
+uncertainty, temporal staleness, and ranking instability. State how these
+limitations restrict intended use and comparisons.}
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+\placeholder{Restate the evaluation decision the method can support and
+summarize its validated properties. Avoid general claims about model quality
+beyond the measured construct. Name the most important missing validity test
+or extension.}
+
+% Acknowledgements must not appear in the anonymous review submission.
+% \section*{Acknowledgements}
+
+\section*{Impact Statement}
+
+\placeholder{Discuss how the evaluation could steer model development,
+deployment, or public rankings. Address benchmark gaming, premature
+deployment, disparate representation, annotator welfare, exposure of harmful
+content, privacy and licensing, dual use, and the environmental cost of broad
+evaluation. Describe access and reporting safeguards.}
+
+\bibliography{references}
+\bibliographystyle{../template/icml2026/icml2026}
+
+\clearpage
+\appendix
+\onecolumn
+
+\section{Datasheets and Reproducibility Details}
+\label{app:datasheet}
+
+\placeholder{Provide the complete task schema, annotation handbook, judge
+prompts, model and API versions, generation parameters, randomization,
+exclusions, score implementation, and dataset documentation. Include stable
+hashes or release identifiers where possible.}
+
+\section{Additional Validity Evidence}
+\label{app:additional}
+
+\placeholder{Report full agreement matrices, per-item or per-category
+analyses, robustness checks, power analyses, qualitative disagreements
+selected by a declared procedure, and known benchmark failures.}
+
+\end{document}

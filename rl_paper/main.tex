@@ -1,0 +1,189 @@
+\documentclass{article}
+
+% Resolve the shared preamble and the unmodified ICML style while compiling
+% from this paper's directory (the root Makefile does this automatically).
+\makeatletter
+\def\input@path{{../template/}{../template/icml2026/}}
+\makeatother
+\input{../template/preamble}
+
+\icmltitlerunning{A Descriptive Title for Reinforcement Learning Research}
+
+\begin{document}
+
+\twocolumn[
+  \icmltitle{A Descriptive Title for Reinforcement Learning Research}
+
+  % Author details remain hidden in review mode. Replace these placeholders
+  % only when preparing the camera-ready version.
+  \begin{icmlauthorlist}
+    \icmlauthor{Anonymous Author(s)}{anon}
+  \end{icmlauthorlist}
+  \icmlaffiliation{anon}{Anonymous Institution}
+  \icmlcorrespondingauthor{Anonymous Author}{anonymous@example.com}
+
+  \icmlkeywords{reinforcement learning, post-training, language models}
+
+  \vskip 0.3in
+]
+
+\printAffiliationsAndNotice{}
+
+\begin{abstract}
+  \placeholder{Write one self-contained paragraph of four to six sentences.
+  State the decision problem, the algorithmic idea, the evaluation regime, the
+  principal measured result, and the boundary of the claim. Do not include
+  citations, undefined acronyms, or unsupported numbers.}
+\end{abstract}
+
+\section{Introduction}
+\label{sec:introduction}
+
+\placeholder{Identify a concrete failure of current reinforcement-learning
+methods and formulate the research question. Explain the proposed idea at a
+high level, then list two to four contributions that are independently
+testable and supported by results in \cref{sec:experiments}.}
+
+% Camera-ready only: if the work evaluates technology developed by an author's
+% employer or has another substantive financial conflict, place the required
+% "Conflict of Interest Disclosure" paragraph at the end of this section.
+
+\section{Related Work}
+\label{sec:related}
+
+\placeholder{Synthesize the closest work on policy optimization, value or
+advantage estimation, preference and verifiable rewards, exploration,
+off-policy learning, and language-model post-training as applicable. Compare
+assumptions, feedback requirements, and compute rather than relying on broad
+claims of novelty. Cite only verified sources.}
+
+\section{Formal Setting}
+\label{sec:setting}
+
+\placeholder{Define states or contexts, actions or generated sequences,
+transition assumptions, rewards, policy class, horizon, and optimization
+criterion. State what feedback is observed, how it is generated, and whether
+the setting is online, offline, on-policy, or off-policy.}
+
+\section{Method}
+\label{sec:method}
+
+\placeholder{Specify the algorithm so that another group can implement it.
+Define rollout collection, estimators, normalization and clipping, update
+frequency, replay or filtering, stopping conditions, and all loss terms.
+Separate the core contribution from stabilizing engineering choices.}
+
+\subsection{Learning Objective}
+
+\placeholder{Write the exact optimization objective and define every
+expectation, ratio, baseline, coefficient, and gradient path. Explain the
+relationship to a standard reference algorithm and identify the expected
+source of improvement.}
+
+\subsection{Feedback and Credit Assignment}
+
+\placeholder{Describe the source, granularity, calibration, and possible
+leakage of rewards. If using learned judges or reward models, document their
+training data, held-out validation, uncertainty, and susceptibility to reward
+hacking. Explain how credit is assigned across actions or tokens.}
+
+\subsection{Algorithm and Complexity}
+
+\placeholder{Provide pseudocode and a complexity analysis covering model
+updates, generated samples, wall-clock-critical operations, and memory.
+Identify any synchronization or systems assumptions that affect scaling.}
+
+\section{Analysis}
+\label{sec:analysis}
+
+\placeholder{State theoretical results only when their assumptions illuminate
+the practical method. Otherwise provide a focused empirical or conceptual
+analysis of bias, variance, stability, and fixed points. Distinguish proved
+properties from hypotheses to be tested.}
+
+\section{Experiments}
+\label{sec:experiments}
+
+\placeholder{Predefine hypotheses and use environments or task suites that can
+falsify them. Match rollout, training-token, model, and hyperparameter-search
+budgets across baselines. Specify independent seeds and confidence intervals,
+and report both learning efficiency and final performance.}
+
+\subsection{Experimental Setup}
+
+\placeholder{Document model checkpoints, environments or prompts, reward
+implementations, train--test separation, baselines, evaluator versions,
+decoding, optimizer settings, hardware, software, and total compute. Explain
+checkpoint selection without consulting the test set.}
+
+\subsection{Main Results}
+
+\placeholder{Report learning curves as well as aggregate endpoint metrics.
+State the unit of replication and uncertainty calculation. Include a strong
+non-RL or supervised baseline where it helps identify whether interaction is
+responsible for the gain.}
+
+\subsection{Ablations and Diagnostics}
+
+\placeholder{Remove each algorithmic component, vary sensitive coefficients,
+and compare alternate estimators under matched samples. Track entropy,
+divergence from the reference policy, reward-model disagreement, gradient
+statistics, and other diagnostics needed to explain stability.}
+
+\subsection{Generalization and Safety}
+
+\placeholder{Test held-out tasks, reward perturbations, evaluator changes,
+longer horizons, and scale transfer. Measure reward hacking, specification
+gaming, capability regressions, unsafe behavior, and loss of response
+diversity where relevant. Include representative failures selected by a
+documented procedure.}
+
+\section{Limitations}
+\label{sec:limitations}
+
+\placeholder{Describe dependence on reward quality, simulators, judge models,
+proprietary checkpoints, or large compute. State unresolved confounds and
+conditions under which optimization may amplify undesirable behavior. Narrow
+all conclusions accordingly.}
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+\placeholder{Answer the research question using the demonstrated comparisons.
+Summarize the algorithmic and empirical findings without introducing new
+claims, and identify the most important unresolved test.}
+
+% Acknowledgements must not appear in the anonymous review submission.
+% \section*{Acknowledgements}
+
+\section*{Impact Statement}
+
+\placeholder{Discuss benefits and risks from stronger reward optimization,
+including reward hacking, scalable oversight failures, misuse, behavioral
+homogenization, annotator exposure, data provenance, and compute costs.
+Describe monitoring or release mitigations and the remaining affected
+stakeholders.}
+
+\bibliography{references}
+\bibliographystyle{../template/icml2026/icml2026}
+
+\clearpage
+\appendix
+\onecolumn
+
+\section{Algorithmic and Reproducibility Details}
+\label{app:algorithm}
+
+\placeholder{Provide full pseudocode, derivations, reward prompts or programs,
+hyperparameter grids, per-seed configurations, compute accounting, and
+implementation details. Keep information necessary to judge the main claims
+in the eight-page main body.}
+
+\section{Additional Results and Failures}
+\label{app:additional}
+
+\placeholder{Include complete learning curves, per-task measurements,
+sensitivity analyses, qualitative trajectories selected by a stated rule, and
+failure cases. Clearly label exploratory analyses that were not prespecified.}
+
+\end{document}

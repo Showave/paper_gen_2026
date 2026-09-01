@@ -1,0 +1,177 @@
+\documentclass{article}
+
+% Resolve the shared preamble and the unmodified ICML style while compiling
+% from this paper's directory (the root Makefile does this automatically).
+\makeatletter
+\def\input@path{{../template/}{../template/icml2026/}}
+\makeatother
+\input{../template/preamble}
+
+\icmltitlerunning{A Descriptive Title for Supervised Fine-Tuning Research}
+
+\begin{document}
+
+\twocolumn[
+  \icmltitle{A Descriptive Title for Supervised Fine-Tuning Research}
+
+  % Author details remain hidden in review mode. Replace these placeholders
+  % only when preparing the camera-ready version.
+  \begin{icmlauthorlist}
+    \icmlauthor{Anonymous Author(s)}{anon}
+  \end{icmlauthorlist}
+  \icmlaffiliation{anon}{Anonymous Institution}
+  \icmlcorrespondingauthor{Anonymous Author}{anonymous@example.com}
+
+  \icmlkeywords{supervised fine-tuning, language models, alignment}
+
+  \vskip 0.3in
+]
+
+\printAffiliationsAndNotice{}
+
+\begin{abstract}
+  \placeholder{Write one self-contained paragraph of four to six sentences.
+  State the problem, the technical idea, the evaluation setting, the principal
+  measured result, and the scope of the conclusion. Do not include citations,
+  undefined acronyms, or claims that are not supported in the paper.}
+\end{abstract}
+
+\section{Introduction}
+\label{sec:introduction}
+
+\placeholder{Define the supervised fine-tuning problem and explain why existing
+methods are insufficient. State a falsifiable research question, summarize the
+method without relying on jargon, and list two to four concrete contributions.
+Every contribution should map to a result in \cref{sec:experiments}.}
+
+% Camera-ready only: if the work evaluates technology developed by an author's
+% employer or has another substantive financial conflict, place the required
+% "Conflict of Interest Disclosure" paragraph at the end of this section.
+
+\section{Related Work}
+\label{sec:related}
+
+\placeholder{Organize prior work by technical distinction rather than by paper.
+Cover data curation, instruction tuning, loss design, parameter-efficient
+adaptation, and post-training evaluation as relevant. Contrast the proposed
+method precisely and cite only sources whose bibliographic records were
+verified. Preserve anonymity when discussing the authors' prior work.}
+
+\section{Problem Setting}
+\label{sec:setting}
+
+\placeholder{Define the model, supervised data distribution, objective,
+notation, and deployment assumptions. Distinguish observable training signals
+from quantities available only for analysis. State the target behavior and
+failure modes before introducing the method.}
+
+\section{Method}
+\label{sec:method}
+
+\placeholder{Describe the full training procedure at implementation-level
+precision. Give the objective and sampling process, motivate each design
+choice, and identify computational or statistical assumptions. Include
+pseudocode when prose and equations do not uniquely specify the algorithm.}
+
+\subsection{Training Objective}
+
+\placeholder{Present the objective with all terms, normalizations, masks, and
+weights defined. Explain how it differs from standard token-level
+cross-entropy and what mechanism is hypothesized to produce an improvement.}
+
+\subsection{Data Construction}
+
+\placeholder{Specify data sources, filtering, deduplication, mixture weights,
+quality controls, and contamination checks. Record licensing, privacy, and
+annotator considerations needed for reproducibility and the impact statement.}
+
+\subsection{Implementation}
+
+\placeholder{Report model initialization, optimizer, schedule, effective batch
+size, sequence length, precision, stopping rule, random seeds, and total
+compute. Separate tuned hyperparameters from fixed choices and describe the
+selection budget fairly across methods.}
+
+\section{Experiments}
+\label{sec:experiments}
+
+\placeholder{Design experiments before filling in results. Define hypotheses,
+datasets, splits, baselines, metrics, uncertainty estimates, and the statistical
+comparison protocol. Include strong simple baselines and match data, compute,
+and tuning budgets wherever the scientific question requires it.}
+
+\subsection{Experimental Setup}
+
+\placeholder{Give enough detail to independently reproduce every table.
+Document model and data versions, prompt templates, decoding settings,
+evaluation code, judge models if any, hardware, and software dependencies.
+Explicitly test train--test contamination and report exclusions.}
+
+\subsection{Main Results}
+
+\placeholder{Use a compact table whose caption states the evaluation unit and
+whether higher or lower is better. Report uncertainty across independent
+training or sampling runs, not only the best run. Tie each interpretation to a
+predeclared comparison and avoid claiming practical significance from a small
+numeric difference alone.}
+
+\subsection{Ablations and Mechanistic Analysis}
+
+\placeholder{Isolate each proposed component, test plausible alternative
+explanations, and measure the mechanism asserted in \cref{sec:method}. Include
+negative results that delimit when the method is useful.}
+
+\subsection{Robustness and Generalization}
+
+\placeholder{Evaluate distribution shifts, scale sensitivity, data-efficiency,
+and behavior on capabilities not directly optimized. Report safety regressions,
+format failures, and subgroup effects where applicable.}
+
+\section{Limitations}
+\label{sec:limitations}
+
+\placeholder{State unresolved confounds, unsupported scales or domains,
+evaluation blind spots, dependence on proprietary resources, and likely
+failure cases. Explain how each limitation constrains the paper's claims.}
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+\placeholder{Answer the research question using only demonstrated evidence.
+Summarize the technical and empirical contributions without introducing new
+claims, then identify the most consequential next experiment.}
+
+% Acknowledgements must not appear in the anonymous review submission.
+% \section*{Acknowledgements}
+
+\section*{Impact Statement}
+
+\placeholder{Discuss foreseeable benefits and harms specific to supervised
+fine-tuning, including misuse, harmful-content amplification, privacy leakage,
+labor and data provenance, representational harms, and compute costs. Describe
+mitigations and who bears residual risk; avoid a generic boilerplate statement
+when the method changes model behavior.}
+
+\bibliography{references}
+\bibliographystyle{../template/icml2026/icml2026}
+
+\clearpage
+\appendix
+\onecolumn
+
+\section{Reproducibility Details}
+\label{app:reproducibility}
+
+\placeholder{Place complete configurations, prompts, data statistics,
+hyperparameter ranges, additional uncertainty analyses, and implementation
+details here. Material essential to evaluating the central claims must remain
+in the eight-page main body.}
+
+\section{Additional Results}
+\label{app:additional}
+
+\placeholder{Include prespecified secondary analyses, per-task results,
+qualitative examples selected by a stated procedure, and documented failure
+cases. Do not use the appendix to hide contradictory evidence.}
+
+\end{document}
