@@ -37,9 +37,10 @@ fixed item, prompt, response-generation, rater, and display-order
 distributions. A tie-aware hierarchical jury model drives one-step
 value-of-information acquisition, while an explicit random-exploration mixture
 and logged draw probabilities preserve design-based identification. A
-prequential augmented Hansen--Hurwitz estimator is exactly design-unbiased
-and supports fixed-budget martingale inference under stated positivity and
-boundedness conditions, even when the jury model is misspecified. This
+prequential augmented Hansen--Hurwitz estimator is conditionally unbiased
+under stated response-stability, positivity, and boundedness conditions and
+supports fixed-budget martingale inference even when the jury model is
+misspecified. This
 methods-first draft specifies simulation, human-audit, and temporal-shift tests;
 efficiency and decision-quality claims remain pending empirical execution.
 \end{abstract}
@@ -66,14 +67,13 @@ model judgments \cite{lee2026report,chen2026efficient}. Efficient inference for
 a static, independently selected calibration set is now well understood enough
 that ``apply AIPW to judge labels'' is not a new contribution.
 
-The unresolved issue studied here is sequential acquisition. Once human cells
-are chosen because previous human outcomes made them decision-relevant, the
-calibration set is not missing completely at random. A final inclusion
-probability cannot generally be reconstructed by multiplying probabilities
-along the realized outcome path. Ordinary post-hoc cross-fitting can also leak
-future selection information. Meanwhile, pure uncertainty or value-of-
-information acquisition can assign zero probability to parts of the target
-population, breaking design-based inference.
+The specific issue studied here is the combination of a tie-aware crossed
+human-preference frame, decision-loss acquisition, and sequential inference.
+Once human cells are chosen because previous outcomes made them
+decision-relevant, a final inclusion probability cannot generally be
+reconstructed by multiplying probabilities along the realized path. Ordinary
+post-hoc cross-fitting can leak future selection information, while pure
+value-of-information acquisition can assign zero probability to target cells.
 
 We ask: \emph{can adaptive human labeling reduce the cost of deciding whether
 $A$ is materially better than $B$ while retaining valid inference for an
@@ -85,7 +85,7 @@ explicit human-preference estimand?} We make four scoped contributions:
   acquisition, not as the definition of quality.
   \item We combine value-of-information acquisition with randomized exploration
   and a draw-level sequential augmented Hansen--Hurwitz estimator. We state
-  its exact design-unbiasedness and fixed-budget asymptotic conditions.
+  its response-and-design assumptions and fixed-budget asymptotic conditions.
   \item We pre-specify simulations, a sealed target-random human audit, shift tests,
   and ablations that separate interval validity from label efficiency.
 \end{itemize}
@@ -120,8 +120,9 @@ Binary sensitivity/specificity correction with propagated calibration
 uncertainty and pilot-based allocation across true-label classes is studied by
 \citet{lee2026report}. \citet{chen2026efficient} unify measurement-error and
 prediction-powered estimators for mean human outcomes, including pairwise win
-rates, under an independent MCAR calibration/test split. Neither selects
-evaluation cells using prior human outcomes. Classical unequal-probability
+rates, under independently selected calibration/test designs. Those estimators
+do not by themselves justify reusing an outcome-adaptively acquired
+calibration sample. Classical unequal-probability
 with-replacement estimation \cite{hansen1943sampling} and inference for
 adaptively collected data \cite{hadad2021confidence} supply the statistical
 foundation. Prediction-Powered Active Testing (PPAT) independently combines
@@ -142,6 +143,16 @@ changes the evaluation distribution and complicates longitudinal claims.
 Finally, non-transitive judge preferences can make a scalar rank
 baseline-dependent \cite{xu2025nontransitivity}. We therefore target one
 prespecified pairwise replacement decision, not a universal leaderboard.
+SCOPE conformally calibrates abstention for pairwise model judgments under
+exchangeability \cite{badshah2026scope}; its selective-judge risk is distinct
+from estimating a weighted human-panel preference with adaptive labels.
+Collaborative adaptive labeling also combines imperfect labels with selective
+expert escalation and dependence-aware estimation
+\cite{ruan2026collaborative}. FairJudge instead trains the judge itself to
+reduce selected biases \cite{yang2026fairjudge}. Our model jury remains
+fallible: identification comes from randomized human acquisition, and the
+claimed novelty is limited to the tie-aware crossed decision frame and
+decision-loss policy.
 
 \section{Evaluation Goal and Desiderata}
 \label{sec:goal}
@@ -204,6 +215,12 @@ subsequent batch, a working model is trained only on prior batches and used to
 compute decision value. Human acquisition mixes this adaptive policy with the
 target item distribution. A sealed, uniformly sampled human audit is never
 used for fitting or acquisition.
+The implementation refits once per predeclared batch. It approximates each
+hypothetical EVI update by one frozen Laplace/Newton step, forms one $p_t$ for
+the next batch, and logs that probability for every draw. Conditional on the
+batch-start history, draws are IID with replacement from this frozen law and
+the predictor is fixed; draw-level \cref{eq:psi} remains valid because both are
+predictable.
 
 \subsection{Data and Task Construction}
 
@@ -228,9 +245,10 @@ Rater and order assignments follow the target masses in
 \cref{eq:target-mass}, or their logged adaptive counterparts. Availability is
 resolved before content is shown. Every assignment attempt is logged; a skip
 after viewing content is a separate outcome, never silently reassigned. The
-primary preference estimand then requires a stated response assumption or
-inverse-response correction, and sensitivity to outcome-dependent skipping is
-mandatory.
+formal estimator below applies only to complete ratings. For nonresponse we
+report worst-case bounds and a separately labeled inverse-response analysis
+under a stated missing-at-random model; outcome-dependent skipping is not
+repaired by weighting alone.
 
 \subsection{Scoring and Aggregation}
 
@@ -244,6 +262,16 @@ probability, jury feature, outcome, and model random seed. This joint law makes
 rater and order assignment explicit. If operational constraints require a
 nested assignment, the product of logged item, cell, rater, and order
 probabilities must equal $p_t(X_t)$.
+The design claim additionally requires stability of the full response law:
+\begin{equation}
+P(Y_t=y\mid\mathcal F_{t-1},X_t=x)=p_y(x),
+\quad y\in\{-1,0,1\},
+\label{eq:response-stability}
+\end{equation}
+where $\mu_x=\sum_yyp_y(x)$.
+Learning, fatigue, memory, or rubric drift can violate
+\cref{eq:response-stability}. Randomized task order, training before study
+labels, and temporal diagnostics reduce but do not prove this assumption.
 
 Let $m_{t-1}(x)\in[-1,1]$ be a bounded prediction of $Y_x$ trained only on
 prior rounds and frozen before draw $t$, and define
@@ -267,6 +295,19 @@ the probability that a unit is ever included; substituting a realized-path
 inclusion probability is generally invalid under outcome adaptation. Replacing
 $Y_x$ in \cref{eq:psi} by $\mathbf{1}\{Y_x=0\}$ gives the tie-rate estimator,
 with its covariance with $\widehat\Delta_T$ reported.
+
+The fixed $T$ counts assignment attempts, never replacement completions. Let
+$R_t$ indicate an observed rating and set the recorded $Y_t^{\rm obs}=0$ when
+$R_t=0$. The primary report replaces a missing outcome by $-1$ and $+1$ in
+\begin{align}
+\psi_t^\pm
+&=\bar m_{t-1}+\frac{\pi(X_t)}{p_t(X_t)}
+\left[R_t\{Y_t^{\rm obs}-m_{t-1}(X_t)\}\right.\nonumber\\
+&\qquad\left.{}+(1-R_t)\{\pm1-m_{t-1}(X_t)\}\right].
+\end{align}
+We apply one-sided martingale bounds to the two endpoint averages. A
+separate MAR analysis includes the logged response propensity; it is not the
+primary point estimate.
 
 \subsection{Human or Model-Based Judging}
 
@@ -301,7 +342,7 @@ descriptive unless randomized interventions identify them: removing a length
 association can remove genuine quality as well as bias.
 
 \paragraph{Decision-targeted acquisition.}
-Let terminal rule $a_T(\mathcal F)$ be the confidence-set rule in
+Let $a(\mathcal F)$ apply the confidence-set rule in
 \cref{sec:statistical-protocol}. The protocol fixes the normalized loss matrix
 below, with rows $(A,B,E,\mathrm{NE})$ and true states $(A,B,E)$:
 \begin{equation}
@@ -311,8 +352,9 @@ L=\begin{pmatrix}
 \label{eq:loss}
 \end{equation}
 Stakeholder-specific alternatives are sensitivity analyses, not post-hoc
-replacements. The working posterior defines
-$R(\mathcal F)=\mathbb E[L\{a_T(\mathcal F),S(\Delta_F)\}\mid\mathcal F]$.
+replacements. At an intermediate history, the working posterior defines the
+risk if labeling stopped now,
+$R(\mathcal F)=\mathbb E[L\{a(\mathcal F),S(\Delta_F)\}\mid\mathcal F]$.
 For target unit $x$ with annotation cost $k_x$, one-step expected value of
 information is
 \begin{align}
@@ -338,9 +380,10 @@ optimality nor a general regret bound.
 \section{Validation}
 \label{sec:validation}
 
-\begin{proposition}[Design unbiasedness]
+\begin{proposition}[Sequential unbiasedness]
 \label{prop:unbiased}
-Assume the finite frame and fixed budget $T$ are prespecified; $p_t$ and
+Assume the finite frame and fixed budget $T$ are prespecified;
+\cref{eq:response-stability} holds; outcomes are complete; $p_t$ and
 $m_{t-1}$ are measurable before outcome $t$; sampling is with replacement from
 the logged $p_t$; and \cref{eq:explore} holds. Then
 \begin{equation}
@@ -383,8 +426,8 @@ Then
 This is the standard martingale central-limit route
 \cite{hall1980martingale}, specialized to predictable adaptive sampling.
 Because $Y,m\in[-1,1]$ and $\pi/p\le1/\epsilon$, increments are bounded when
-$\epsilon$ is fixed. Under an additional squared-increment law of large
-numbers,
+$\epsilon$ is fixed. This boundedness gives the required squared-increment
+martingale law of large numbers, so
 \begin{equation}
 \widehat V_T=\frac1{T-1}\sum_{t=1}^T
 (\psi_t-\widehat\Delta_T)^2,\qquad
@@ -463,12 +506,18 @@ declared product domains, two validated prompt forms per item, and paired
 response draws from two fixed open model revisions. Four model-judge families
 score all cells in both orders. A 200-rating uniform human pilot precedes 800
 sequential ratings; a separate 200-rating target-random audit sampled from
-\cref{eq:target-mass} remains sealed. All counts and fixed budget $T=1000$ are
-set by simulation before the first human outcome. A frozen panel of 40 raters
-is recruited against a written definition, assigned target weights, trained on
-a fixed handbook, screened with non-study examples, and capped at 35 study
-ratings in randomized task order. Identifiers are hidden, both display orders
-are balanced in expectation, and every skip or nonresponse is retained.
+\cref{eq:target-mass} remains sealed. All counts and fixed budget $T=1000$
+assignment attempts are set by simulation before the first human outcome; a
+missing response is not replaced. A frozen panel of 80 raters
+is recruited against a written definition, assigned
+target weights, trained on a fixed handbook, and screened with non-study
+examples. The expected load is 12.5 primary attempts per rater; realized load,
+withdrawals, and response are reported. A binding operational quota would
+destroy per-draw positivity for that rater and therefore halts the
+point-identified primary analysis rather than triggering silent reassignment.
+The report then gives only the predeclared partial-identification bounds.
+Identifiers are hidden, both display orders are balanced in expectation, and
+every skip or nonresponse is retained.
 
 \subsection{Main Findings}
 
@@ -515,6 +564,8 @@ Model checks use held-out log score, multiclass Brier score, tie calibration,
 swap symmetry, posterior predictive checks, and residuals by domain, order,
 length, family, judge, and item. Disagreement cases are sampled by a
 prespecified stratified rule rather than selected for narrative convenience.
+SCOPE-style bidirectional conformal abstention is included as a jury-only
+diagnostic and never substitutes for the human estimand.
 
 \section{Limitations}
 \label{sec:limitations}
@@ -523,7 +574,7 @@ The finite frame may omit important deployment requests, and a convenience
 rater panel supports inference only to that panel. Human preference is not
 factual correctness, safety, fairness, or welfare. The Davidson model can be
 misspecified, judge correlations can be more complex than modeled, and
-non-transitivity can make broader rankings incoherent. Design unbiasedness does
+non-transitivity can make broader rankings incoherent. Sequential unbiasedness does
 not guarantee useful finite-sample intervals when exploration probabilities
 are small.
 
@@ -585,6 +636,14 @@ before outcome reveal, outcome-model revision, EVI values, stopping
 rule, and exclusion reason. Probability normalization and positivity are
 checked online; a failed check halts collection.
 
+The repository runner
+\texttt{python3 scripts/run\_experiment\_pipeline.py
+--plan experiments/eval\_pipeline.json} enumerates frame acquisition,
+deduplication and response generation, jury-model construction, simulation and
+adaptive acquisition, and sealed evaluation. The committed JSON is a manifest
+validator and stage contract; site-local commands are required for execution,
+after which output hashes and costs are recorded.
+
 \subsection{Proof of \cref{prop:unbiased}}
 Conditioning on pre-outcome history,
 \begin{align}
@@ -597,6 +656,17 @@ Conditioning on pre-outcome history,
 \end{align}
 Averaging over fixed $T$ proves the second statement. Neither step requires a
 correct jury model.
+
+\subsection{Consistency of the Variance Estimate}
+Let $D_{Tt}=\psi_{Tt}-\Delta_F$. Fixed $\epsilon>0$ makes $D_{Tt}$ uniformly
+bounded. Hence
+$D_{Tt}^2-\mathbb E[D_{Tt}^2\mid\mathcal F_{t-1}]$ is a bounded martingale
+difference and its average converges to zero in probability. The conditional
+variance assumption in \cref{thm:clt} then yields
+$T^{-1}\sum_tD_{Tt}^2\to_p V$; replacing $\Delta_F$ by
+$\widehat\Delta_T$ changes the centered second moment by $o_p(1)$. Therefore
+$\widehat V_T\to_pV$ and Slutsky's theorem justifies the stated studentized
+interval.
 
 \subsection{Human Audit}
 The audit draws complete $(i,c,h,o)$ units from $\pi$ before adaptation and is
