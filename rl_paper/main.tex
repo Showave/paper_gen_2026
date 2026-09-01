@@ -35,9 +35,9 @@ consumed samples depend on the current policy. We study a narrower alternative:
 at each frozen policy, combine fresh on-policy trajectories with newly
 generated, single-use trajectories from a known stale actor and an adaptive
 prompt distribution. A current-policy mixture component bounds the exact joint
-importance ratio, and frozen reward and length models supply an
-augmented control variate; under explicit independence, support, and decoding
-assumptions, the resulting one-update gradient estimator is conditionally
+importance ratio, and frozen reward and length models supply an augmented
+control variate. Under explicit sampling and decoding assumptions, the
+resulting one-update gradient estimator is conditionally
 unbiased. A Lagrange multiplier constrains expected response length instead of
 silently normalizing the objective per token. This
 methods-first draft gives the estimator audit and matched-budget training
