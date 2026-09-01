@@ -38,8 +38,8 @@ prompt distribution. A current-policy mixture component bounds the exact joint
 importance ratio, and frozen reward and length models supply an
 augmented control variate; under explicit independence, support, and decoding
 assumptions, the resulting one-update gradient estimator is conditionally
-unbiased. A Lagrangian expected-response-length constraint makes length part of the
-declared objective rather than an implicit per-token normalization. This
+unbiased. A Lagrangian constraint on expected response length makes length part
+of the declared objective rather than an implicit per-token normalization. This
 methods-first draft gives the estimator audit and matched-budget training
 protocol, but reports no performance gain before those experiments are run.
 \end{abstract}
@@ -238,12 +238,12 @@ the method critic-free.
 
 $h_t^R,h_t^C,b_t$, and $q_t$ are trained only from data available before iteration
 $t$, then frozen. A convenient adaptive proposal is
-\begin{equation}
-q_t(x)=\epsilon d(x)+(1-\epsilon)\overline q_t(x),\qquad
-\overline q_t(x)=
-\frac{d(x)\sqrt{\widehat v_t(x)/\widehat c_t(x)}}
-{\sum_{x'}d(x')\sqrt{\widehat v_t(x')/\widehat c_t(x')}},
-\end{equation}
+\begin{align}
+a_t(x)&=d(x)\sqrt{\widehat v_t(x)/\widehat c_t(x)},&
+Z_t^q&=\sum_{x'}a_t(x'),\\
+\overline q_t(x)&=a_t(x)/Z_t^q,&
+q_t(x)&=\epsilon d(x)+(1-\epsilon)\overline q_t(x).
+\end{align}
 where $\widehat c_t(x)>0$ predicts generation cost and $\widehat v_t(x)$ uses
 prior-iteration random projections to predict stale-source residual-gradient
 second moment. Because $q$ also changes the mixture weight and its covariance

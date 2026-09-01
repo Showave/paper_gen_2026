@@ -315,15 +315,17 @@ replacements. The working posterior defines
 $R(\mathcal F)=\mathbb E[L\{a_T(\mathcal F),S(\Delta_F)\}\mid\mathcal F]$.
 For target unit $x$ with annotation cost $k_x$, one-step expected value of
 information is
-\begin{equation}
-\operatorname{EVI}_{t-1}(x)=R(\mathcal F_{t-1})-
+\begin{align}
+\operatorname{EVI}_{t-1}(x)
+&=R(\mathcal F_{t-1})\nonumber\\
+&\quad-
 \sum_{y\in\{-1,0,1\}}\widehat p_{t-1}(y\mid x)
 R\{\mathcal F_{t-1}\cup(x,y)\}.
-\end{equation}
+\end{align}
 Using predeclared temperature $\lambda_E$, define
 \begin{align}
-r_t(x)&=\frac{\exp\{\lambda_E\operatorname{EVI}_{t-1}(x)/k_x\}}
-{\sum_{x'}\exp\{\lambda_E\operatorname{EVI}_{t-1}(x')/k_{x'}\}},\\
+g_t(x)&=\lambda_E\operatorname{EVI}_{t-1}(x)/k_x,\\
+r_t(x)&=\exp\{g_t(x)\}/\sum_{x'}\exp\{g_t(x')\},\\
 p_t(x)&=\epsilon\pi(x)+(1-\epsilon)r_t(x),
 \qquad \epsilon>0.
 \label{eq:explore}
