@@ -13,7 +13,8 @@ STYLE_FILES := \
 all: $(PDFS)
 
 %/main.pdf: %/main.tex %/references.bib $(STYLE_FILES)
-	cd $* && latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex
+	cd $* && TEXINPUTS="../template/icml2026//:" \
+		latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex
 
 clean:
 	@for paper in $(PAPERS); do \
