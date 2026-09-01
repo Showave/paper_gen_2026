@@ -472,28 +472,29 @@ are balanced in expectation, and every skip or nonresponse is retained.
 
 \subsection{Main Findings}
 
-\begin{table*}[t]
+\begin{table}[H]
 \caption{Primary finite-frame decision results. Dashes indicate that human
 collection has not been run. The table will report tie rate and interval, not a
 leaderboard rank.}
 \label{tab:main}
 \centering
 \begin{small}
-\begin{tabular}{lccccc}
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{lcccc}
 \toprule
-Design & Human labels & $\widehat\Delta_F$ & 95\% interval
-& Tie rate & Decision \\
+Design & $n_H$ & $\widehat\Delta_F$ [95\% CI]
+& Tie & Action \\
 \midrule
-Target-random human-only & -- & -- & -- & -- & pending \\
-Static independent calibration & -- & -- & -- & -- & pending \\
-PPAT-style residual acquisition & -- & -- & -- & -- & pending \\
-EVI, unaugmented & -- & -- & -- & -- & pending \\
-EVI + sequential augmentation & -- & -- & -- & -- & pending \\
-Sealed uniform audit & -- & -- & -- & -- & pending \\
+Target random & -- & -- & -- & pending \\
+Static calibration & -- & -- & -- & pending \\
+PPAT-style & -- & -- & -- & pending \\
+EVI & -- & -- & -- & pending \\
+EVI + SAHH & -- & -- & -- & pending \\
+Sealed audit & -- & -- & -- & pending \\
 \bottomrule
 \end{tabular}
 \end{small}
-\end{table*}
+\end{table}
 
 Efficiency is claimed only if interval validity is retained in simulation and
 an interval for the adaptive-minus-audit difference lies within a predeclared
