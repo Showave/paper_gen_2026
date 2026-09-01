@@ -7,16 +7,19 @@ STYLE_FILES := \
 	template/icml2026/icml2026.bst \
 	template/icml2026/icml2026.sty \
 	template/preamble.tex
+BUILD := scripts/latex_build.sh
 
-.PHONY: all clean
+.PHONY: all clean check-deps
 
 all: $(PDFS)
 
-%/main.pdf: %/main.tex %/references.bib $(STYLE_FILES)
-	cd $* && TEXINPUTS="../template/icml2026//:" \
-		latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex
+%/main.pdf: %/main.tex %/references.bib $(STYLE_FILES) $(BUILD)
+	$(BUILD) $*
 
 clean:
 	@for paper in $(PAPERS); do \
-		(cd $$paper && latexmk -C main.tex); \
+		$(BUILD) $$paper clean; \
 	done
+
+check-deps:
+	@$(BUILD) sft_paper deps

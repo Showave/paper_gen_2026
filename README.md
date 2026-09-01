@@ -15,11 +15,32 @@ experiments are executed; the drafts are not submission-ready results papers.
 ## Build
 
 The templates use the unmodified official ICML 2026 LaTeX style in
-`template/icml2026`. A TeX Live installation with `latexmk` is required.
+`template/icml2026`. You need a TeX distribution with `pdflatex` (and
+ideally `latexmk`). `make` prepends `/Library/TeX/texbin` on macOS and
+falls back to `pdflatex` + `bibtex` if `latexmk` is not installed.
 
 ```bash
 make
 ```
+
+If `make` reports `latexmk: command not found` or `pdflatex not found`,
+install TeX and refresh `PATH`:
+
+```bash
+# macOS, full MacTeX (includes latexmk)
+brew install --cask mactex-no-gui
+eval "$(/usr/libexec/path_helper)"
+export PATH="/Library/TeX/texbin:$PATH"
+
+# macOS, if MacTeX is already installed but the terminal cannot see it
+export PATH="/Library/TeX/texbin:$PATH"
+
+# Ubuntu/Debian
+sudo apt-get install -y texlive-latex-extra texlive-fonts-recommended \
+  texlive-science latexmk
+```
+
+Then retry `make`. Check which engine was found with `make check-deps`.
 
 This builds:
 
