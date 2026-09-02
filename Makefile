@@ -9,7 +9,7 @@ STYLE_FILES := \
 	template/preamble.tex
 BUILD := scripts/latex_build.sh
 
-.PHONY: all clean check-deps
+.PHONY: all clean check-deps protocol-audits
 
 all: $(PDFS)
 
@@ -23,3 +23,14 @@ clean:
 
 check-deps:
 	@$(BUILD) sft_paper deps
+
+protocol-audits:
+	@for paper in $(PAPERS); do \
+		name=$${paper%_paper}; \
+		python3 scripts/run_experiment_pipeline.py \
+			--plan experiments/$${name}_pipeline.json \
+			--execute \
+			--commands experiments/synthetic_commands.json \
+			--work-dir artifacts/$${name}-synthetic-audit \
+			--force || exit 1; \
+	done

@@ -50,6 +50,16 @@ rl_paper/main.pdf
 eval_paper/main.pdf
 ```
 
+Run the CPU-only equation and protocol audits with:
+
+```bash
+make protocol-audits
+```
+
+The resulting ignored artifacts are synthetic software checks, not paper
+results. See `experiments/README.md` for the five-stage execution contract and
+the boundary between these audits and the planned model/human experiments.
+
 Build or clean one paper with:
 
 ```bash

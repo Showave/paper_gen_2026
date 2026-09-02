@@ -149,14 +149,30 @@ def execute(
         "schema_version": 1,
         "paper": plan["paper"],
         "plan_sha256": canonical_digest(plan),
+        "commands_sha256": canonical_digest(commands),
+        "runner_sha256": digest_file(Path(__file__).resolve()),
         "git_revision": git_revision(repo),
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "stages": {},
     }
     if manifest_path.exists() and not force:
         previous = load_json(manifest_path)
-        if previous.get("plan_sha256") != manifest["plan_sha256"]:
-            fail("existing run uses another plan; choose a new work directory or --force")
+        immutable_fields = (
+            "plan_sha256",
+            "commands_sha256",
+            "runner_sha256",
+            "git_revision",
+        )
+        changed = [
+            field
+            for field in immutable_fields
+            if previous.get(field) != manifest[field]
+        ]
+        if changed:
+            fail(
+                "existing run has different immutable inputs "
+                f"({', '.join(changed)}); choose a new work directory or --force"
+            )
         manifest = previous
 
     for stage in plan["stages"]:
