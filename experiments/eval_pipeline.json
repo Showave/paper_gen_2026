@@ -54,13 +54,14 @@
       "inputs": [
         "process/cell_manifest.json",
         "Pilot-only labels, priors, identifiability constraints, EVI temperature, and epsilon",
-        "Decision margin, normalized loss matrix, batch size, and annotation costs"
+        "Decision margin, normalized loss matrix, fixed Bayes-action tie order, frozen Newton/Laplace hypothetical update, batch size, and annotation costs"
       ],
       "artifacts": [
         "build/evaluation_model_manifest.json"
       ],
       "checks": [
         "Predictions and draw probabilities are frozen before each outcome batch",
+        "Working-posterior Bayes-risk EVI is computed before p_b and does not call the terminal confidence-set action",
         "The judge-cell overlap graph is connected and both orders are represented",
         "Every target unit satisfies the logged positivity floor"
       ],
@@ -103,7 +104,7 @@
       "objective": "Freeze analysis, open the audit once, and report intervals, decisions, missingness bounds, and shift diagnostics.",
       "inputs": [
         "train/acquisition_ledger.jsonl",
-        "Frozen confidence level, practical margin, covariance rule, and equivalence margin",
+        "Frozen z_0.975 constant, clipping to [-1,1], practical margin, covariance rule, and equivalence margin",
         "Sealed audit outcomes and temporal-wave bridge design"
       ],
       "artifacts": [

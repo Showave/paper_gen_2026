@@ -369,6 +369,12 @@ def run_sft(stage: str, work_dir: Path) -> dict[str, float]:
         return {"accelerator_seconds": 0.0}
 
     if stage == "build":
+        gate_family = 2 * 3 * 10
+        gate_delta = 0.05
+        gate_tau = 0.2
+        gate_n = math.ceil(
+            2.0 * math.log(gate_family / gate_delta) / gate_tau**2
+        )
         config = {
             "pack_capacity": 10,
             "max_packs": 2,
@@ -379,6 +385,19 @@ def run_sft(stage: str, work_dir: Path) -> dict[str, float]:
             "trials": 512,
             "seed": 20260902,
             "utility_noise_sd": 0.35,
+            "hoeffding_gate": {
+                "clipping_bound": 1.0,
+                "protected_slices": 2,
+                "scales": [1.0, 0.5, 0.25],
+                "maximum_rounds": 10,
+                "family_failure_probability": gate_delta,
+                "per_round_tolerance": gate_tau,
+                "samples_per_slice_round": gate_n,
+                "radius": math.sqrt(
+                    2.0 * math.log(gate_family / gate_delta) / gate_n
+                ),
+                "total_gate_examples": 2 * 10 * gate_n,
+            },
         }
         write_json(
             artifact,
@@ -431,10 +450,12 @@ def run_sft(stage: str, work_dir: Path) -> dict[str, float]:
             "rejected_updates": float(rejected),
         }
 
+    model = read_json(work_dir / "build" / ARTIFACTS["sft"]["build"])
     rows = read_jsonl(prior_artifact(work_dir, "sft", stage))
     equivalence = all(row["joint"] == row["profiled"] for row in rows)
     if not equivalence:
         fail("joint and exact profiled-cost selections diverged")
+    gate = model["config"]["hoeffding_gate"]
     summary = {
         "audit_type": "synthetic_design_audit",
         "empirical_evidence": False,
@@ -452,6 +473,20 @@ def run_sft(stage: str, work_dir: Path) -> dict[str, float]:
                 row["joint"]["utility"] > row["score_then_pack"]["utility"]
                 for row in rows
             ),
+            "hoeffding_radius_within_tolerance": gate["radius"]
+            <= gate["per_round_tolerance"],
+            "hoeffding_sample_size_is_minimal": gate["samples_per_slice_round"]
+            == math.ceil(
+                2.0
+                * gate["clipping_bound"] ** 2
+                * math.log(
+                    gate["protected_slices"]
+                    * len(gate["scales"])
+                    * gate["maximum_rounds"]
+                    / gate["family_failure_probability"]
+                )
+                / gate["per_round_tolerance"] ** 2
+            ),
         },
         "diagnostics": {
             "infeasible_additive_proposal_rate": mean(
@@ -466,6 +501,7 @@ def run_sft(stage: str, work_dir: Path) -> dict[str, float]:
             "joint_full_step_acceptance_rate": mean(
                 [row["joint"]["accepted_scale"] == 1.0 for row in rows]
             ),
+            "hoeffding_gate": gate,
         },
         "interpretation": (
             "Software/design check only; these values must not populate the paper's "
@@ -570,6 +606,25 @@ def rl_expectation(
     return direct + residual_p + residual_g
 
 
+def rl_bias_identity(
+    cells: list[dict[str, Any]],
+    weight_key: str,
+    clip: float | None = None,
+) -> float:
+    total = 0.0
+    for cell in cells:
+        implemented = cell[weight_key]
+        if clip is not None:
+            implemented = min(implemented, clip)
+        total += (
+            cell["mixture"]
+            * (implemented - cell["weight"])
+            * (cell["utility"] - cell["h"])
+            * cell["score"]
+        )
+    return total
+
+
 def rl_draw(rng: random.Random, cells: list[dict[str, Any]], law: str) -> dict[str, Any]:
     index = categorical_index(rng, [cell[law] for cell in cells])
     return cells[index]
@@ -667,6 +722,10 @@ def run_rl(stage: str, work_dir: Path) -> dict[str, float]:
         clipped_expectation = rl_expectation(
             cells, config["alpha"], "weight", config["fault_clip"]
         )
+        wrong_bias_identity = rl_bias_identity(cells, "wrong_weight")
+        clipped_bias_identity = rl_bias_identity(
+            cells, "weight", config["fault_clip"]
+        )
         if abs(exact_expectation - target) > 1e-12:
             fail("augmented-mixture expectation identity failed")
         write_json(
@@ -679,8 +738,13 @@ def run_rl(stage: str, work_dir: Path) -> dict[str, float]:
                 "exact": {
                     "target_gradient": target,
                     "augmented_expectation": exact_expectation,
+                    "mixture_weight_normalization": sum(
+                        cell["mixture"] * cell["weight"] for cell in cells
+                    ),
                     "wrong_prompt_ratio_expectation": wrong_expectation,
+                    "wrong_prompt_ratio_bias_identity": wrong_bias_identity,
                     "clipped_expectation": clipped_expectation,
+                    "clipped_bias_identity": clipped_bias_identity,
                     "max_weight": max(cell["weight"] for cell in cells),
                     "weight_bound": 1.0 / config["alpha"],
                 },
@@ -767,14 +831,30 @@ def run_rl(stage: str, work_dir: Path) -> dict[str, float]:
             < 1e-12,
             "weight_bound_holds": model["exact"]["max_weight"]
             <= model["exact"]["weight_bound"] + 1e-12,
+            "mixture_weight_normalizes": abs(
+                model["exact"]["mixture_weight_normalization"] - 1.0
+            )
+            < 1e-12,
             "omitting_prompt_ratio_changes_expectation": abs(
                 model["exact"]["wrong_prompt_ratio_expectation"] - target
             )
             > 1e-6,
+            "omitted_prompt_ratio_bias_identity_holds": abs(
+                (
+                    model["exact"]["wrong_prompt_ratio_expectation"] - target
+                )
+                - model["exact"]["wrong_prompt_ratio_bias_identity"]
+            )
+            < 1e-12,
             "clipping_changes_expectation": abs(
                 model["exact"]["clipped_expectation"] - target
             )
             > 1e-6,
+            "clipped_weight_bias_identity_holds": abs(
+                (model["exact"]["clipped_expectation"] - target)
+                - model["exact"]["clipped_bias_identity"]
+            )
+            < 1e-12,
             "target_in_exact_monte_carlo_interval": (
                 summaries["exact_augmented"]["monte_carlo_mean_95_interval"][0]
                 <= target

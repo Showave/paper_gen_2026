@@ -53,6 +53,7 @@
       "inputs": [
         "process/splits_manifest.json",
         "Adapter, optimizer, sketch, beam, gate, and cost-model configuration",
+        "Frozen C, clipping bound, scale grid, maximum rounds, family delta, cumulative budgets, per-round tolerances, sample counts, seeds, and disjoint gate blocks",
         "Compiler, kernel, precision, and hardware revisions"
       ],
       "artifacts": [
@@ -61,7 +62,8 @@
       "checks": [
         "Trainable parameter names and initial tensor hashes match across methods",
         "Small-pool beam plans are compared with an exact oracle",
-        "Independent-shortlist score margins and gate sample requirements are frozen"
+        "Independent-shortlist score margins and gate sample requirements are frozen",
+        "The Hoeffding radius, total gate examples, and worst-case gate reserve reproduce from the manifest"
       ],
       "costs": [
         "cpu_seconds",
@@ -83,7 +85,8 @@
       "checks": [
         "Scoring, solver, gate, rejection, CPU, and accelerator costs are charged",
         "Every accepted and rejected displacement has a state hash and gate record",
-        "Failed and preempted runs remain in the ledger"
+        "Failed and preempted runs remain in the ledger",
+        "No round starts unless scoring, candidate-update, and worst-case gate reserves fit the remaining budget"
       ],
       "costs": [
         "cpu_seconds",

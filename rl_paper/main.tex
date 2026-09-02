@@ -191,6 +191,10 @@ For fixed expected-response budget $\kappa$, we optimize the Lagrangian
 \quad \lambda\ge0.
 \label{eq:lagrangian}
 \end{equation}
+The constrained problem is
+$\max_\theta\min_{\lambda\ge0}\mathcal L(\theta,\lambda)$ with
+$\mathbb E_{P_\theta}[C]\le\kappa$. The stochastic dual update below is a
+constraint controller, not a finite-sample feasibility guarantee.
 Define $U_\lambda=R-\lambda C$ and the raw sequence score
 \begin{align}
 s_\theta(Z)
@@ -399,8 +403,11 @@ monotonic improvement.
 \section{Experiments}
 \label{sec:experiments}
 
-Evaluation has two gates. Phase A must establish estimator behavior at a frozen
-policy before Phase B makes training claims. The primary hypotheses are:
+Evaluation starts with a deterministic software Gate 0 on a finite trajectory
+law. It must exactly reproduce the target gradient, mixture normalization,
+weight bound, and analytic bias of each injected ratio error before Phase A.
+Phase A then establishes estimator behavior at a frozen language-model policy
+before Phase B makes training claims. The primary hypotheses are:
 \textbf{H1}, exact adaptive-mixture augmentation reduces projected gradient MSE
 relative to on-policy estimation at matched total compute; \textbf{H2}, any
 reduction translates to better held-out reward per generated token under
@@ -579,7 +586,9 @@ The expected-response-length dual uses only fresh target-policy trajectories:
 $\kappa$ is fixed before training. Policy and dual updates both estimate
 quantities at $(\theta_t,\lambda_t)$ and are committed after collection.
 Reward, response length, and violation are reported separately rather than
-only through $U_\lambda$. This constraint does not cover prompt tokens,
+only through $U_\lambda$. This projected stochastic controller does not
+guarantee that every iterate or the final policy is feasible. The constraint
+does not cover prompt tokens,
 likelihood passes, verifier cost, or total training compute; those belong to
 the experimental ledger.
 
@@ -591,6 +600,14 @@ log-probabilities, reward components, parser status, generated tokens, verifier
 version, nuisance-model revision, use count, and policy-update identifier. The
 run aborts if a supposedly theorem-facing trajectory has use count above one
 or if its source probability cannot be reconstructed.
+For all candidate trajectories, including rejected and retried candidates, the
+ledger computes
+\begin{align}
+K_{\mathrm{gen}}&=\sum_z C(z),&
+K_{\mathrm{ver}}&=\sum_z\mathbf 1\{\text{verifier called on }z\},\\
+K_{\mathrm{score}}&=\sum_z C(z)\,N_{\mathrm{added\ score}}(z).
+\end{align}
+No cost disappears when a trajectory is excluded from the estimator.
 
 \subsection{Protocol Manifest}
 The repository runner
@@ -604,9 +621,11 @@ accelerator, CPU, and wall-time costs.
 The companion \texttt{synthetic\_commands.json} fixes a four-cell trajectory
 law, $\alpha=1/2$, 32 draws per source, 2,000 replications, and seed 20260902.
 It enumerates the target and estimator expectations to machine precision,
-checks $w\le1/\alpha$, and injects omitted-prompt-ratio and weight-clipping
-errors. This is an equation and software audit, not model-training evidence;
-its outputs cannot populate \cref{tab:main}.
+checks $\sum_zM(z)w(z)=1$ and $w\le1/\alpha$, and verifies the bias identity
+for omitted-prompt-ratio and weight-clipping errors. Gate 0 fails closed if any
+identity differs by more than $10^{-12}$. This is an equation and software
+audit, not model-training evidence; its outputs cannot populate
+\cref{tab:main}.
 
 \subsection{Optional Prefix Gate}
 Prefix continuation is excluded from the core experiments. A later extension
