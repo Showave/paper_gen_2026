@@ -601,6 +601,12 @@ audits, one-update training, and held-out evaluation. The committed JSON is a
 stage and artifact contract; site-local commands are required to execute it,
 and each executed stage records output hashes and separate token, verifier,
 accelerator, CPU, and wall-time costs.
+The companion \texttt{synthetic\_commands.json} fixes a four-cell trajectory
+law, $\alpha=1/2$, 32 draws per source, 2,000 replications, and seed 20260902.
+It enumerates the target and estimator expectations to machine precision,
+checks $w\le1/\alpha$, and injects omitted-prompt-ratio and weight-clipping
+errors. This is an equation and software audit, not model-training evidence;
+its outputs cannot populate \cref{tab:main}.
 
 \subsection{Optional Prefix Gate}
 Prefix continuation is excluded from the core experiments. A later extension

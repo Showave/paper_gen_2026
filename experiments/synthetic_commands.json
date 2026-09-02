@@ -1,0 +1,52 @@
+{
+  "acquire": [
+    "python3",
+    "{repo}/scripts/run_synthetic_experiment.py",
+    "--paper",
+    "{paper}",
+    "--stage",
+    "acquire",
+    "--work-dir",
+    "{work_dir}"
+  ],
+  "process": [
+    "python3",
+    "{repo}/scripts/run_synthetic_experiment.py",
+    "--paper",
+    "{paper}",
+    "--stage",
+    "process",
+    "--work-dir",
+    "{work_dir}"
+  ],
+  "build": [
+    "python3",
+    "{repo}/scripts/run_synthetic_experiment.py",
+    "--paper",
+    "{paper}",
+    "--stage",
+    "build",
+    "--work-dir",
+    "{work_dir}"
+  ],
+  "train": [
+    "python3",
+    "{repo}/scripts/run_synthetic_experiment.py",
+    "--paper",
+    "{paper}",
+    "--stage",
+    "train",
+    "--work-dir",
+    "{work_dir}"
+  ],
+  "evaluate": [
+    "python3",
+    "{repo}/scripts/run_synthetic_experiment.py",
+    "--paper",
+    "{paper}",
+    "--stage",
+    "evaluate",
+    "--work-dir",
+    "{work_dir}"
+  ]
+}
