@@ -625,6 +625,12 @@ gate may be reported only as a heuristic. The repository protocol runner
 \texttt{python3 scripts/run\_experiment\_pipeline.py
 --plan experiments/sft\_pipeline.json} enumerates acquisition, processing,
 model construction, matched-budget training, and sealed evaluation artifacts.
+With \texttt{--execute --commands experiments/synthetic\_commands.json}, a
+CPU-only audit exactly enumerates subset packability for two length-10 packs,
+checks direct joint selection against the profiled-cost form, and exercises the
+finite gate grid over 512 seeded score perturbations. Every output is marked
+non-empirical. This fixture tests implementation invariants and a constructed
+non-additive-cost case; it is not evidence that the method improves SFT.
 
 \subsection{Numerical Packing Check}
 Before training, randomly sampled windows are evaluated both unpacked and with

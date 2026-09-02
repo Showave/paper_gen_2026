@@ -643,6 +643,12 @@ deduplication and response generation, jury-model construction, simulation and
 adaptive acquisition, and sealed evaluation. The committed JSON is a manifest
 validator and stage contract; site-local commands are required for execution,
 after which output hashes and costs are recorded.
+The companion \texttt{synthetic\_commands.json} fixes a 16-unit frame,
+$\epsilon=0.2$, $T=300$, 2,000 trials, and seed 20260902. It uses deliberately
+misspecified prequential predictions to check the exact one-draw identity,
+positivity and weight bounds, fixed-budget studentization, and the tie
+estimator. It assumes complete response and is only a software audit; it does
+not replace the preregistered condition grid or provide human evidence.
 
 \subsection{Proof of \cref{prop:unbiased}}
 Conditioning on pre-outcome history,
