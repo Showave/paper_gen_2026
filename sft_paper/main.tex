@@ -448,7 +448,9 @@ both ungated and with the identical actual-update gate. The decisive decoupled
 comparator uses the same candidates, scores, protected constraints, and
 training code, differing only by additive selection followed by deterministic
 best-fit packing. Candidate streams, initial checkpoints, data order seeds, and
-hyperparameter search budgets are paired.
+hyperparameter search budgets are paired. \Cref{tab:main} shows the core
+methods; the appendix reports the complete baseline--gate crossing, including
+influence distillation and the source-level allocator.
 
 Primary endpoints are target audit NLL, the worst protected audit regression
 \begin{equation}
@@ -458,7 +460,7 @@ L_c^{\mathrm{audit}}(\theta_0)\right],
 \end{equation}
 end-to-end allocated accelerator-seconds, CPU resource-seconds, wall time, and
 packing throughput. Downstream benchmarks
-are secondary because they are not optimized by the gate. We use at least five
+are secondary because they are not optimized by the gate. We use five
 development seeds and five confirmatory seeds, report paired differences with
 95\% intervals, and retain every run rather than selecting the best seed.
 
@@ -618,19 +620,31 @@ n_c\ge
 \frac{2M_\phi^2\log(C|\mathcal A|T_{\max}/\delta_g)}
 {\tau_{c,t}^2}.
 \end{equation}
-A pilot freezes $M_\phi,\tau_{c,t},J,T_{\max},\delta_g$, computes this
-requirement, and reserves its measured forward-pass cost. If the reserve does
-not fit, the simultaneous-bound condition is declared infeasible; a cheaper
-gate may be reported only as a heuristic. The repository protocol runner
+A pilot freezes $C,M_\phi,J,T_{\max},\delta_g,b_c$, every
+$\tau_{c,t}$ and $n_c$, the sampling seeds, and disjoint $(c,t)$ gate blocks,
+with $\sum_{t\le T_{\max}}\tau_{c,t}\le b_c$. It records the derived radius
+and total required examples. If $\widehat c_{\mathrm{fwd}}$ is the measured
+per-example forward cost, the round reserves
+\begin{equation}
+R_{\mathrm{gate}}=\widehat c_{\mathrm{fwd}}
+(|\mathcal A|+1)\sum_{c=1}^{C}n_c.
+\end{equation}
+No round starts unless scoring, candidate-update, and worst-case gate reserves
+all fit the remaining budget. If this is infeasible, the simultaneous-control
+condition is removed and any cheaper gate is labeled heuristic; H3 then remains
+an empirical gate comparison only. The repository protocol runner
 \texttt{python3 scripts/run\_experiment\_pipeline.py
 --plan experiments/sft\_pipeline.json} enumerates acquisition, processing,
 model construction, matched-budget training, and sealed evaluation artifacts.
 With \texttt{--execute --commands experiments/synthetic\_commands.json}, a
 CPU-only audit exactly enumerates subset packability for two length-10 packs,
 checks direct joint selection against the profiled-cost form, and exercises the
-finite gate grid over 512 seeded score perturbations. Every output is marked
-non-empirical. This fixture tests implementation invariants and a constructed
-non-additive-cost case; it is not evidence that the method improves SFT.
+finite gate grid over 512 seeded score perturbations. A separate frozen
+Hoeffding fixture uses $M_\phi=1$, $C=2$, $|\mathcal A|=3$,
+$T_{\max}=10$, $\delta_g=0.05$, and $\tau=0.2$, which fixes
+$n_c=355$. Every output is marked non-empirical. These fixtures test
+implementation invariants and a constructed non-additive-cost case; they are
+not evidence that the method improves SFT.
 
 \subsection{Numerical Packing Check}
 Before training, randomly sampled windows are evaluated both unpacked and with
