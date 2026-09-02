@@ -216,11 +216,12 @@ compute decision value. Human acquisition mixes this adaptive policy with the
 target item distribution. A sealed, uniformly sampled human audit is never
 used for fitting or acquisition.
 The implementation refits once per predeclared batch. It approximates each
-hypothetical EVI update by one frozen Laplace/Newton step, forms one $p_t$ for
-the next batch, and logs that probability for every draw. Conditional on the
-batch-start history, draws are IID with replacement from this frozen law and
-the predictor is fixed; draw-level \cref{eq:psi} remains valid because both are
-predictable.
+hypothetical EVI update by one frozen Laplace/Newton step, forms one $p_b$ for
+the next batch, and logs that probability for every draw. The working
+Bayes-risk action used inside EVI is distinct from the terminal confidence-set
+action. Conditional on the batch-start history, draws are IID with replacement
+from this frozen law and the predictor is fixed; draw-level \cref{eq:psi}
+remains valid because both are predictable.
 
 \subsection{Data and Task Construction}
 
@@ -342,9 +343,8 @@ descriptive unless randomized interventions identify them: removing a length
 association can remove genuine quality as well as bias.
 
 \paragraph{Decision-targeted acquisition.}
-Let $a(\mathcal F)$ apply the confidence-set rule in
-\cref{sec:statistical-protocol}. The protocol fixes the normalized loss matrix
-below, with rows $(A,B,E,\mathrm{NE})$ and true states $(A,B,E)$:
+The protocol fixes the normalized loss matrix below, with rows
+$(A,B,E,\mathrm{NE})$ and true states $(A,B,E)$:
 \begin{equation}
 L=\begin{pmatrix}
 0&4&2\\4&0&2\\2&2&0\\1&1&1
@@ -352,27 +352,37 @@ L=\begin{pmatrix}
 \label{eq:loss}
 \end{equation}
 Stakeholder-specific alternatives are sensitivity analyses, not post-hoc
-replacements. At an intermediate history, the working posterior defines the
-risk if labeling stopped now,
-$R(\mathcal F)=\mathbb E[L\{a(\mathcal F),S(\Delta_F)\}\mid\mathcal F]$.
-For target unit $x$ with annotation cost $k_x$, one-step expected value of
-information is
+replacements. At batch start $b$, let $Q_b$ be the frozen working posterior
+over states $S\in\{A,B,E\}$. Define its Bayes risk
+\begin{equation}
+\widetilde R(Q)=
+\min_{d\in\{A,B,E,\mathrm{NE}\}}
+\sum_s L_{ds}Q(S=s),
+\end{equation}
+breaking action ties in the fixed order $\mathrm{NE},E,A,B$. Let
+$U(Q_b;x,y)$ be the posterior obtained by the predeclared single
+Laplace/Newton update for hypothetical outcome $y$; neither the update nor its
+hyperparameters depend on $p_b$. For target unit $x$ with annotation cost
+$k_x$, define
 \begin{align}
-\operatorname{EVI}_{t-1}(x)
-&=R(\mathcal F_{t-1})\nonumber\\
+\operatorname{EVI}_{b}(x)
+&=\widetilde R(Q_b)\nonumber\\
 &\quad-
-\sum_{y\in\{-1,0,1\}}\widehat p_{t-1}(y\mid x)
-R\{\mathcal F_{t-1}\cup(x,y)\}.
+\sum_{y\in\{-1,0,1\}}\widehat p_b(y\mid x)
+\widetilde R\{U(Q_b;x,y)\}.
 \end{align}
 Using predeclared temperature $\lambda_E$, define
 \begin{align}
-g_t(x)&=\lambda_E\operatorname{EVI}_{t-1}(x)/k_x,\\
-r_t(x)&=\exp\{g_t(x)\}/\sum_{x'}\exp\{g_t(x')\},\\
-p_t(x)&=\epsilon\pi(x)+(1-\epsilon)r_t(x),
+g_b(x)&=\lambda_E\operatorname{EVI}_{b}(x)/k_x,\\
+r_b(x)&=\exp\{g_b(x)\}/\sum_{x'}\exp\{g_b(x')\},\\
+p_b(x)&=\epsilon\pi(x)+(1-\epsilon)r_b(x),
 \qquad \epsilon>0.
 \label{eq:explore}
 \end{align}
-This gives $p_t(x)\ge\epsilon\pi(x)$ and
+All EVI values are computed before $p_b$, after which $Q_b,p_b,m_b$, and
+$\bar m_b$ are frozen for the complete batch; each draw-level $p_t$ equals
+that $p_b$. This removes any dependence of EVI on its own acquisition
+probability and gives $p_t(x)\ge\epsilon\pi(x)$ and
 $\pi(x)/p_t(x)\le1/\epsilon$. EVI is myopically optimal only under a correct
 posterior and no exploration constraint; we claim neither finite-horizon
 optimality nor a general regret bound.
@@ -456,8 +466,14 @@ the final check against jury manipulation.
 \subsection{Statistical Protocol}
 \label{sec:statistical-protocol}
 
-The primary interval is two-sided for $\Delta_F$. The terminal action used by
-both \cref{eq:loss} and the final report is
+The primary interval is two-sided for $\Delta_F$, with the frozen
+$z_{0.975}=1.959963984540054$:
+\begin{equation}
+[L_T,U_T]=
+\left[\widehat\Delta_T\pm
+z_{0.975}\sqrt{\widehat V_T/T}\right]\cap[-1,1].
+\end{equation}
+The terminal action used with \cref{eq:loss} and in the final report is
 \begin{equation}
 \widehat a=
 \begin{cases}
