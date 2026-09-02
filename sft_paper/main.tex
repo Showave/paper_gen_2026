@@ -125,6 +125,15 @@ SPICE is especially close: it combines Fisher information with a penalty for
 gradient conflict \cite{chang2026spice}. Our target-gradient proxy is not
 presented as new. The distinction under study is joint physical-pack
 construction, protected constraints, and an actual-update gate.
+GIST shows that diagonal optimizer geometry can be misleading for LoRA and
+instead scores examples in a coupled target-gradient subspace
+\cite{min2026gist}; UDS provides a low-overhead online utility--diversity
+selector without reference gradients \cite{zou2026uds}. Both are required
+comparators, and GIST scoring is also crossed with our pack-cost planner.
+PartitionSel couples validation-gradient matching across domains under
+partition-matroid coverage constraints \cite{agrawal2026partitionsel}. Its
+source-constrained selector is a close matched-cost baseline; our separate
+question is whether profiling physical pack cost changes the feasible choice.
 
 \paragraph{Online allocation.}
 Dynamic bilevel weighting \cite{yu2025dynamicbilevel}, source-mixture
@@ -178,12 +187,25 @@ A packing assignment $\pi$ maps examples to physical packs and obeys
 \label{eq:packing}
 \end{equation}
 Boundary-masked attention and reset position identifiers prevent cross-example
-information flow. The profiled cost $\widehat C_t(B,\pi)$ includes padding,
-kernel choice, gradient accumulation, and launch overhead. The global budget
-also charges reference gradients, candidate scoring, solving, gate forwards,
-and rejected updates. The goal is not to minimize example count, but to
-maximize target improvement subject to protected-loss and total-cost
-constraints.
+information flow. Let
+$\overline C_t^{\mathrm{all}}(B,\pi)$ upper-bound allocated
+accelerator-seconds for packing, reference gradients, candidate scoring,
+solving, gate forwards, training, and rejected updates, with sunk round costs
+assigned to every candidate. CPU-seconds and wall time are separate Pareto
+endpoints, not silently converted into accelerator cost. The goal is not to
+minimize example count, but to maximize target improvement subject to
+protected-loss and accelerator-cost constraints.
+
+Under exact isolation, packing cannot change $G_B$ for a fixed $B$. Define
+\begin{equation}
+\overline C_t^{\mathrm{all},\star}(B)=
+\min_{\pi\ \mathrm{feasible}}\overline C_t^{\mathrm{all}}(B,\pi).
+\label{eq:profiled-cost}
+\end{equation}
+An exact joint optimizer is therefore equivalent to selection under this
+non-additive profiled cost. Our joint beam search approximates that profile; it
+does not claim that packing order changes the gradient. The decisive ablation
+separates cost profiling from pack-solver quality.
 
 \section{Method}
 \label{sec:method}
@@ -211,6 +233,12 @@ S_{c,t}(B)=-\nabla L_c(\theta_t)^\top\Delta_t(B).
 Thus $S_c>0$ predicts a loss decrease. For SGD,
 $\Delta=-\eta\nabla L_B^{\mathrm{tr}}$ and positive gradient alignment is
 beneficial.
+
+The theorem-facing AdamW configuration disables gradient clipping. A practical
+clipped variant must form one post-unscale, post-reduction clipped gradient for
+the complete accumulation window and use that tensor in both moments, the
+candidate displacement, and all logs; per-microbatch clipping is a different
+update.
 
 Writing $G_B=N_B^{-1}\sum_{i\in B}\nabla\ell_i$, the exact AdamW displacement
 is not additive in per-example gradients because its candidate second moment
@@ -269,9 +297,14 @@ optimizer-surrogate error, and staleness:
 These margins are called empirical prediction margins unless their coverage
 conditions are verified; an ensemble standard deviation is not a confidence
 bound.
+Because maximizing a noisy score creates selection bias, the beam returns a
+fixed-size shortlist. An independent reference minibatch and projection,
+unseen during search, re-score that shortlist. We report simultaneous
+shortlist coverage; absent that evidence, ``lower bound'' is replaced by
+``penalized score.''
 
-Cost and step-norm error are bounded separately as
-$\overline C_t=\widehat C_t+e_t^C$ and
+The execution-cost upper bound is a profiled prediction plus a calibrated
+error margin; step-norm error is bounded as
 $\overline q_t=\widehat q_t+e_t^q$. The ideal round-level decision is
 \begin{align}
 \max_{B,\pi}\quad &\underline S_{0,t}(B) \label{eq:selection}\\
@@ -292,6 +325,8 @@ packing, norm, and non-additive cost terms make \cref{eq:selection} NP-hard.
 Our beam search retains the best partial plans by cost and pack-count buckets,
 then performs drop--swap repair. We claim no approximation ratio and compare
 against an exact small-pool oracle.
+A separate null action has $\Delta=0$, zero score and norm, and no optimizer
+step or moment increment; it is not \cref{eq:train-loss} with $N_B=0$.
 
 \paragraph{Actual-update gate.}
 After one backward pass on the selected window, we construct AdamW moments
@@ -320,6 +355,11 @@ rate $\alpha\eta_t$ while committing $m^+,v^+$ and the step counter exactly
 once. If none passes, all parameter, optimizer, and scheduler state is restored
 and the charged update is discarded. Target improvement remains a planning
 criterion; it is not certified unless $c=0$ is included in the gate.
+For each protected slice, a predeclared ledger enforces
+$\sum_{t\le T}\tau_{c,t}\le b_c$. The single global $\delta_g$ in
+\cref{eq:gate} already union-bounds all slices, scales, and rounds. This
+composition concerns only the clipped gate estimand. Final unclipped audit NLL
+remains an empirical endpoint, not a consequence of the gate.
 
 \begin{algorithm}[t]
 \caption{One Scheduling and Update Round}
@@ -328,7 +368,7 @@ criterion; it is not certified unless $c=0$ is included in the gate.
 \STATE Sample candidates within the remaining scoring budget.
 \STATE Compute lengths, trainable-subspace gradients, and sketches.
 \STATE Build feasible isolated pack plans with beam search.
-\STATE Select the best plan satisfying \cref{eq:selection}.
+\STATE Re-score a fixed shortlist on independent references and select.
 \STATE Compute its exact gradient, moments, and scaled AdamW candidates.
 \FOR{$\alpha\in\mathcal A$ from largest to smallest}
   \STATE Evaluate fresh protected gate losses.
@@ -394,20 +434,23 @@ first confirmatory run.
 
 Let $B_{50M}$ be the measured accelerator cost of random, isolated,
 best-fit-packed SFT on 50 million response tokens. We evaluate total budgets
-$\{0.25,0.5,1.0\}B_{50M}$. Each method stops at the same end-to-end cost,
-including method-specific preprocessing and validation. Final common
-evaluation is excluded from training cost; every method-specific query is
-included.
+$\{0.25,0.5,1.0\}B_{50M}$. Each method stops at the same allocated
+accelerator-second budget, including accelerator preprocessing and validation.
+CPU-seconds and wall time are reported separately. Final common evaluation is
+excluded from training cost; every method-specific query is included.
 
 Baselines are random plus identical packing, representation-similarity
 selection, LESS, FisherSFT, influence distillation, SPICE, DynamixSFT, a
-source-level dynamic allocator, online target-gradient alignment followed by
-packing, and the proposed joint scheduler. Every feasible baseline is reported
+source-level dynamic allocator, GIST, UDS, PartitionSel, online
+target-gradient alignment followed by packing, and the proposed joint
+scheduler. Every feasible baseline is reported
 both ungated and with the identical actual-update gate. The decisive decoupled
 comparator uses the same candidates, scores, protected constraints, and
 training code, differing only by additive selection followed by deterministic
 best-fit packing. Candidate streams, initial checkpoints, data order seeds, and
-hyperparameter search budgets are paired.
+hyperparameter search budgets are paired. \Cref{tab:main} shows the core
+methods; the appendix reports the complete baseline--gate crossing, including
+influence distillation and the source-level allocator.
 
 Primary endpoints are target audit NLL, the worst protected audit regression
 \begin{equation}
@@ -417,7 +460,7 @@ L_c^{\mathrm{audit}}(\theta_0)\right],
 \end{equation}
 end-to-end allocated accelerator-seconds, CPU resource-seconds, wall time, and
 packing throughput. Downstream benchmarks
-are secondary because they are not optimized by the gate. We use at least five
+are secondary because they are not optimized by the gate. We use five
 development seeds and five confirmatory seeds, report paired differences with
 95\% intervals, and retain every run rather than selecting the best seed.
 
@@ -440,6 +483,9 @@ Representation similarity + best-fit & -- & -- & -- & -- \\
 LESS + best-fit packing & -- & -- & -- & -- \\
 FisherSFT + best-fit packing & -- & -- & -- & -- \\
 SPICE + best-fit packing & -- & -- & -- & -- \\
+GIST + best-fit packing & -- & -- & -- & -- \\
+UDS + best-fit packing & -- & -- & -- & -- \\
+PartitionSel + best-fit & -- & -- & -- & -- \\
 DynamixSFT & -- & -- & -- & -- \\
 Online alignment + best-fit packing & -- & -- & -- & -- \\
 Joint scheduler without gate & -- & -- & -- & -- \\
@@ -462,6 +508,10 @@ SGD geometry versus frozen-Adam geometry, additive token cost versus measured
 cost, and proxy-only versus actual-update gating. A small fractional factorial
 on the development model checks the largest interactions. Sketch dimensions
 and refresh intervals are tuned only on that model.
+The core $2\times2$ contrast crosses additive versus profiled selection cost
+with deterministic best-fit versus beam-search packing, separating a better
+cost model from a better packing heuristic. A second cross uses frozen-Adam
+and GIST scores with the same packing paths.
 
 Mechanistic diagnostics compare sketches with exact adapter-space dot
 products, surrogate and actual AdamW displacements, first-order predictions and
@@ -561,6 +611,40 @@ split identifiers, sketch seed and dimension, beam width, cost-model version,
 packing order, kernel and compiler versions, hardware identifier, accepted and
 rejected displacements, and cumulative accelerator time. A failed or
 preempted run remains in the ledger.
+
+\subsection{Gate Feasibility and Protocol Manifest}
+Even when the observed mean change is zero, the gate in \cref{eq:gate}
+requires approximately
+\begin{equation}
+n_c\ge
+\frac{2M_\phi^2\log(C|\mathcal A|T_{\max}/\delta_g)}
+{\tau_{c,t}^2}.
+\end{equation}
+A pilot freezes $C,M_\phi,J,T_{\max},\delta_g,b_c$, every
+$\tau_{c,t}$ and $n_c$, the sampling seeds, and disjoint $(c,t)$ gate blocks,
+with $\sum_{t\le T_{\max}}\tau_{c,t}\le b_c$. It records the derived radius
+and total required examples. If $\widehat c_{\mathrm{fwd}}$ is the measured
+per-example forward cost, the round reserves
+\begin{equation}
+R_{\mathrm{gate}}=\widehat c_{\mathrm{fwd}}
+(|\mathcal A|+1)\sum_{c=1}^{C}n_c.
+\end{equation}
+No round starts unless scoring, candidate-update, and worst-case gate reserves
+all fit the remaining budget. If this is infeasible, the simultaneous-control
+condition is removed and any cheaper gate is labeled heuristic; H3 then remains
+an empirical gate comparison only. The repository protocol runner
+\texttt{python3 scripts/run\_experiment\_pipeline.py
+--plan experiments/sft\_pipeline.json} enumerates acquisition, processing,
+model construction, matched-budget training, and sealed evaluation artifacts.
+With \texttt{--execute --commands experiments/synthetic\_commands.json}, a
+CPU-only audit exactly enumerates subset packability for two length-10 packs,
+checks direct joint selection against the profiled-cost form, and exercises the
+finite gate grid over 512 seeded score perturbations. A separate frozen
+Hoeffding fixture uses $M_\phi=1$, $C=2$, $|\mathcal A|=3$,
+$T_{\max}=10$, $\delta_g=0.05$, and $\tau=0.2$, which fixes
+$n_c=355$. Every output is marked non-empirical. These fixtures test
+implementation invariants and a constructed non-additive-cost case; they are
+not evidence that the method improves SFT.
 
 \subsection{Numerical Packing Check}
 Before training, randomly sampled windows are evaluated both unpacked and with

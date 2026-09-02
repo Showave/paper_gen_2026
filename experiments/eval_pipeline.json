@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "paper": "eval",
+  "purpose": "Tie-aware adaptive human evaluation with design-based estimation and a sealed audit.",
+  "stages": [
+    {
+      "name": "acquire",
+      "objective": "Freeze the weighted item frame, rater panel, rubric, model pair, response coupling, and audit seed.",
+      "inputs": [
+        "Timestamped deployment-log sample or weighted benchmark frame",
+        "Rater recruitment definition, target weights, consent, compensation, and withdrawal protocol",
+        "Evaluated model, tokenizer, decoder, prompt-generator, and jury revisions"
+      ],
+      "artifacts": [
+        "acquire/frame_manifest.json"
+      ],
+      "checks": [
+        "Target item, prompt, response, rater, and display-order masses sum to one",
+        "Personal data and unsupported licenses are excluded",
+        "The sealed target-random audit seed and cells are inaccessible to acquisition"
+      ],
+      "costs": [
+        "cpu_seconds",
+        "wall_seconds",
+        "annotation_currency"
+      ]
+    },
+    {
+      "name": "process",
+      "objective": "Deduplicate roots, generate frozen paired responses, randomize display, and validate the rating interface.",
+      "inputs": [
+        "acquire/frame_manifest.json",
+        "Prompt-variant weights, response seeds, coupling rule, and semantic-cluster threshold",
+        "Rubric, tie subtypes, skip reasons, and sensitive-content warnings"
+      ],
+      "artifacts": [
+        "process/cell_manifest.json"
+      ],
+      "checks": [
+        "Root-item clusters do not cross development and sealed audit partitions",
+        "AB and BA renders strip model identifiers and preserve content",
+        "Assignment attempts, nonresponse, latency, and tie subtype have explicit fields"
+      ],
+      "costs": [
+        "cpu_seconds",
+        "wall_seconds",
+        "accelerator_seconds",
+        "jury_calls"
+      ]
+    },
+    {
+      "name": "build",
+      "objective": "Fit the prequential tie-aware jury model and freeze the EVI approximation and exploration mixture.",
+      "inputs": [
+        "process/cell_manifest.json",
+        "Pilot-only labels, priors, identifiability constraints, EVI temperature, and epsilon",
+        "Decision margin, normalized loss matrix, fixed Bayes-action tie order, frozen Newton/Laplace hypothetical update, batch size, and annotation costs"
+      ],
+      "artifacts": [
+        "build/evaluation_model_manifest.json"
+      ],
+      "checks": [
+        "Predictions and draw probabilities are frozen before each outcome batch",
+        "Working-posterior Bayes-risk EVI is computed before p_b and does not call the terminal confidence-set action",
+        "The judge-cell overlap graph is connected and both orders are represented",
+        "Every target unit satisfies the logged positivity floor"
+      ],
+      "costs": [
+        "cpu_seconds",
+        "wall_seconds",
+        "accelerator_seconds",
+        "jury_calls"
+      ]
+    },
+    {
+      "name": "train",
+      "objective": "Run preregistered simulations, then acquire fixed-budget human pilot and adaptive ratings without optional stopping.",
+      "inputs": [
+        "build/evaluation_model_manifest.json",
+        "Two-thousand-trial simulation grid and frozen Monte Carlo seeds",
+        "Complete-response protocol plus nonresponse bounds and sensitivity models"
+      ],
+      "artifacts": [
+        "train/acquisition_ledger.jsonl"
+      ],
+      "checks": [
+        "Each draw logs pi, p_t, model revision, EVI, outcome, and pre-outcome timestamp",
+        "Simulation covers boundary effects, dependence, misspecification, small propensities, and drift",
+        "T counts assignment attempts; a cap, withdrawal, or nonresponse never triggers replacement"
+      ],
+      "costs": [
+        "cpu_seconds",
+        "wall_seconds",
+        "accelerator_seconds",
+        "assignment_attempts",
+        "completed_ratings",
+        "nonresponses",
+        "jury_calls",
+        "annotation_currency"
+      ]
+    },
+    {
+      "name": "evaluate",
+      "objective": "Freeze analysis, open the audit once, and report intervals, decisions, missingness bounds, and shift diagnostics.",
+      "inputs": [
+        "train/acquisition_ledger.jsonl",
+        "Frozen z_0.975 constant, clipping to [-1,1], practical margin, covariance rule, and equivalence margin",
+        "Sealed audit outcomes and temporal-wave bridge design"
+      ],
+      "artifacts": [
+        "evaluate/summary.json"
+      ],
+      "checks": [
+        "Estimator, martingale variance, maximum weight, and ESS reproduce from the ledger",
+        "Adaptive-minus-audit uncertainty includes shared-rater covariance",
+        "Tie subtypes, abstentions, nonresponse bounds, all domains, and negative results are retained"
+      ],
+      "costs": [
+        "cpu_seconds",
+        "wall_seconds",
+        "assignment_attempts",
+        "completed_ratings",
+        "nonresponses",
+        "jury_calls",
+        "annotation_currency"
+      ]
+    }
+  ]
+}

@@ -70,7 +70,7 @@ for stability.
 
 We ask whether a controlled source of stale data can improve gradient
 efficiency without making an inaccurate replay-unbiasedness claim. At iteration
-$t$, a live stale actor or sealed queue produces \emph{new}, never-consumed
+$t$, a live stale actor produces \emph{new}, never-consumed
 trajectories from a logged policy and prompt distribution. These are combined
 with a positive fraction of current-policy trajectories. An augmented
 importance estimator uses a frozen outcome predictor to reduce residual
@@ -137,12 +137,25 @@ benchmark gains need not demonstrate learning from the intended verifier
 \cite{shao2026spurious}. The protocol includes those controls and treats exact statistical
 assumptions, not empirical stability alone, as the object of the first study.
 
+PrefixRL and PROS instead reuse an old prefix while generating a new
+continuation \cite{setlur2026prefixrl,huang2026pros}; they change the prompt or
+conditional objective and avoid full-trajectory ratios. They are practical
+compute comparators, not instances of \cref{eq:estimator}. At the systems
+layer, HybridFlow decouples RL control and distributed computation
+\cite{sheng2025hybridflow}; our implementation follows that separation so
+rollout, cross-policy scoring, and update costs remain individually measurable.
+SPEC-RL uses old trajectories only as speculative drafts and verifies accepted
+tokens under the current policy, retaining an on-policy rollout law
+\cite{liu2025specrl}. MinPRO instead replaces exact causal-prefix ratios by a
+stabilized minimum-ratio surrogate under policy lag \cite{lei2026minpro}.
+These methods target complementary systems and biased-stability trade-offs.
+
 \section{Formal Setting}
 \label{sec:setting}
 
 Let $Z=(X,Y)$ contain prompt $X$ and a complete generated sequence $Y$,
 including EOS or a declared truncation event. The target prompt distribution is
-$D$ with density $d(x)$, and the exact rollout distribution is
+$D$, a versioned finite prompt multiset with known masses $d(x)$, and the exact rollout distribution is
 $\pi_\theta(y\mid x)$. Thus
 \begin{equation}
 P_\theta(z)=d(x)\pi_\theta(y\mid x).
@@ -153,6 +166,18 @@ rejection rule must be represented by its normalized sampling probability;
 raw base-model logits are not automatically the rollout density. The
 theorem-facing implementation uses temperature-softmax sampling without
 top-$k$ or top-$p$, with fixed maximum length and EOS included in the outcome.
+For allowed vocabulary $\mathcal V_\ell$ and temperature $T_d$ its logged
+per-token mass is
+\begin{equation}
+p_\theta(y_\ell\mid y_{<\ell},x)=
+\frac{\mathbf 1\{y_\ell\in\mathcal V_\ell\}
+\exp(z_{\theta,\ell,y_\ell}/T_d)}
+{\sum_{v\in\mathcal V_\ell}\exp(z_{\theta,\ell,v}/T_d)}.
+\label{eq:decoder-pmf}
+\end{equation}
+The sequence mass is the product through EOS; no-EOS sequences at the fixed
+limit carry their product mass and a deterministic truncation status. An
+empirical sampler--scorer conformance test must pass before estimator audits.
 
 The verifier deterministically maps every complete $Z$, including parse,
 timeout, sandbox-error, and truncation statuses, to bounded reward $R(Z)$; no
@@ -166,6 +191,10 @@ For fixed expected-response budget $\kappa$, we optimize the Lagrangian
 \quad \lambda\ge0.
 \label{eq:lagrangian}
 \end{equation}
+The constrained problem is
+$\max_\theta\min_{\lambda\ge0}\mathcal L(\theta,\lambda)$ with
+$\mathbb E_{P_\theta}[C]\le\kappa$. The stochastic dual update below is a
+constraint controller, not a finite-sample feasibility guarantee.
 Define $U_\lambda=R-\lambda C$ and the raw sequence score
 \begin{align}
 s_\theta(Z)
@@ -192,8 +221,10 @@ $Q_t$ and a stale behavior policy $\mu_t$ define
 \begin{equation}
 G_t(z)=q_t(x)\mu_t(y\mid x).
 \end{equation}
-$G_t$ is a live actor or a sealed, never-used queue; a reward-selected replay
-buffer does not satisfy the core assumptions.
+$G_t$ is generated only after all iteration-$t$ choices are frozen. A queue
+whose realized contents can affect $\theta_t$, $q_t$, $\alpha$, or nuisance
+models is not conditionally fresh and does not satisfy the theorem, even if
+its trajectories have never been optimized on.
 
 For fixed $\alpha\in(0,1]$, define the joint mixture
 \begin{equation}
@@ -236,8 +267,23 @@ the stale-source sum and sets $n_G=0$; it reduces exactly to ordinary on-policy
 $(U-b)s$. The outcome predictor is critic-like infrastructure; we do not call
 the method critic-free.
 
+For conditionally IID trajectories within each of two independent strata define
+$A=(h-b)s+\alpha w(U-h)s$ under $P$ and
+$B=w(U-h)s$ under $G$. Conditional on the frozen history,
+\begin{equation}
+\operatorname{Cov}(\widehat g_t)=
+\frac{\operatorname{Cov}_P(A)}{n_P}+
+\frac{(1-\alpha)^2\operatorname{Cov}_G(B)}{n_G}.
+\label{eq:variance}
+\end{equation}
+This expression includes covariance between direct and residual terms inside
+$A$. It gives no universal advantage over on-policy sampling; the
+frozen-policy audit chooses $\alpha$ from a preregistered grid using projected
+MSE per measured unit cost, then freezes it for confirmation.
+
 $h_t^R,h_t^C,b_t$, and $q_t$ are trained only from data available before iteration
-$t$, then frozen. A convenient adaptive proposal is
+$t$, then frozen. The sums below range over the complete finite prompt
+multiset, and prompts are sampled with replacement. A convenient adaptive proposal is
 \begin{align}
 a_t(x)&=d(x)\sqrt{\widehat v_t(x)/\widehat c_t(x)},\\
 Z_t^q&=\sum_{x'}a_t(x'),\\
@@ -251,6 +297,8 @@ with the direct term, this square-root rule is a heuristic, not an optimum for
 \cref{eq:estimator}. Incorrect predictors may reduce efficiency but do not
 alter the density-route expectation when the logged distribution and ratio are
 exact.
+We impose $\widehat v_t(x)\ge v_{\min}>0$ before normalization; equivalently,
+an implementation may set $\overline q_t=D$ whenever $Z_t^q=0$.
 
 \subsection{Feedback and Credit Assignment}
 
@@ -355,8 +403,11 @@ monotonic improvement.
 \section{Experiments}
 \label{sec:experiments}
 
-Evaluation has two gates. Phase A must establish estimator behavior at a frozen
-policy before Phase B makes training claims. The primary hypotheses are:
+Evaluation starts with a deterministic software Gate 0 on a finite trajectory
+law. It must exactly reproduce the target gradient, mixture normalization,
+weight bound, and analytic bias of each injected ratio error before Phase A.
+Phase A then establishes estimator behavior at a frozen language-model policy
+before Phase B makes training claims. The primary hypotheses are:
 \textbf{H1}, exact adaptive-mixture augmentation reduces projected gradient MSE
 relative to on-policy estimation at matched total compute; \textbf{H2}, any
 reduction translates to better held-out reward per generated token under
@@ -391,6 +442,7 @@ stratified by measured policy KL, not checkpoint age.
 
 Baselines are on-policy RLOO, Dr.\ GRPO, separately tuned DAPO and GSPO, TOPR,
 variance-informed prompt allocation (VIP),
+PrefixRL, PROS, SPEC-RL, MinPRO,
 plain bounded-mixture importance sampling, augmented sampling with uniform
 $Q$, and the full adaptive proposal. All generated prefixes and complete
 sequences, verifier calls, likelihood passes, nuisance training, policy
@@ -400,7 +452,13 @@ CPU time is reported as a Pareto cost rather than assumed equal. We use five
 independent development seeds and five frozen confirmatory seeds.
 Source-isolation controls set $\mu_t=\pi_t$ while adapting $Q_t$, and set
 $Q_t=D$ while varying policy staleness. Rollout counts are fixed before each
-batch; collection never stops early because a realized token total is reached.
+batch. A batch is admitted only if its predeclared worst-case token and
+verifier-call reserve fits; the run stops at the last fully admitted batch and
+reports budget undershoot. Realized token, call, accelerator, and CPU costs are
+never converted into one unspecified scalar. Reward-versus-realized-token and
+reward-versus-accelerator curves are primary; endpoint contrasts are reported
+only at their largest common realized-cost checkpoint, with no interpolation
+across updates.
 
 \subsection{Main Results}
 
@@ -528,7 +586,9 @@ The expected-response-length dual uses only fresh target-policy trajectories:
 $\kappa$ is fixed before training. Policy and dual updates both estimate
 quantities at $(\theta_t,\lambda_t)$ and are committed after collection.
 Reward, response length, and violation are reported separately rather than
-only through $U_\lambda$. This constraint does not cover prompt tokens,
+only through $U_\lambda$. This projected stochastic controller does not
+guarantee that every iterate or the final policy is feasible. The constraint
+does not cover prompt tokens,
 likelihood passes, verifier cost, or total training compute; those belong to
 the experimental ledger.
 
@@ -540,6 +600,32 @@ log-probabilities, reward components, parser status, generated tokens, verifier
 version, nuisance-model revision, use count, and policy-update identifier. The
 run aborts if a supposedly theorem-facing trajectory has use count above one
 or if its source probability cannot be reconstructed.
+For all candidate trajectories, including rejected and retried candidates, the
+ledger computes
+\begin{align}
+K_{\mathrm{gen}}&=\sum_z C(z),&
+K_{\mathrm{ver}}&=\sum_z\mathbf 1\{\text{verifier called on }z\},\\
+K_{\mathrm{score}}&=\sum_z C(z)\,N_{\mathrm{added\ score}}(z).
+\end{align}
+No cost disappears when a trajectory is excluded from the estimator.
+
+\subsection{Protocol Manifest}
+The repository runner
+\texttt{python3 scripts/run\_experiment\_pipeline.py
+--plan experiments/rl\_pipeline.json} enumerates immutable prompt acquisition,
+verifier processing, policy and nuisance-model construction, frozen-policy
+audits, one-update training, and held-out evaluation. The committed JSON is a
+stage and artifact contract; site-local commands are required to execute it,
+and each executed stage records output hashes and separate token, verifier,
+accelerator, CPU, and wall-time costs.
+The companion \texttt{synthetic\_commands.json} fixes a four-cell trajectory
+law, $\alpha=1/2$, 32 draws per source, 2,000 replications, and seed 20260902.
+It enumerates the target and estimator expectations to machine precision,
+checks $\sum_zM(z)w(z)=1$ and $w\le1/\alpha$, and verifies the bias identity
+for omitted-prompt-ratio and weight-clipping errors. Gate 0 fails closed if any
+identity differs by more than $10^{-12}$. This is an equation and software
+audit, not model-training evidence; its outputs cannot populate
+\cref{tab:main}.
 
 \subsection{Optional Prefix Gate}
 Prefix continuation is excluded from the core experiments. A later extension
@@ -549,7 +635,8 @@ completed stale-source residual with factor $I/p_t(H)$. The denominator remains
 the fixed number of candidate prefixes, not the number completed. Every
 discarded prefix is charged. Sequential gates require the product of all
 conditional continuation probabilities; group-relative estimators additionally
-require joint inclusion probabilities.
+require joint inclusion probabilities. This extension must be compared
+directly with PrefixRL and PROS \cite{setlur2026prefixrl,huang2026pros}.
 
 \section{Additional Results and Failures}
 \label{app:additional}
