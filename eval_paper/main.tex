@@ -153,6 +153,10 @@ reduce selected biases \cite{yang2026fairjudge}. Our model jury remains
 fallible: identification comes from randomized human acquisition, and the
 claimed novelty is limited to the tie-aware crossed decision frame and
 decision-loss policy.
+AURA adaptively prioritizes uncertain pairwise judge decisions for human
+verification \cite{zhang2026aura}. It targets refinement of latent judge trust;
+our target is instead a prespecified weighted human-panel mean, with the
+acquisition model allowed to be wrong.
 
 \section{Evaluation Goal and Desiderata}
 \label{sec:goal}
@@ -263,9 +267,11 @@ probability, jury feature, outcome, and model random seed. This joint law makes
 rater and order assignment explicit. If operational constraints require a
 nested assignment, the product of logged item, cell, rater, and order
 probabilities must equal $p_t(X_t)$.
-The design claim additionally requires stability of the full response law:
+Write $Y_t^\star$ for the standardized rating that would be recorded under a
+completed assignment. The design claim additionally requires stability of its
+full response law:
 \begin{equation}
-P(Y_t=y\mid\mathcal F_{t-1},X_t=x)=p_y(x),
+P(Y_t^\star=y\mid\mathcal F_{t-1},X_t=x)=p_y(x),
 \quad y\in\{-1,0,1\},
 \label{eq:response-stability}
 \end{equation}
@@ -273,6 +279,12 @@ where $\mu_x=\sum_yyp_y(x)$.
 Learning, fatigue, memory, or rubric drift can violate
 \cref{eq:response-stability}. Randomized task order, training before study
 labels, and temporal diagnostics reduce but do not prove this assumption.
+The protocol randomizes attempt positions, interleaves hidden audit attempts,
+and retains repeated roots rather than resampling them. A sensitivity analysis
+assumes the weaker uniform bound
+$|\mathbb E[Y_t\mid\mathcal F_{t-1},X_t=x]-\mu_x|\le\gamma$;
+then the design estimator's absolute drift bias is at most $\gamma$, so both
+interval endpoints are expanded by the frozen $\gamma\in\{0,.02,.05\}$.
 
 Let $m_{t-1}(x)\in[-1,1]$ be a bounded prediction of $Y_x$ trained only on
 prior rounds and frozen before draw $t$, and define
@@ -298,17 +310,29 @@ $Y_x$ in \cref{eq:psi} by $\mathbf{1}\{Y_x=0\}$ gives the tie-rate estimator,
 with its covariance with $\widehat\Delta_T$ reported.
 
 The fixed $T$ counts assignment attempts, never replacement completions. Let
-$R_t$ indicate an observed rating and set the recorded $Y_t^{\rm obs}=0$ when
-$R_t=0$. The primary report replaces a missing outcome by $-1$ and $+1$ in
+$R_t$ indicate observation and store $Y_t^{\rm obs}=R_tY_t^\star$, where
+$Y_t^\star\in[-1,1]$; let $\psi_t^\star$ denote \cref{eq:psi} with this
+complete outcome. The primary report replaces a missing outcome pointwise by
+$-1$ and $+1$ in
 \begin{align}
 \psi_t^\pm
 &=\bar m_{t-1}+\frac{\pi(X_t)}{p_t(X_t)}
 \left[R_t\{Y_t^{\rm obs}-m_{t-1}(X_t)\}\right.\nonumber\\
 &\qquad\left.{}+(1-R_t)\{\pm1-m_{t-1}(X_t)\}\right].
 \end{align}
-We apply one-sided martingale bounds to the two endpoint averages. A
-separate MAR analysis includes the logged response propensity; it is not the
-primary point estimate.
+Thus $\psi_t^-\le\psi_t^\star\le\psi_t^+$ for every assignment, without a
+missing-at-random assumption. Exact interval construction appears in
+\cref{sec:statistical-protocol}. A separate analysis assumes
+$P(R_t=1\mid\mathcal F_{t-1},X_t,Y_t^\star)=e_t(X_t)\ge e_{\min}>0$ and uses
+the predictable contribution
+\[
+\psi_t^{\rm MAR}=\bar m_{t-1}+
+\frac{\pi(X_t)}{p_t(X_t)}
+\frac{R_t}{e_t(X_t)}
+\{Y_t^{\rm obs}-m_{t-1}(X_t)\}.
+\]
+It is secondary because an estimated response model does not make
+outcome-dependent skipping ignorable.
 
 \subsection{Human or Model-Based Judging}
 
@@ -466,13 +490,29 @@ the final check against jury manipulation.
 \subsection{Statistical Protocol}
 \label{sec:statistical-protocol}
 
-The primary interval is two-sided for $\Delta_F$, with the frozen
-$z_{0.975}=1.959963984540054$:
+When every assignment is complete, the primary two-sided interval uses the
+frozen $z_{0.975}=1.959963984540054$:
 \begin{equation}
-[L_T,U_T]=
+[L_T^{\rm cmp},U_T^{\rm cmp}]=
 \left[\widehat\Delta_T\pm
 z_{0.975}\sqrt{\widehat V_T/T}\right]\cap[-1,1].
 \end{equation}
+If any $R_t=0$, define $B_\epsilon=1+2/\epsilon$,
+$c_\alpha=B_\epsilon\sqrt{2\log(2/\alpha)/T}$, and use instead
+\begin{equation}
+\begin{aligned}
+L_T^{\rm miss}
+&=\max\left\{-1,\frac1T\sum_t\psi_t^- -c_\alpha\right\},\\
+U_T^{\rm miss}
+&=\min\left\{1,\frac1T\sum_t\psi_t^+ +c_\alpha\right\}.
+\end{aligned}
+\label{eq:missing-interval}
+\end{equation}
+Each endpoint contribution lies in $[-B_\epsilon,B_\epsilon]$ and its
+predictable mean bounds $\Delta_F$; two one-sided martingale--Hoeffding bounds
+give coverage at least $1-\alpha$ without a response-mechanism assumption.
+Write $[L_T,U_T]$ for the applicable interval. It is widened by $\gamma$ in
+the response-drift sensitivity analysis.
 The terminal action used with \cref{eq:loss} and in the final report is
 \begin{equation}
 \widehat a=
@@ -483,8 +523,9 @@ E,&[L_T,U_T]\subseteq[-\delta,\delta],\\
 \mathrm{NE},&\text{otherwise}.
 \end{cases}
 \end{equation}
-If $[L_T,U_T]$ has $1-\alpha$ coverage, the probability of a wrong decisive
-or equivalence action is at most $\alpha+o(1)$ for this single comparison.
+For complete outcomes this wrong-action probability is at most
+$\alpha+o(1)$; with \cref{eq:missing-interval} it is at most $\alpha$ under
+response stability, for this single comparison.
 This does not bound
 abstention, expected stakeholder loss, or multi-model ranking error.
 
@@ -533,7 +574,9 @@ destroy per-draw positivity for that rater and therefore halts the
 point-identified primary analysis rather than triggering silent reassignment.
 The report then gives only the predeclared partial-identification bounds.
 Identifiers are hidden, both display orders are balanced in expectation, and
-every skip or nonresponse is retained.
+every skip or nonresponse is retained. Attempt position is randomized, sealed
+audit attempts are interleaved at hidden prespecified slots, and the drift
+sensitivity grid is frozen before labels.
 
 \subsection{Main Findings}
 
@@ -657,8 +700,17 @@ The repository runner
 --plan experiments/eval\_pipeline.json} enumerates frame acquisition,
 deduplication and response generation, jury-model construction, simulation and
 adaptive acquisition, and sealed evaluation. The committed JSON is a manifest
-validator and stage contract; site-local commands are required for execution,
-after which output hashes and costs are recorded.
+validator and stage contract tied to the hashed evaluation section of
+\texttt{experiments/pilot\_preregistration.json}; site-local commands are
+required for execution, after which output hashes and costs are recorded.
+The public-source registry pins each pilot frame and model revision.
+Automated license metadata is only a preflight; acquisition remains blocked
+until manual provenance, terms, privacy, human-subjects, and leakage reviews
+are approved.
+The same section fixes the Qwen, SmolLM, Mistral, and Phi jury revisions,
+posterior prior scales, one-step damped Newton approximation, unit annotation
+cost, nonresponse rule, and full simulation grids. These values specify a
+public pre-pilot; they do not replace a deployment-log sampling design.
 The companion \texttt{synthetic\_commands.json} fixes a 16-unit frame,
 $\epsilon=0.2$, $T=300$, 2,000 trials, and seed 20260902. It uses deliberately
 misspecified prequential predictions to check the exact one-draw identity,
@@ -695,6 +747,9 @@ The audit draws complete $(i,c,h,o)$ units from $\pi$ before adaptation and is
 stored behind a separate random seed. It estimates the same finite-frame target
 by the unweighted sample mean; if operational assignment changes its draw law,
 the exact target-to-draw ratio is retained.
+Audit membership never removes a unit from adaptive support: only the audit
+seed, assignments, and outcomes are hidden. The streams are independent
+conditional on the common frozen frame.
 Its outcomes are opened only after the adaptive algorithm, model
 hyperparameters, and primary analysis are frozen.
 

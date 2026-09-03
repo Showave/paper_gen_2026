@@ -32,7 +32,7 @@ Instruction-tuning mixtures contain examples with different sequence lengths,
 hardware costs, and effects on downstream capabilities, yet data selection and
 physical sequence packing are normally optimized separately. We study
 packing-aware, reference-constrained online scheduling: each optimizer step
-maximizes predicted target-reference improvement while limiting regression
+searches for predicted target-reference improvement while limiting regression
 on protected reference losses under an end-to-end compute budget. Our method
 uses low-dimensional, optimizer-state-conditioned gradient proxies to plan an
 isolated pack, then evaluates the \emph{actual} candidate AdamW displacement on
@@ -152,6 +152,12 @@ decision to a profiled pack cost. Merely adding this cost to an existing
 selector is not sufficient evidence of novelty: the central experiment must
 show an interaction between which examples are selected and how they are
 packed.
+Packing systems already optimize execution after examples are chosen.
+Hierarchical Balance Packing profiles multiple length and parallelism groups
+\cite{yao2025hbp}, while SlimPack balances variable-length forward and backward
+work with fine-grained slices \cite{liu2025slimpack}. They are systems
+comparators in our study. Neither supplies evidence that a data selector should
+change its subset because of profiled physical cost.
 
 \section{Problem Setting}
 \label{sec:setting}
@@ -186,9 +192,14 @@ A packing assignment $\pi$ maps examples to physical packs and obeys
 \sum_{i:\pi(i)=j} n_i\le L_{\max}\quad\text{for every pack }j.
 \label{eq:packing}
 \end{equation}
+Every method uses the same fixed capacity of $P$ physical packs, $P$
+microbatches, and world size per optimizer update, and must satisfy
+$N_{\min}\le N_B\le N_{\max}$. Thus the scheduler cannot obtain a different
+Adam step count or accumulation window merely by selecting more packs.
 Boundary-masked attention and reset position identifiers prevent cross-example
 information flow. Let
-$\overline C_t^{\mathrm{all}}(B,\pi)$ upper-bound allocated
+$\overline C_t^{\mathrm{all}}(B,\pi)$ denote a candidate reserve intended to
+upper-bound allocated
 accelerator-seconds for packing, reference gradients, candidate scoring,
 solving, gate forwards, training, and rejected updates, with sunk round costs
 assigned to every candidate. CPU-seconds and wall time are separate Pareto
@@ -212,7 +223,7 @@ separates cost profiling from pack-solver quality.
 
 At each refresh round we sample a candidate pool, construct feasible pack plans
 with a beam-search heuristic, score those plans with a frozen optimizer
-surrogate, and select the best feasible plan. We then compute the selected
+surrogate, and select the best plan found within a fixed search budget. We then compute the selected
 window's exact gradient, construct the exact AdamW displacement without
 committing optimizer state, and apply an independent gate. Rejected work is
 counted against the same budget.
@@ -303,8 +314,10 @@ unseen during search, re-score that shortlist. We report simultaneous
 shortlist coverage; absent that evidence, ``lower bound'' is replaced by
 ``penalized score.''
 
-The execution-cost upper bound is a profiled prediction plus a calibrated
-error margin; step-norm error is bounded as
+The execution-cost reserve is a profiled prediction plus a margin calibrated
+on independent plans. We call it an upper bound only when its simultaneous
+coverage target is met; otherwise it is a budget predictor and the
+confirmatory run cannot start. Step-norm error is bounded as
 $\overline q_t=\widehat q_t+e_t^q$. The ideal round-level decision is
 \begin{align}
 \max_{B,\pi}\quad &\underline S_{0,t}(B) \label{eq:selection}\\
@@ -315,7 +328,9 @@ $\overline q_t=\widehat q_t+e_t^q$. The ideal round-level decision is
 \quad c=1{:}C,\nonumber\\
 &\overline q_t(B)\le \rho_t^2,\qquad
 \overline C_t^{\mathrm{all}}(B,\pi)\le B_t^{\mathrm{rem}},\nonumber\\
-&\text{\cref{eq:packing} and source-coverage constraints.}\nonumber
+&N_{\min}\le N_B\le N_{\max},\quad
+|\operatorname{range}(\pi)|\le P,\nonumber\\
+&\text{\cref{eq:packing} and source-coverage constraints hold.}\nonumber
 \end{align}
 Here $\overline q_t$ estimates a trust-radius bound on
 $\|\widetilde\Delta_t\|^2$, $\tau_{c,t}$ is an allowed one-step reference-loss
@@ -327,6 +342,9 @@ then performs drop--swap repair. We claim no approximation ratio and compare
 against an exact small-pool oracle.
 A separate null action has $\Delta=0$, zero score and norm, and no optimizer
 step or moment increment; it is not \cref{eq:train-loss} with $N_B=0$.
+Actual allocated accelerator-seconds are metered. A reserve overrun is retained
+as a protocol failure; before sealed audits open, every paired method is
+restarted from the common initial state under a newly frozen larger reserve.
 
 \paragraph{Actual-update gate.}
 After one backward pass on the selected window, we construct AdamW moments
@@ -428,9 +446,17 @@ which capabilities are protected. Development uses a roughly 1--2B parameter
 model; confirmatory runs use a roughly 7--8B model and one second model family.
 The planned trainable configuration is rank-64 adapters on attention and MLP
 projections, BF16 AdamW, response-only loss, $L_{\max}=4096$, and isolated
-packing. Exact model revisions, tokenizer hashes, data hashes, optimizer
+packing. The pilot freezes $P=8$ packs and microbatches per update and
+$N_B\in[4096,8192]$ response tokens for every method. Exact model revisions,
+tokenizer hashes, data hashes, optimizer
 coefficients, and kernel versions must be frozen in the artifact before the
 first confirmatory run.
+The committed 20-update, 131,072-reference-token configuration is explicitly a
+pre-compute pilot, not the $B_{50M}$ confirmatory design. Its gate uses 512
+with-replacement draws per protected slice and a frozen empirical margin, with
+$\sum_t\tau_{c,t}\le0.2$; it makes no population-coverage claim. A formal use
+of \cref{eq:gate} requires a separately feasible $T_{\max}$ and recomputed
+sample count.
 
 Let $B_{50M}$ be the measured accelerator cost of random, isolated,
 best-fit-packed SFT on 50 million response tokens. We evaluate total budgets
@@ -451,6 +477,9 @@ best-fit packing. Candidate streams, initial checkpoints, data order seeds, and
 hyperparameter search budgets are paired. \Cref{tab:main} shows the core
 methods; the appendix reports the complete baseline--gate crossing, including
 influence distillation and the source-level allocator.
+Best-fit, HBP, and SlimPack-style execution policies are crossed with a fixed
+selector where their public implementations support the frozen models; this
+comparison measures systems efficiency, not selection quality.
 
 Primary endpoints are target audit NLL, the worst protected audit regression
 \begin{equation}
@@ -510,7 +539,11 @@ on the development model checks the largest interactions. Sketch dimensions
 and refresh intervals are tuned only on that model.
 The core $2\times2$ contrast crosses additive versus profiled selection cost
 with deterministic best-fit versus beam-search packing, separating a better
-cost model from a better packing heuristic. A second cross uses frozen-Adam
+cost model from a better packing heuristic. All four cells use identical
+candidates, subset moves, beam width, expansion count, and wall-clock solver
+budget. The primary mechanistic statistic is the paired
+difference-in-differences in dominated hypervolume, supplemented by beam error
+against exact 24-candidate instances. A second cross uses frozen-Adam
 and GIST scores with the same packing paths.
 
 Mechanistic diagnostics compare sketches with exact adapter-space dot
@@ -620,7 +653,8 @@ n_c\ge
 \frac{2M_\phi^2\log(C|\mathcal A|T_{\max}/\delta_g)}
 {\tau_{c,t}^2}.
 \end{equation}
-A pilot freezes $C,M_\phi,J,T_{\max},\delta_g,b_c$, every
+Any formal confirmatory configuration must freeze
+$C,M_\phi,J,T_{\max},\delta_g,b_c$, every
 $\tau_{c,t}$ and $n_c$, the sampling seeds, and disjoint $(c,t)$ gate blocks,
 with $\sum_{t\le T_{\max}}\tau_{c,t}\le b_c$. It records the derived radius
 and total required examples. If $\widehat c_{\mathrm{fwd}}$ is the measured
@@ -635,8 +669,17 @@ condition is removed and any cheaper gate is labeled heuristic; H3 then remains
 an empirical gate comparison only. The repository protocol runner
 \texttt{python3 scripts/run\_experiment\_pipeline.py
 --plan experiments/sft\_pipeline.json} enumerates acquisition, processing,
-model construction, matched-budget training, and sealed evaluation artifacts.
-With \texttt{--execute --commands experiments/synthetic\_commands.json}, a
+model construction, 20-update exploratory training, and sealed pilot evaluation
+artifacts. The full $B_{50M}$ confirmatory configuration is not yet frozen.
+It hashes the exact SFT section of
+\texttt{experiments/pilot\_preregistration.json}, including the fixed
+eight-pack window, optimizer, selector, gate, cost-failure rule, and factorial
+contrast. The public-source registry pins full dataset and checkpoint commits;
+its automated license metadata check is only a preflight, and real acquisition
+is blocked until every manual provenance, terms, privacy, and leakage review is
+approved.
+With \texttt{--execute --synthetic-audit --commands
+experiments/synthetic\_commands.json}, a
 CPU-only audit exactly enumerates subset packability for two length-10 packs,
 checks direct joint selection against the profiled-cost form, and exercises the
 finite gate grid over 512 seeded score perturbations. A separate frozen
