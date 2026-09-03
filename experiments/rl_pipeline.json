@@ -1,15 +1,21 @@
 {
   "schema_version": 1,
   "paper": "rl",
-  "purpose": "Frozen-policy estimator audit followed by one-update-per-batch RLVR training.",
+  "purpose": "One-family mathematics H1 pre-pilot for the frozen-policy augmented-mixture estimator.",
+  "preregistration": {
+    "path": "experiments/pilot_preregistration.json",
+    "section": "rl"
+  },
   "stages": [
     {
       "name": "acquire",
-      "objective": "Freeze a finite prompt frame, verifier suites, current and stale checkpoints, and contamination boundaries.",
+      "objective": "Freeze the DAPO mathematics prompt frame, verifier, current checkpoint, stale checkpoint rule, and contamination boundaries.",
       "inputs": [
-        "Versioned math and code prompt identifiers with known target masses",
+        "Approved entries and exact revisions from experiments/public_source_registry.json",
+        "Frozen rl section of experiments/pilot_preregistration.json",
+        "Versioned mathematics prompt identifiers with known target masses",
         "Current-policy, stale-policy, tokenizer, and decoder revisions",
-        "Public and hidden verifier source hashes"
+        "Public mathematics verifier source hash"
       ],
       "artifacts": [
         "acquire/data_manifest.json"
@@ -17,7 +23,7 @@
       "checks": [
         "Prompt support is finite, normalized, and reconstructible",
         "Hidden tests are disjoint from SFT, nuisance, and allocator data",
-        "Licenses and sandbox requirements are recorded"
+        "Licenses and verifier requirements are recorded"
       ],
       "costs": [
         "cpu_seconds",
@@ -31,6 +37,7 @@
       "inputs": [
         "acquire/data_manifest.json",
         "Temperature-softmax decoder specification and maximum response length",
+        "Deterministic allowed-vocabulary rule with no top-k, top-p, repetition, minimum-length, or forced-token processor",
         "Parser, timeout, sandbox-error, EOS, and truncation reward rules"
       ],
       "artifacts": [
@@ -38,6 +45,7 @@
       ],
       "checks": [
         "Sampler frequencies agree with scored masses in finite-vocabulary conformance tests",
+        "Current and stale sampler/scorer pairs agree on normalized masses, EOS-at-limit, and truncation semantics",
         "Prompt and sequence mixture masses normalize in high precision",
         "No verifier outcome is retried or silently dropped"
       ],
@@ -54,7 +62,7 @@
       "inputs": [
         "process/trajectory_schema.json",
         "Exact finite-law Gate 0 oracle, ratio fault injections, and 1e-12 identity tolerance",
-        "Frozen alpha grid, proposal support floor, length target, and dual schedule",
+        "Frozen alpha grid, per-alpha stratum counts, and proposal support floor",
         "Projection, nuisance-training, and stale-KL configurations"
       ],
       "artifacts": [
@@ -74,20 +82,22 @@
     },
     {
       "name": "train",
-      "objective": "Audit projected bias/variance at frozen policies, freeze alpha, then run single-use one-update batches.",
+      "objective": "Audit projected bias/variance at frozen policies and freeze alpha on data disjoint from confirmation.",
       "inputs": [
         "build/model_manifest.json",
         "Independent large current-policy reference samples",
-        "Matched token, verifier-call, hyperparameter, and batch-admission budgets"
+        "Disjoint nuisance-fit, alpha-selection, and untouched confirmation prompt partitions",
+        "Matched 64-trajectory replications and measured cost ledger"
       ],
       "artifacts": [
         "train/trajectory_ledger.jsonl"
       ],
       "checks": [
         "Every theorem-facing trajectory is generated after iteration choices freeze and has use_count one",
+        "Source and prompt draws are preassigned; infrastructure failure aborts the batch without completion-time filtering or refill",
         "The numerical mixture-weight bound and source-specific ESS are checked",
-        "Batch admission reserves worst-case cost and reports terminal undershoot",
-        "Generated-token, verifier-call, and added-scoring counters retain rejected and retried candidates"
+        "Every alpha uses counts satisfying alpha = n_current / (n_current + n_stale)",
+        "Generated-token, verifier-call, and added-scoring counters retain aborted candidates"
       ],
       "costs": [
         "cpu_seconds",
@@ -100,19 +110,19 @@
     },
     {
       "name": "evaluate",
-      "objective": "Aggregate gradient MSE, held-out reward, reward-length frontiers, and deliberate theorem violations.",
+      "objective": "Aggregate untouched-confirmation gradient bias, variance, MSE-times-cost, and deliberate ratio fault injections.",
       "inputs": [
         "train/trajectory_ledger.jsonl",
-        "Frozen intervals, thresholds, seed pairing, and multiplicity rules",
-        "Hidden verifier variants and shuffled/random/anti-correlated controls"
+        "Frozen projection, confirmation replications, Monte Carlo reference uncertainty, and seed pairing",
+        "Omitted-prompt-ratio and clipped-weight fault injections"
       ],
       "artifacts": [
         "evaluate/summary.json"
       ],
       "checks": [
         "Monte Carlo reference uncertainty is propagated",
-        "Prefix reuse and repeated replay are labeled as different or biased objectives",
-        "Endpoint comparisons use the largest common realized-cost checkpoint without interpolation",
+        "Selection targets D_select and confirmation targets the separately normalized D_confirm",
+        "The selected alpha is evaluated once on untouched confirmation replications",
         "Every seed, parser failure, support failure, and negative result is retained"
       ],
       "costs": [
