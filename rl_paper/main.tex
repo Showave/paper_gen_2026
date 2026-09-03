@@ -136,6 +136,11 @@ be preferable even when biased. Separately, spurious-reward controls show that
 benchmark gains need not demonstrate learning from the intended verifier
 \cite{shao2026spurious}. The protocol includes those controls and treats exact statistical
 assumptions, not empirical stability alone, as the object of the first study.
+Direct replay studies optimize the generation--staleness--diversity trade-off
+\cite{arnal2026replay}, while POPO prioritizes effective recent groups and uses
+decoupled off-policy correction \cite{mao2026popo}. Both are stronger practical
+comparators than naive reuse. Their empirical utility does not imply the
+conditional unbiasedness claimed for our newly sampled, single-use design.
 
 PrefixRL and PROS instead reuse an old prefix while generating a new
 continuation \cite{setlur2026prefixrl,huang2026pros}; they change the prompt or
@@ -165,8 +170,11 @@ The rollout decoder is part of $\pi_\theta$. Temperature, truncation, and any
 rejection rule must be represented by its normalized sampling probability;
 raw base-model logits are not automatically the rollout density. The
 theorem-facing implementation uses temperature-softmax sampling without
-top-$k$ or top-$p$, with fixed maximum length and EOS included in the outcome.
-For allowed vocabulary $\mathcal V_\ell$ and temperature $T_d$ its logged
+top-$k$, top-$p$, repetition penalties, minimum-length masks, or forced tokens,
+with fixed maximum length and EOS included in the outcome.
+The allowed vocabulary $\mathcal V_\ell$ is a deterministic,
+parameter-independent function of the tokenizer and prefix. For temperature
+$T_d$ the logged
 per-token mass is
 \begin{equation}
 p_\theta(y_\ell\mid y_{<\ell},x)=
@@ -177,7 +185,8 @@ p_\theta(y_\ell\mid y_{<\ell},x)=
 \end{equation}
 The sequence mass is the product through EOS; no-EOS sequences at the fixed
 limit carry their product mass and a deterministic truncation status. An
-empirical sampler--scorer conformance test must pass before estimator audits.
+empirical conformance test for both current and stale sampler--scorer pairs
+must pass before estimator audits.
 
 The verifier deterministically maps every complete $Z$, including parse,
 timeout, sandbox-error, and truncation statuses, to bounded reward $R(Z)$; no
@@ -279,7 +288,10 @@ $B=w(U-h)s$ under $G$. Conditional on the frozen history,
 This expression includes covariance between direct and residual terms inside
 $A$. It gives no universal advantage over on-policy sampling; the
 frozen-policy audit chooses $\alpha$ from a preregistered grid using projected
-MSE per measured unit cost, then freezes it for confirmation.
+MSE times measured unit cost, then freezes it for confirmation. Nuisance fitting,
+$\alpha$ selection, and confirmation use three disjoint prompt partitions; the
+projection seed, dimension, reference sample, and confirmation replications
+are frozen before selection.
 
 $h_t^R,h_t^C,b_t$, and $q_t$ are trained only from data available before iteration
 $t$, then frozen. The sums below range over the complete finite prompt
@@ -308,6 +320,11 @@ failures, timeouts, sandbox errors, and truncations are separate logged outcomes
 with predeclared scalar rewards rather than silently dropped samples. Hidden
 tests are disjoint from the authors' SFT, nuisance-model, and prompt-allocation
 data; unknown base-model pretraining contamination remains a limitation.
+Source and prompt draws are assigned before distributed generation. A valid
+sequence that reaches any declared verifier status is retained regardless of
+completion time. An infrastructure failure before a scored sequence exists
+aborts the complete batch, charges incurred cost, and performs no update;
+workers are never refilled selectively.
 
 Terminal $U_\lambda$ multiplies the unnormalized sequence score in
 \cref{eq:score}; the theorem does not assign token-level causal credit. Reward
@@ -431,6 +448,14 @@ bias, variance, MSE, interval coverage, effective sample size (ESS), and
 compute. Fault injection deliberately omits prompt ratios, uses base-model
 rather than decoder probabilities, fits the focal nuisance outcome, clips
 weights, and reuses data that formed the target policy.
+The committed public-data configuration is a one-family mathematics pre-pilot
+for H1 only. It uses disjoint normalized laws $D_{\rm fit}$,
+$D_{\rm select}$, and $D_{\rm confirm}$; selection MSE is not described as an
+estimate under the confirmation or full-frame law. For
+$\alpha\in\{.25,.5,.75,1\}$ it fixes
+$(n_P,n_G)\in\{(16,48),(32,32),(48,16),(64,0)\}$ and minimizes projected MSE
+times measured accelerator-seconds. Code, second-family, H2, and H3
+confirmatory runs require a later frozen configuration.
 
 \paragraph{End-to-end training.}
 Confirmatory training uses two open model families at small and medium scale,
@@ -443,6 +468,7 @@ stratified by measured policy KL, not checkpoint age.
 Baselines are on-policy RLOO, Dr.\ GRPO, separately tuned DAPO and GSPO, TOPR,
 variance-informed prompt allocation (VIP),
 PrefixRL, PROS, SPEC-RL, MinPRO,
+the ICML replay design, POPO,
 plain bounded-mixture importance sampling, augmented sampling with uniform
 $Q$, and the full adaptive proposal. All generated prefixes and complete
 sequences, verifier calls, likelihood passes, nuisance training, policy
@@ -505,6 +531,11 @@ length, difficulty, and source; fresh versus augmented projected gradients;
 pre/post-update KL; entropy; sign-conditioned update mass; policy-to-behavior
 KL; dual trajectory; reward--token frontier; parser errors; and verifier
 disagreement. Reporting only reward curves is insufficient to test the method.
+The length study freezes
+$\kappa\in\{512,1024,2048\}$, $\lambda_0=0$, and dual step size $10^{-4}$;
+last-iterate and final-20\%-average frontiers are both reported. Replay
+comparators freeze admission, buffer capacity, reuse count, KL stratum,
+clipping, and update count, with original generation and rescoring charged.
 
 \subsection{Generalization and Safety}
 
@@ -613,11 +644,16 @@ No cost disappears when a trajectory is excluded from the estimator.
 The repository runner
 \texttt{python3 scripts/run\_experiment\_pipeline.py
 --plan experiments/rl\_pipeline.json} enumerates immutable prompt acquisition,
-verifier processing, policy and nuisance-model construction, frozen-policy
-audits, one-update training, and held-out evaluation. The committed JSON is a
-stage and artifact contract; site-local commands are required to execute it,
-and each executed stage records output hashes and separate token, verifier,
-accelerator, CPU, and wall-time costs.
+verifier processing, policy and nuisance-model construction, and a frozen-policy
+H1 estimator pre-pilot. The full end-to-end H2/H3 plan is not executable from
+this configuration. The committed JSON is a
+stage and artifact contract tied to the hashed RL section of
+\texttt{experiments/pilot\_preregistration.json}; site-local commands are
+required to execute it, and each executed stage records output hashes and
+separate token, verifier, accelerator, CPU, and wall-time costs. The public
+source registry pins prompt, checkpoint, and hidden-evaluator commits.
+Automated license metadata is only a preflight: real acquisition remains
+blocked on manual provenance, terms, privacy, and leakage review.
 The companion \texttt{synthetic\_commands.json} fixes a four-cell trajectory
 law, $\alpha=1/2$, 32 draws per source, 2,000 replications, and seed 20260902.
 It enumerates the target and estimator expectations to machine precision,
