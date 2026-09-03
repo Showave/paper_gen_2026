@@ -1,0 +1,370 @@
+{
+  "evidence_status": "Metadata and license preflight only; no dataset, checkpoint, training, or human-study result has been produced.",
+  "generated_at_utc": "2026-09-03T01:28:45.896942+00:00",
+  "registry_as_of_date": "2026-09-03",
+  "schema_version": 1,
+  "sources": [
+    {
+      "automated_checks_passed": true,
+      "card_license": null,
+      "configs": [
+        "smol-magpie-ultra",
+        "smol-constraints",
+        "smol-rewrite",
+        "smol-summarize"
+      ],
+      "disabled": false,
+      "expected_license": "apache-2.0",
+      "gated": false,
+      "key": "smoltalk-sft",
+      "kind": "dataset",
+      "license_evidence": {
+        "marker": "All the new datasets (Smol-Magpie-Ultra, Smol-contraints, Smol-rewrite, Smol-summarize) are licensed under [Apache 2.0]",
+        "matched": true,
+        "type": "pinned_text",
+        "url": "https://huggingface.co/datasets/HuggingFaceTB/smoltalk/raw/5feaf2fd3ffca7c237fc38d1861bc30365d48ffa/README.md"
+      },
+      "manual_review_status": "pending",
+      "public": true,
+      "repo_id": "HuggingFaceTB/smoltalk",
+      "revision": "5feaf2fd3ffca7c237fc38d1861bc30365d48ffa",
+      "usage": [
+        "sft:candidate-general"
+      ]
+    },
+    {
+      "automated_checks_passed": true,
+      "card_license": "apache-2.0",
+      "configs": [
+        "default"
+      ],
+      "disabled": false,
+      "expected_license": "apache-2.0",
+      "gated": false,
+      "key": "openr1-math-sft",
+      "kind": "dataset",
+      "license_evidence": {
+        "matched": true,
+        "type": "card_metadata"
+      },
+      "manual_review_status": "pending",
+      "public": true,
+      "repo_id": "open-r1/OpenR1-Math-220k",
+      "revision": "e4e141ec9dea9f8326f4d347be56105859b2bd68",
+      "usage": [
+        "sft:candidate-math"
+      ]
+    },
+    {
+      "automated_checks_passed": true,
+      "card_license": "mit",
+      "configs": [
+        "python"
+      ],
+      "disabled": false,
+      "expected_license": "mit",
+      "gated": false,
+      "key": "commitpackft-sft",
+      "kind": "dataset",
+      "license_evidence": {
+        "matched": true,
+        "type": "card_metadata"
+      },
+      "manual_review_status": "pending",
+      "public": true,
+      "repo_id": "bigcode/commitpackft",
+      "revision": "fc56fe33c030c6daa414c2b112c932b8eed085e6",
+      "usage": [
+        "sft:candidate-code"
+      ]
+    },
+    {
+      "automated_checks_passed": true,
+      "card_license": "apache-2.0",
+      "configs": [
+        "default"
+      ],
+      "disabled": false,
+      "expected_license": "apache-2.0",
+      "gated": false,
+      "key": "dapo-math-rl",
+      "kind": "dataset",
+      "license_evidence": {
+        "matched": true,
+        "type": "card_metadata"
+      },
+      "manual_review_status": "pending",
+      "public": true,
+      "repo_id": "BytedTsinghua-SIA/DAPO-Math-17k",
+      "revision": "65877096c24ffa7abc4e4fa5edb95cf3413a5674",
+      "usage": [
+        "rl:prompt-train"
+      ]
+    },
+    {
+      "automated_checks_passed": true,
+      "card_license": null,
+      "configs": [
+        "default:test"
+      ],
+      "disabled": false,
+      "expected_license": "apache-2.0",
+      "gated": false,
+      "key": "livebench-reasoning-eval",
+      "kind": "dataset",
+      "license_evidence": {
+        "marker": "distributed under the Apache License 2.0",
+        "matched": true,
+        "type": "pinned_text",
+        "url": "https://raw.githubusercontent.com/LiveBench/LiveBench/f7800c1c304fe8ee611339987ce6bac4b349afc7/docs/DATASHEET.md"
+      },
+      "manual_review_status": "pending",
+      "public": true,
+      "repo_id": "livebench/reasoning",
+      "revision": "6fc6498a5dfba553f69f4413feabade1f1a2d384",
+      "usage": [
+        "eval:sealed-root-frame"
+      ]
+    },
+    {
+      "automated_checks_passed": true,
+      "card_license": null,
+      "configs": [
+        "default:test"
+      ],
+      "disabled": false,
+      "expected_license": "apache-2.0",
+      "gated": false,
+      "key": "livebench-math-eval",
+      "kind": "dataset",
+      "license_evidence": {
+        "marker": "distributed under the Apache License 2.0",
+        "matched": true,
+        "type": "pinned_text",
+        "url": "https://raw.githubusercontent.com/LiveBench/LiveBench/f7800c1c304fe8ee611339987ce6bac4b349afc7/docs/DATASHEET.md"
+      },
+      "manual_review_status": "pending",
+      "public": true,
+      "repo_id": "livebench/math",
+      "revision": "bb66571c8ccf32d3df9e6f48b920d3770ff4aacb",
+      "usage": [
+        "eval:sealed-root-frame"
+      ]
+    },
+    {
+      "automated_checks_passed": true,
+      "card_license": null,
+      "configs": [
+        "default:test"
+      ],
+      "disabled": false,
+      "expected_license": "apache-2.0",
+      "gated": false,
+      "key": "livebench-coding-eval",
+      "kind": "dataset",
+      "license_evidence": {
+        "marker": "distributed under the Apache License 2.0",
+        "matched": true,
+        "type": "pinned_text",
+        "url": "https://raw.githubusercontent.com/LiveBench/LiveBench/f7800c1c304fe8ee611339987ce6bac4b349afc7/docs/DATASHEET.md"
+      },
+      "manual_review_status": "pending",
+      "public": true,
+      "repo_id": "livebench/coding",
+      "revision": "a958549fdd8aa57be0a3fafe7b205ffc160ed5f4",
+      "usage": [
+        "eval:sealed-root-frame"
+      ]
+    },
+    {
+      "automated_checks_passed": true,
+      "card_license": "apache-2.0",
+      "configs": [
+        "default:v0.1.4"
+      ],
+      "disabled": false,
+      "expected_license": "apache-2.0",
+      "gated": false,
+      "key": "bigcodebench-eval",
+      "kind": "dataset",
+      "license_evidence": {
+        "matched": true,
+        "type": "card_metadata"
+      },
+      "manual_review_status": "pending",
+      "public": true,
+      "repo_id": "bigcode/bigcodebench",
+      "revision": "b74c0d0bf70d2c0bc459be537895cca163007f1a",
+      "usage": [
+        "sft:sealed-code-benchmark",
+        "rl:hidden-code-evaluator"
+      ]
+    },
+    {
+      "automated_checks_passed": true,
+      "card_license": "apache-2.0",
+      "configs": [
+        "bf16"
+      ],
+      "disabled": false,
+      "expected_license": "apache-2.0",
+      "gated": false,
+      "key": "qwen25-instruct-1p5b",
+      "kind": "model",
+      "license_evidence": {
+        "matched": true,
+        "type": "card_metadata"
+      },
+      "manual_review_status": "pending",
+      "public": true,
+      "repo_id": "Qwen/Qwen2.5-1.5B-Instruct",
+      "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+      "usage": [
+        "sft:development-base",
+        "eval:pilot-model-a",
+        "eval:jury-family-qwen"
+      ]
+    },
+    {
+      "automated_checks_passed": true,
+      "card_license": "apache-2.0",
+      "configs": [
+        "bf16"
+      ],
+      "disabled": false,
+      "expected_license": "apache-2.0",
+      "gated": false,
+      "key": "smollm2-instruct-1p7b",
+      "kind": "model",
+      "license_evidence": {
+        "matched": true,
+        "type": "card_metadata"
+      },
+      "manual_review_status": "pending",
+      "public": true,
+      "repo_id": "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+      "revision": "31b70e2e869a7173562077fd711b654946d38674",
+      "usage": [
+        "sft:development-second-family",
+        "eval:pilot-model-b",
+        "eval:jury-family-smollm"
+      ]
+    },
+    {
+      "automated_checks_passed": true,
+      "card_license": "apache-2.0",
+      "configs": [
+        "bf16"
+      ],
+      "disabled": false,
+      "expected_license": "apache-2.0",
+      "gated": false,
+      "key": "qwen25-instruct-7b",
+      "kind": "model",
+      "license_evidence": {
+        "matched": true,
+        "type": "card_metadata"
+      },
+      "manual_review_status": "pending",
+      "public": true,
+      "repo_id": "Qwen/Qwen2.5-7B-Instruct",
+      "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+      "usage": [
+        "sft:confirmatory-base"
+      ]
+    },
+    {
+      "automated_checks_passed": true,
+      "card_license": "apache-2.0",
+      "configs": [
+        "bf16"
+      ],
+      "disabled": false,
+      "expected_license": "apache-2.0",
+      "gated": false,
+      "key": "mistral-instruct-7b",
+      "kind": "model",
+      "license_evidence": {
+        "matched": true,
+        "type": "card_metadata"
+      },
+      "manual_review_status": "pending",
+      "public": true,
+      "repo_id": "mistralai/Mistral-7B-Instruct-v0.3",
+      "revision": "c170c708c41dac9275d15a8fff4eca08d52bab71",
+      "usage": [
+        "sft:confirmatory-second-family",
+        "eval:jury-family-mistral"
+      ]
+    },
+    {
+      "automated_checks_passed": true,
+      "card_license": "mit",
+      "configs": [
+        "bf16"
+      ],
+      "disabled": false,
+      "expected_license": "mit",
+      "gated": false,
+      "key": "phi3-mini-instruct",
+      "kind": "model",
+      "license_evidence": {
+        "matched": true,
+        "type": "card_metadata"
+      },
+      "manual_review_status": "pending",
+      "public": true,
+      "repo_id": "microsoft/Phi-3-mini-4k-instruct",
+      "revision": "f39ac1d28e925b323eae81227eaba4464caced4e",
+      "usage": [
+        "eval:jury-family-phi"
+      ]
+    },
+    {
+      "automated_checks_passed": true,
+      "card_license": "apache-2.0",
+      "configs": [
+        "bf16"
+      ],
+      "disabled": false,
+      "expected_license": "apache-2.0",
+      "gated": false,
+      "key": "qwen25-math-1p5b",
+      "kind": "model",
+      "license_evidence": {
+        "matched": true,
+        "type": "card_metadata"
+      },
+      "manual_review_status": "pending",
+      "public": true,
+      "repo_id": "Qwen/Qwen2.5-Math-1.5B",
+      "revision": "4a83ca6e4526a4f2da3aa259ec36c259f66b2ab2",
+      "usage": [
+        "rl:development-policy"
+      ]
+    },
+    {
+      "automated_checks_passed": true,
+      "card_license": "apache-2.0",
+      "configs": [
+        "bf16"
+      ],
+      "disabled": false,
+      "expected_license": "apache-2.0",
+      "gated": false,
+      "key": "qwen25-math-7b",
+      "kind": "model",
+      "license_evidence": {
+        "matched": true,
+        "type": "card_metadata"
+      },
+      "manual_review_status": "pending",
+      "public": true,
+      "repo_id": "Qwen/Qwen2.5-Math-7B",
+      "revision": "b101308fe89651ea5ce025f25317fea6fc07e96e",
+      "usage": [
+        "rl:confirmatory-policy"
+      ]
+    }
+  ]
+}

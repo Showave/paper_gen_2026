@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "paper": "sft",
+  "purpose": "Twenty-update exploratory pre-compute pilot for profiled pack-cost selection and heuristic protected-loss gating.",
+  "preregistration": {
+    "path": "experiments/pilot_preregistration.json",
+    "section": "sft"
+  },
+  "stages": [
+    {
+      "name": "acquire",
+      "objective": "Snapshot source-labeled instruction candidates, disjoint reference slices, and sealed benchmarks with provenance.",
+      "inputs": [
+        "Approved entries and exact revisions from experiments/public_source_registry.json",
+        "Frozen sft section of experiments/pilot_preregistration.json",
+        "Versioned dataset identifiers, revisions, licenses, and terms",
+        "Frozen source weights and target/protected capability definitions",
+        "Base-model and tokenizer revisions"
+      ],
+      "artifacts": [
+        "acquire/data_manifest.json"
+      ],
+      "checks": [
+        "Every row has a stable identifier, source, license class, and content hash",
+        "Personally identifying fields and undocumented data are excluded",
+        "Sealed audit and benchmark contents are inaccessible to selection code"
+      ],
+      "costs": [
+        "cpu_seconds",
+        "wall_seconds",
+        "bytes_downloaded"
+      ]
+    },
+    {
+      "name": "process",
+      "objective": "Deduplicate, split, tokenize, and validate isolated packed examples before any tuning.",
+      "inputs": [
+        "acquire/data_manifest.json",
+        "Tokenizer hash and response-only masking policy",
+        "Source-template and semantic-cluster deduplication thresholds"
+      ],
+      "artifacts": [
+        "process/splits_manifest.json"
+      ],
+      "checks": [
+        "Candidate, score, gate, audit, and benchmark clusters are disjoint",
+        "Packed and unpacked losses and trainable gradients agree within the frozen tolerance",
+        "Response-token counts and length histograms are reported by source"
+      ],
+      "costs": [
+        "cpu_seconds",
+        "wall_seconds",
+        "accelerator_seconds"
+      ]
+    },
+    {
+      "name": "build",
+      "objective": "Construct the frozen base model, LoRA adapters, selectors, cost profiler, and actual-update gate.",
+      "inputs": [
+        "process/splits_manifest.json",
+        "Adapter, optimizer, sketch, beam, gate, and cost-model configuration",
+        "Frozen clipping bound, scale grid, 20-round cumulative tolerance, with-replacement gate law, empirical margin, and seeds",
+        "Compiler, kernel, precision, and hardware revisions"
+      ],
+      "artifacts": [
+        "build/model_manifest.json"
+      ],
+      "checks": [
+        "Trainable parameter names and initial tensor hashes match across methods",
+        "Small-pool beam plans are compared with an exact oracle",
+        "Every method uses the same fixed pack count, microbatch count, response-token interval, search moves, and solver expansion budget",
+        "Independent-shortlist penalties and heuristic gate settings are frozen without a population-coverage claim",
+        "The cumulative tolerance and total with-replacement gate draws reproduce from the manifest",
+        "The empirical cost reserve is labeled a predictor; any overrun follows the frozen invalidation rule"
+      ],
+      "costs": [
+        "cpu_seconds",
+        "wall_seconds",
+        "accelerator_seconds"
+      ]
+    },
+    {
+      "name": "train",
+      "objective": "Run the paired 2x2 cost-profile/packing pilot for at most 20 updates and identical 131,072-reference-token budget boundaries.",
+      "inputs": [
+        "build/model_manifest.json",
+        "Paired candidate streams, seeds, checkpoints, and hyperparameter budgets",
+        "Frozen stopping ledger and protected-tolerance budgets"
+      ],
+      "artifacts": [
+        "train/run_ledger.jsonl"
+      ],
+      "checks": [
+        "Scoring, solver, gate, rejection, CPU, and accelerator costs are charged",
+        "Every accepted and rejected displacement has a state hash and gate record",
+        "Failed and preempted runs remain in the ledger",
+        "No round starts unless scoring, candidate-update, and worst-case gate reserves fit the remaining budget",
+        "Any reserve overrun invalidates the paired exploratory run before sealed audits open"
+      ],
+      "costs": [
+        "cpu_seconds",
+        "wall_seconds",
+        "accelerator_seconds",
+        "scored_examples",
+        "accepted_updates",
+        "rejected_updates"
+      ]
+    },
+    {
+      "name": "evaluate",
+      "objective": "Open pilot audits once, aggregate exploratory paired frontiers, and run contamination diagnostics without confirmatory claims.",
+      "inputs": [
+        "train/run_ledger.jsonl",
+        "Frozen hypervolume box, tolerance grid, multiplicity family, and missing-run rule",
+        "Sealed audit and benchmark manifests"
+      ],
+      "artifacts": [
+        "evaluate/summary.json"
+      ],
+      "checks": [
+        "Every table cell resolves to immutable run identifiers",
+        "Exploratory max-statistic interval is computed exactly as preregistered and is not used for confirmatory hypothesis acceptance",
+        "Negative results, every seed, and score-to-audit gaps are retained"
+      ],
+      "costs": [
+        "cpu_seconds",
+        "wall_seconds",
+        "accelerator_seconds",
+        "evaluated_checkpoints"
+      ]
+    }
+  ]
+}
