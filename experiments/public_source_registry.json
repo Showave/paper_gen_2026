@@ -1,0 +1,400 @@
+{
+  "schema_version": 1,
+  "as_of_date": "2026-09-03",
+  "evidence_status": "Metadata and license preflight only; no dataset, checkpoint, training, or human-study result has been produced.",
+  "sources": [
+    {
+      "key": "smoltalk-sft",
+      "kind": "dataset",
+      "repo_id": "HuggingFaceTB/smoltalk",
+      "revision": "5feaf2fd3ffca7c237fc38d1861bc30365d48ffa",
+      "expected_license": "apache-2.0",
+      "license_check": {
+        "type": "pinned_text",
+        "url": "https://huggingface.co/datasets/HuggingFaceTB/smoltalk/raw/5feaf2fd3ffca7c237fc38d1861bc30365d48ffa/README.md",
+        "marker": "All the new datasets (Smol-Magpie-Ultra, Smol-contraints, Smol-rewrite, Smol-summarize) are licensed under [Apache 2.0]"
+      },
+      "configs": [
+        "smol-magpie-ultra",
+        "smol-constraints",
+        "smol-rewrite",
+        "smol-summarize"
+      ],
+      "usage": [
+        "sft:candidate-general"
+      ],
+      "license_scope_note": "Only the four named HuggingFaceTB-created configurations are admitted; the aggregate mixture and inherited public configurations are excluded.",
+      "manual_review": {
+        "status": "pending",
+        "requirements": [
+          "confirm configuration-level provenance",
+          "review synthetic-data generator terms",
+          "record privacy and PII scan"
+        ]
+      }
+    },
+    {
+      "key": "openr1-math-sft",
+      "kind": "dataset",
+      "repo_id": "open-r1/OpenR1-Math-220k",
+      "revision": "e4e141ec9dea9f8326f4d347be56105859b2bd68",
+      "expected_license": "apache-2.0",
+      "license_check": {
+        "type": "card_metadata"
+      },
+      "configs": [
+        "default"
+      ],
+      "usage": [
+        "sft:candidate-math"
+      ],
+      "license_scope_note": "The repository-level license does not replace source-by-source provenance review of the underlying NuminaMath problems or generated traces.",
+      "manual_review": {
+        "status": "pending",
+        "requirements": [
+          "audit source field and upstream terms",
+          "remove benchmark-overlapping problem clusters",
+          "record generated-trace provenance"
+        ]
+      }
+    },
+    {
+      "key": "commitpackft-sft",
+      "kind": "dataset",
+      "repo_id": "bigcode/commitpackft",
+      "revision": "fc56fe33c030c6daa414c2b112c932b8eed085e6",
+      "expected_license": "mit",
+      "license_check": {
+        "type": "card_metadata"
+      },
+      "configs": [
+        "python"
+      ],
+      "usage": [
+        "sft:candidate-code"
+      ],
+      "license_scope_note": "The repository tag is only a preflight signal. Per-row upstream repository licenses and attribution must be retained and separately allowlisted.",
+      "manual_review": {
+        "status": "pending",
+        "requirements": [
+          "retain per-row repository and license",
+          "exclude unknown and copyleft rows",
+          "run secret and PII scanning"
+        ]
+      }
+    },
+    {
+      "key": "dapo-math-rl",
+      "kind": "dataset",
+      "repo_id": "BytedTsinghua-SIA/DAPO-Math-17k",
+      "revision": "65877096c24ffa7abc4e4fa5edb95cf3413a5674",
+      "expected_license": "apache-2.0",
+      "license_check": {
+        "type": "card_metadata"
+      },
+      "configs": [
+        "default"
+      ],
+      "usage": [
+        "rl:prompt-train"
+      ],
+      "license_scope_note": "The Hugging Face card declares Apache-2.0; upstream problem provenance and verifier rights still require manual review.",
+      "manual_review": {
+        "status": "pending",
+        "requirements": [
+          "audit upstream problem provenance",
+          "deduplicate against every hidden evaluator",
+          "review verifier redistribution rights"
+        ]
+      }
+    },
+    {
+      "key": "livebench-reasoning-eval",
+      "kind": "dataset",
+      "repo_id": "livebench/reasoning",
+      "revision": "6fc6498a5dfba553f69f4413feabade1f1a2d384",
+      "expected_license": "apache-2.0",
+      "license_check": {
+        "type": "pinned_text",
+        "url": "https://raw.githubusercontent.com/LiveBench/LiveBench/f7800c1c304fe8ee611339987ce6bac4b349afc7/docs/DATASHEET.md",
+        "marker": "distributed under the Apache License 2.0"
+      },
+      "configs": [
+        "default:test"
+      ],
+      "usage": [
+        "eval:sealed-root-frame"
+      ],
+      "license_scope_note": "The pinned LiveBench datasheet supplies suite-level license evidence because this Hugging Face card has no license tag.",
+      "manual_review": {
+        "status": "pending",
+        "requirements": [
+          "review task-specific upstream citations",
+          "freeze release-date inclusion rule",
+          "separate prompts from ground truth before generation"
+        ]
+      }
+    },
+    {
+      "key": "livebench-math-eval",
+      "kind": "dataset",
+      "repo_id": "livebench/math",
+      "revision": "bb66571c8ccf32d3df9e6f48b920d3770ff4aacb",
+      "expected_license": "apache-2.0",
+      "license_check": {
+        "type": "pinned_text",
+        "url": "https://raw.githubusercontent.com/LiveBench/LiveBench/f7800c1c304fe8ee611339987ce6bac4b349afc7/docs/DATASHEET.md",
+        "marker": "distributed under the Apache License 2.0"
+      },
+      "configs": [
+        "default:test"
+      ],
+      "usage": [
+        "eval:sealed-root-frame"
+      ],
+      "license_scope_note": "The pinned LiveBench datasheet supplies suite-level license evidence because this Hugging Face card has no license tag.",
+      "manual_review": {
+        "status": "pending",
+        "requirements": [
+          "review task-specific upstream citations",
+          "freeze release-date inclusion rule",
+          "separate prompts from ground truth before generation"
+        ]
+      }
+    },
+    {
+      "key": "livebench-coding-eval",
+      "kind": "dataset",
+      "repo_id": "livebench/coding",
+      "revision": "a958549fdd8aa57be0a3fafe7b205ffc160ed5f4",
+      "expected_license": "apache-2.0",
+      "license_check": {
+        "type": "pinned_text",
+        "url": "https://raw.githubusercontent.com/LiveBench/LiveBench/f7800c1c304fe8ee611339987ce6bac4b349afc7/docs/DATASHEET.md",
+        "marker": "distributed under the Apache License 2.0"
+      },
+      "configs": [
+        "default:test"
+      ],
+      "usage": [
+        "eval:sealed-root-frame"
+      ],
+      "license_scope_note": "Private tests, solutions, and partial solutions must be sealed before response generation and cannot enter SFT, RL, allocation, or jury fitting.",
+      "manual_review": {
+        "status": "pending",
+        "requirements": [
+          "review contest-specific upstream terms",
+          "isolate executable tests in a sandbox",
+          "prove answer fields are inaccessible to evaluated models"
+        ]
+      }
+    },
+    {
+      "key": "bigcodebench-eval",
+      "kind": "dataset",
+      "repo_id": "bigcode/bigcodebench",
+      "revision": "b74c0d0bf70d2c0bc459be537895cca163007f1a",
+      "expected_license": "apache-2.0",
+      "license_check": {
+        "type": "card_metadata"
+      },
+      "configs": [
+        "default:v0.1.4"
+      ],
+      "usage": [
+        "sft:sealed-code-benchmark",
+        "rl:hidden-code-evaluator"
+      ],
+      "license_scope_note": "Prompts and tests are sealed from candidate data, nuisance models, prompt allocation, and hyperparameter selection.",
+      "manual_review": {
+        "status": "pending",
+        "requirements": [
+          "freeze sandbox image",
+          "audit overlap against code training sources",
+          "review test dependency licenses"
+        ]
+      }
+    },
+    {
+      "key": "qwen25-instruct-1p5b",
+      "kind": "model",
+      "repo_id": "Qwen/Qwen2.5-1.5B-Instruct",
+      "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+      "expected_license": "apache-2.0",
+      "license_check": {
+        "type": "card_metadata"
+      },
+      "configs": [
+        "bf16"
+      ],
+      "usage": [
+        "sft:development-base",
+        "eval:pilot-model-a",
+        "eval:jury-family-qwen"
+      ],
+      "license_scope_note": "Checkpoint and tokenizer are pinned together; generated-output use remains subject to the experiment's data governance review.",
+      "manual_review": {
+        "status": "pending",
+        "requirements": [
+          "review model card limitations",
+          "record tokenizer and chat-template hashes",
+          "approve intended research use"
+        ]
+      }
+    },
+    {
+      "key": "smollm2-instruct-1p7b",
+      "kind": "model",
+      "repo_id": "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+      "revision": "31b70e2e869a7173562077fd711b654946d38674",
+      "expected_license": "apache-2.0",
+      "license_check": {
+        "type": "card_metadata"
+      },
+      "configs": [
+        "bf16"
+      ],
+      "usage": [
+        "sft:development-second-family",
+        "eval:pilot-model-b",
+        "eval:jury-family-smollm"
+      ],
+      "license_scope_note": "This is a pilot-scale second architecture, not a substitute for the preregistered 7--8B confirmatory family.",
+      "manual_review": {
+        "status": "pending",
+        "requirements": [
+          "review model card limitations",
+          "record tokenizer and chat-template hashes",
+          "approve intended research use"
+        ]
+      }
+    },
+    {
+      "key": "qwen25-instruct-7b",
+      "kind": "model",
+      "repo_id": "Qwen/Qwen2.5-7B-Instruct",
+      "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+      "expected_license": "apache-2.0",
+      "license_check": {
+        "type": "card_metadata"
+      },
+      "configs": [
+        "bf16"
+      ],
+      "usage": [
+        "sft:confirmatory-base"
+      ],
+      "license_scope_note": "Checkpoint and tokenizer are pinned together.",
+      "manual_review": {
+        "status": "pending",
+        "requirements": [
+          "review model card limitations",
+          "record tokenizer and chat-template hashes",
+          "approve intended research use"
+        ]
+      }
+    },
+    {
+      "key": "mistral-instruct-7b",
+      "kind": "model",
+      "repo_id": "mistralai/Mistral-7B-Instruct-v0.3",
+      "revision": "c170c708c41dac9275d15a8fff4eca08d52bab71",
+      "expected_license": "apache-2.0",
+      "license_check": {
+        "type": "card_metadata"
+      },
+      "configs": [
+        "bf16"
+      ],
+      "usage": [
+        "sft:confirmatory-second-family",
+        "eval:jury-family-mistral"
+      ],
+      "license_scope_note": "Checkpoint and tokenizer are pinned together.",
+      "manual_review": {
+        "status": "pending",
+        "requirements": [
+          "review model card limitations",
+          "record tokenizer and chat-template hashes",
+          "approve intended research use"
+        ]
+      }
+    },
+    {
+      "key": "phi3-mini-instruct",
+      "kind": "model",
+      "repo_id": "microsoft/Phi-3-mini-4k-instruct",
+      "revision": "f39ac1d28e925b323eae81227eaba4464caced4e",
+      "expected_license": "mit",
+      "license_check": {
+        "type": "card_metadata"
+      },
+      "configs": [
+        "bf16"
+      ],
+      "usage": [
+        "eval:jury-family-phi"
+      ],
+      "license_scope_note": "Checkpoint, tokenizer, and custom modeling-code revision are pinned together; remote code execution is disabled until the code is separately reviewed.",
+      "manual_review": {
+        "status": "pending",
+        "requirements": [
+          "review model card limitations",
+          "review pinned custom modeling code before execution",
+          "record tokenizer and chat-template hashes",
+          "approve intended research use"
+        ]
+      }
+    },
+    {
+      "key": "qwen25-math-1p5b",
+      "kind": "model",
+      "repo_id": "Qwen/Qwen2.5-Math-1.5B",
+      "revision": "4a83ca6e4526a4f2da3aa259ec36c259f66b2ab2",
+      "expected_license": "apache-2.0",
+      "license_check": {
+        "type": "card_metadata"
+      },
+      "configs": [
+        "bf16"
+      ],
+      "usage": [
+        "rl:development-policy"
+      ],
+      "license_scope_note": "The exact temperature-softmax decoder is experiment-defined rather than inherited from generation defaults.",
+      "manual_review": {
+        "status": "pending",
+        "requirements": [
+          "review model card limitations",
+          "record tokenizer and chat-template hashes",
+          "approve intended research use"
+        ]
+      }
+    },
+    {
+      "key": "qwen25-math-7b",
+      "kind": "model",
+      "repo_id": "Qwen/Qwen2.5-Math-7B",
+      "revision": "b101308fe89651ea5ce025f25317fea6fc07e96e",
+      "expected_license": "apache-2.0",
+      "license_check": {
+        "type": "card_metadata"
+      },
+      "configs": [
+        "bf16"
+      ],
+      "usage": [
+        "rl:confirmatory-policy"
+      ],
+      "license_scope_note": "The exact temperature-softmax decoder is experiment-defined rather than inherited from generation defaults.",
+      "manual_review": {
+        "status": "pending",
+        "requirements": [
+          "review model card limitations",
+          "record tokenizer and chat-template hashes",
+          "approve intended research use"
+        ]
+      }
+    }
+  ]
+}

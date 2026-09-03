@@ -53,12 +53,15 @@ eval_paper/main.pdf
 Run the CPU-only equation and protocol audits with:
 
 ```bash
+make source-audit
 make protocol-audits
 ```
 
-The resulting ignored artifacts are synthetic software checks, not paper
-results. See `experiments/README.md` for the five-stage execution contract and
-the boundary between these audits and the planned model/human experiments.
+The source audit validates the committed pinned-metadata snapshot but leaves
+all manual clearances pending. The ignored protocol artifacts are synthetic
+software checks, not paper results. See `experiments/README.md` for the
+five-stage execution contract and the boundary between these audits and the
+planned model/human experiments.
 
 Build or clean one paper with:
 
@@ -70,7 +73,8 @@ make clean
 ## Experiment Protocols
 
 Each methods-first draft has a machine-readable five-stage plan covering data
-acquisition, processing, model construction, training, and evaluation:
+acquisition, processing, model construction, training, and evaluation. Every
+plan also hashes its section of `experiments/pilot_preregistration.json`:
 
 ```bash
 python3 scripts/run_experiment_pipeline.py \

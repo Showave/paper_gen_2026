@@ -2,11 +2,17 @@
   "schema_version": 1,
   "paper": "eval",
   "purpose": "Tie-aware adaptive human evaluation with design-based estimation and a sealed audit.",
+  "preregistration": {
+    "path": "experiments/pilot_preregistration.json",
+    "section": "eval"
+  },
   "stages": [
     {
       "name": "acquire",
       "objective": "Freeze the weighted item frame, rater panel, rubric, model pair, response coupling, and audit seed.",
       "inputs": [
+        "Approved entries and exact revisions from experiments/public_source_registry.json",
+        "Frozen eval section of experiments/pilot_preregistration.json",
         "Timestamped deployment-log sample or weighted benchmark frame",
         "Rater recruitment definition, target weights, consent, compensation, and withdrawal protocol",
         "Evaluated model, tokenizer, decoder, prompt-generator, and jury revisions"
@@ -37,7 +43,7 @@
         "process/cell_manifest.json"
       ],
       "checks": [
-        "Root-item clusters do not cross development and sealed audit partitions",
+        "Audit attempts are independent draws from the full target mass; hidden audit membership never removes a target unit from adaptive support",
         "AB and BA renders strip model identifiers and preserve content",
         "Assignment attempts, nonresponse, latency, and tie subtype have explicit fields"
       ],
@@ -105,6 +111,7 @@
       "inputs": [
         "train/acquisition_ledger.jsonl",
         "Frozen z_0.975 constant, clipping to [-1,1], practical margin, covariance rule, and equivalence margin",
+        "Frozen epsilon-dependent worst-case nonresponse interval and response-drift gamma grid",
         "Sealed audit outcomes and temporal-wave bridge design"
       ],
       "artifacts": [
@@ -112,6 +119,7 @@
       ],
       "checks": [
         "Estimator, martingale variance, maximum weight, and ESS reproduce from the ledger",
+        "Any nonresponse switches the primary decision to the two one-sided martingale-Hoeffding endpoint bounds",
         "Adaptive-minus-audit uncertainty includes shared-rater covariance",
         "Tie subtypes, abstentions, nonresponse bounds, all domains, and negative results are retained"
       ],

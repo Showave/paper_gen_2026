@@ -32,11 +32,36 @@ to an argument array; no shell interpolation is used:
 Available placeholders are `{repo}`, `{work_dir}`, `{stage_dir}`, and
 `{paper}`. Each stage command must produce every artifact declared in its plan
 and a `{stage_dir}/costs.json` containing the declared cost keys. The runner
-hashes the plan, command mapping, runner, and outputs and updates
+hashes the plan, referenced preregistration, command mapping, runner, and
+outputs and updates
 `run_manifest.json` atomically. It refuses to resume a work directory when an
 immutable hash or Git revision changed unless `--force` starts a replacement
 run. Never place access tokens or private data values in command arguments or
 committed plans.
+
+## Public-source preflight
+
+`public_source_registry.json` pins full Hugging Face revisions, admitted
+configurations, intended roles, license evidence, and source-specific manual
+review requirements. The committed `public_source_snapshot.json` records the
+metadata observed on 2026-09-03. Validate it without network access:
+
+```bash
+python3 scripts/audit_public_sources.py
+```
+
+To deliberately inspect upstream drift and regenerate the snapshot:
+
+```bash
+python3 scripts/audit_public_sources.py --refresh
+```
+
+Neither command downloads rows or weights. Automated license tags and pinned
+card text are triage evidence, not legal or ethical clearance. Real pipeline
+execution fails unless every registry entry referenced by that paper is
+approved. The standalone `--require-manual-clearance` flag intentionally checks
+the entire registry. Do not change a pending status to `approved` without
+linking the site-local review record in the resulting acquisition artifact.
 
 ## Reproducible design audits
 
@@ -49,6 +74,7 @@ for paper in sft rl eval; do
   python3 scripts/run_experiment_pipeline.py \
     --plan "experiments/${paper}_pipeline.json" \
     --execute \
+    --synthetic-audit \
     --commands experiments/synthetic_commands.json \
     --work-dir "artifacts/${paper}-synthetic-audit"
 done

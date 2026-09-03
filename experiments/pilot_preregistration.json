@@ -1,0 +1,441 @@
+{
+  "schema_version": 1,
+  "frozen_at_utc": "2026-09-03T01:32:01Z",
+  "evidence_status": "Preregistered pilot configuration only; no experiment or human study has been run.",
+  "source_registry": "experiments/public_source_registry.json",
+  "sft": {
+    "study_scope": "Exploratory 1--2B pre-compute pilot only. It does not instantiate the paper's 50M-token, 7--8B confirmatory study.",
+    "source_keys": [
+      "smoltalk-sft",
+      "openr1-math-sft",
+      "commitpackft-sft",
+      "bigcodebench-eval"
+    ],
+    "development_model_keys": [
+      "qwen25-instruct-1p5b",
+      "smollm2-instruct-1p7b"
+    ],
+    "seeds": [
+      2026090301,
+      2026090302,
+      2026090303,
+      2026090304,
+      2026090305
+    ],
+    "optimizer_window": {
+      "maximum_sequence_length": 4096,
+      "physical_packs_per_update": 8,
+      "microbatches_per_update": 8,
+      "world_size": 8,
+      "packs_per_data_parallel_rank": 1,
+      "response_tokens_minimum": 4096,
+      "response_tokens_maximum": 8192,
+      "dropout": 0.0,
+      "packing_isolation": "variable-length attention boundaries plus reset position identifiers",
+      "comparison_rule": "Every method uses the same eight-pack capacity, response-token interval, world size, candidate stream, and optimizer-step schedule. A plan outside the interval is infeasible."
+    },
+    "lora": {
+      "rank": 64,
+      "alpha": 128,
+      "dropout": 0.0,
+      "target_modules": [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj"
+      ]
+    },
+    "adamw": {
+      "learning_rate": 0.0002,
+      "betas": [
+        0.9,
+        0.95
+      ],
+      "epsilon": 1e-08,
+      "weight_decay": 0.01,
+      "maximum_gradient_norm": 1.0,
+      "precision": "bf16",
+      "learning_rate_schedule": "constant for 20 admitted optimizer updates"
+    },
+    "data_roles": {
+      "math_target": "openr1-math-sft",
+      "code_target": "commitpackft-sft",
+      "general_protected": "smoltalk-sft",
+      "sealed_code_benchmark": "bigcodebench-eval",
+      "split_rule": "Within each candidate source, sort SHA-256(source revision || stable row id): first 80% candidate, next 5% score, next 10% gate, final 5% audit. Sealed benchmarks never enter this split.",
+      "clipping_timing": "Compute response-token-average NLL per example, then clip for gate use only.",
+      "source_coverage_floor": 0.1
+    },
+    "selector": {
+      "candidate_pool_size": 256,
+      "shortlist_size": 16,
+      "sketch_dimension": 512,
+      "beam_width": 128,
+      "drop_swap_passes": 2,
+      "identical_subset_moves_across_factorial_cells": true,
+      "identical_solver_expansion_budget": 32768
+    },
+    "actual_update_gate": {
+      "mode": "empirical_heuristic_pilot",
+      "population_coverage_claim": false,
+      "protected_slices": 2,
+      "scale_grid": [
+        1.0,
+        0.5,
+        0.25,
+        0.125
+      ],
+      "maximum_rounds": 20,
+      "clipped_example_nll_bound": 1.0,
+      "per_round_tolerance": 0.01,
+      "cumulative_tolerance_budget": 0.2,
+      "samples_per_slice_round": 512,
+      "sampling": "with replacement from the frozen gate distribution",
+      "empirical_margin": 0.005,
+      "total_gate_draws": 20480
+    },
+    "cost_design": {
+      "pilot_reference_response_tokens": 131072,
+      "budget_fractions": [
+        0.5,
+        0.75,
+        1.0
+      ],
+      "independent_cost_calibration_plans": 200,
+      "reserve_quantile": 0.995,
+      "reserve_coverage_claim": false,
+      "meter": "sum over accelerators of scheduler allocation interval in seconds; device events are utilization diagnostics only",
+      "overrun_rule": "Retain and mark the run as a protocol failure. Before opening audits, refreeze a larger reserve and restart every paired method from the common initial state."
+    },
+    "primary_factorial": {
+      "factor_cost": [
+        "additive_token",
+        "profiled_measured"
+      ],
+      "factor_packer": [
+        "deterministic_best_fit",
+        "fixed_budget_beam"
+      ],
+      "primary_mechanistic_contrast": "paired difference-in-differences in dominated hypervolume",
+      "small_pool_exact_oracle_size": 24,
+      "hypervolume_reference_box": [
+        1.0,
+        0.2
+      ],
+      "protected_tolerance_grid": [
+        0.0,
+        0.01,
+        0.02,
+        0.05
+      ],
+      "paired_interval": "studentized paired bootstrap with 10000 frozen resamples, reported as exploratory because five seeds do not support reliable tail calibration",
+      "multiplicity": "max-statistic across budgets and target settings",
+      "missing_run_rule": "retain failure and assign the worst endpoint in the frozen reference box; also report complete cases"
+    }
+  },
+  "rl": {
+    "study_scope": "Exploratory one-family mathematics estimator pilot covering H1 only. Code, second-family, H2, and H3 confirmatory configurations remain unfrozen and cannot execute from this file.",
+    "source_keys": [
+      "dapo-math-rl"
+    ],
+    "development_model_key": "qwen25-math-1p5b",
+    "seeds": [
+      2026090311,
+      2026090312,
+      2026090313,
+      2026090314,
+      2026090315
+    ],
+    "prompt_frame": {
+      "selection_rule": "first 2048 examples after sorting SHA-256(source revision || stable problem id)",
+      "size": 2048,
+      "target_mass": "uniform with replacement",
+      "hidden_evaluators_are_disjoint": true,
+      "audit_partition_laws": {
+        "nuisance_fit": "uniform on hash ranks 0--1023",
+        "alpha_selection": "uniform on hash ranks 1024--1535",
+        "confirmation": "uniform on hash ranks 1536--2047"
+      },
+      "claim_scope": "Estimator selection targets D_select; the untouched report targets the separately normalized D_confirm. Neither is labeled an estimate for the full 2048-prompt law."
+    },
+    "decoder": {
+      "temperature": 1.0,
+      "maximum_response_tokens": 4096,
+      "top_k": null,
+      "top_p": null,
+      "repetition_penalty": null,
+      "minimum_length": null,
+      "forced_tokens": null,
+      "eos_rule": "EOS is scored as sampled; reaching the maximum records a truncation outcome",
+      "allowed_vocabulary": "deterministic tokenizer vocabulary minus only permanently invalid token ids"
+    },
+    "estimator_audit": {
+      "alpha_grid": [
+        0.25,
+        0.5,
+        0.75,
+        1.0
+      ],
+      "stratum_counts_by_alpha": [
+        {
+          "alpha": 0.25,
+          "current": 16,
+          "stale": 48
+        },
+        {
+          "alpha": 0.5,
+          "current": 32,
+          "stale": 32
+        },
+        {
+          "alpha": 0.75,
+          "current": 48,
+          "stale": 16
+        },
+        {
+          "alpha": 1.0,
+          "current": 64,
+          "stale": 0
+        }
+      ],
+      "projection_dimension": 256,
+      "projection_seed": 2026090391,
+      "nuisance_fit_prompt_fraction": 0.5,
+      "alpha_selection_prompt_fraction": 0.25,
+      "untouched_confirmation_prompt_fraction": 0.25,
+      "selection_replications": 2000,
+      "confirmation_replications": 2000,
+      "reference_current_policy_trajectories": 16384,
+      "selection_rule": "minimum projected-gradient MSE times measured accelerator-seconds; ties choose larger alpha"
+    },
+    "proposal": {
+      "support_floor_epsilon": 0.2,
+      "residual_second_moment_floor": 1e-08,
+      "cost_prediction_floor_tokens": 1.0,
+      "normalization_fallback": "target prompt law"
+    },
+    "nuisance_models": {
+      "training_partition": "nuisance_fit",
+      "reward_and_length_predictors": "two-layer MLP on frozen last-token policy features",
+      "prompt_baseline": "ridge regression on frozen prompt features",
+      "hidden_width": 256,
+      "epochs": 5,
+      "learning_rate": 0.001,
+      "weight_decay": 0.0001
+    },
+    "policy_optimizer": {
+      "trainable_parameters": "rank-64 LoRA on attention and MLP projections",
+      "adamw_learning_rate": 1e-06,
+      "betas": [
+        0.9,
+        0.95
+      ],
+      "epsilon": 1e-08,
+      "weight_decay": 0.0,
+      "gradient_clipping": null
+    },
+    "stale_actor": {
+      "construction": "the immediately preceding frozen policy checkpoint",
+      "maximum_policy_kl": 0.1,
+      "batch_action": "abort before generation when the measured KL exceeds the registered stratum"
+    },
+    "length_dual": {
+      "kappa_grid": [
+        512,
+        1024,
+        2048
+      ],
+      "initial_lambda": 0.0,
+      "step_size": 0.0001,
+      "projection": "nonnegative",
+      "update_source": "fresh current-policy trajectories only",
+      "reporting": "last iterate and mean of final 20 percent of checkpoints; neither is selected post hoc"
+    },
+    "failure_semantics": {
+      "preassigned_source_and_prompt_draws": true,
+      "refill_failed_or_slow_trajectories": false,
+      "parse_timeout_sandbox_and_truncation": "retained as declared verifier outcomes",
+      "infrastructure_failure_before_a_scored_sequence_exists": "abort the complete batch, charge incurred cost, perform no update, and retain the failure record",
+      "completion_time_filtering": false
+    },
+    "replay_factorial": {
+      "buffer_capacity_trajectories": 4096,
+      "admission": "all completed trajectories before reward reveal",
+      "selection": "uniform within frozen KL-lag stratum",
+      "reuse_counts": [
+        1,
+        2,
+        4,
+        8
+      ],
+      "policy_kl_strata": [
+        0.01,
+        0.03,
+        0.1
+      ],
+      "generation_and_rescoring_costs_charged": true
+    }
+  },
+  "eval": {
+    "source_keys": [
+      "livebench-reasoning-eval",
+      "livebench-math-eval",
+      "livebench-coding-eval"
+    ],
+    "pilot_model_keys": [
+      "qwen25-instruct-1p5b",
+      "smollm2-instruct-1p7b"
+    ],
+    "jury_model_keys": [
+      "qwen25-instruct-1p5b",
+      "smollm2-instruct-1p7b",
+      "mistral-instruct-7b",
+      "phi3-mini-instruct"
+    ],
+    "frame": {
+      "root_items": 600,
+      "prompt_variants_per_root": 2,
+      "response_draws_per_variant": 1,
+      "display_orders": 2,
+      "root_selection_rule": "sort by SHA-256(dataset revision || question_id), then take the first 200 roots from each source",
+      "target_root_mass": "uniform within source and one third per source",
+      "audit_membership_removes_adaptive_support": false
+    },
+    "decision": {
+      "practical_margin": 0.05,
+      "confidence_level": 0.95,
+      "normal_quantile": 1.959963984540054,
+      "loss_matrix": [
+        [
+          0,
+          4,
+          2
+        ],
+        [
+          4,
+          0,
+          2
+        ],
+        [
+          2,
+          2,
+          0
+        ],
+        [
+          1,
+          1,
+          1
+        ]
+      ],
+      "bayes_action_tie_order": [
+        "not-established",
+        "equivalent",
+        "A",
+        "B"
+      ]
+    },
+    "acquisition": {
+      "exploration_epsilon": 0.2,
+      "evi_temperature": 2.0,
+      "batch_size": 20,
+      "annotation_cost_units": {
+        "all_registered_units": 1.0
+      },
+      "uniform_pilot_attempts": 200,
+      "adaptive_attempts": 800,
+      "sealed_target_random_audit_attempts": 200,
+      "adaptive_fixed_budget_attempts": 1000,
+      "optional_stopping": false,
+      "replacement_of_nonresponses": false
+    },
+    "working_posterior": {
+      "fixed_effect_prior_standard_deviation": 2.0,
+      "random_effect_prior_standard_deviation": 1.0,
+      "log_discrimination_prior_standard_deviation": 0.5,
+      "laplace_update_steps_per_hypothetical_outcome": 1,
+      "newton_ridge": 0.0001,
+      "hessian_damping": 0.001,
+      "line_search": false,
+      "feature_standardization": "pilot-frozen mean and standard deviation",
+      "jury_prompt_revision_rule": "SHA-256 of the rendered rubric and system prompt"
+    },
+    "human_protocol": {
+      "panel_size": 80,
+      "target_rater_mass": "uniform over the enrolled panel",
+      "same_root_repeated_for_one_rater": "not prohibited; repeats are retained because resampling would change the logged draw law",
+      "task_order": "independently randomized before outcomes",
+      "audit_slots": "interleaved at hidden preassigned positions",
+      "manual_requirements": [
+        "ethics approval or documented exemption",
+        "informed consent",
+        "fair compensation",
+        "content warnings and unpenalized withdrawal"
+      ]
+    },
+    "nonresponse": {
+      "primary": "worst-case martingale-Hoeffding interval whenever any outcome is missing",
+      "secondary": "prequential inverse-response weighted analysis under stated MAR and response positivity",
+      "response_propensity_floor": 0.1,
+      "response_drift_gamma_grid": [
+        0.0,
+        0.02,
+        0.05
+      ]
+    },
+    "simulation": {
+      "trials_per_condition": 2000,
+      "seed": 2026090321,
+      "coverage_boundary_values": [
+        -0.05,
+        0.0,
+        0.05
+      ],
+      "local_alternative_c": [
+        0.5,
+        1.0,
+        2.0
+      ],
+      "tie_prevalence": [
+        0.1,
+        0.3,
+        0.5
+      ],
+      "item_correlation": [
+        0.0,
+        0.3,
+        0.6
+      ],
+      "judge_family_correlation": [
+        0.0,
+        0.3,
+        0.6
+      ],
+      "repeated_rater_standard_deviation": [
+        0.0,
+        0.25,
+        0.5
+      ],
+      "nonresponse_rate": [
+        0.0,
+        0.1,
+        0.3
+      ],
+      "rare_stratum_mass": [
+        0.01,
+        0.05
+      ],
+      "exploration_epsilon_sensitivity": [
+        0.05,
+        0.2
+      ],
+      "temporal_drift_gamma": [
+        0.0,
+        0.02,
+        0.05
+      ]
+    }
+  }
+}
