@@ -13,6 +13,7 @@
       "inputs": [
         "Approved entries and exact revisions from experiments/public_source_registry.json",
         "Frozen rl section of experiments/pilot_preregistration.json",
+        "Verified preflight data/content manifests and retained role-file hashes from hash-pinned local JSONL exports",
         "Versioned mathematics prompt identifiers with known target masses",
         "Current-policy, stale-policy, tokenizer, and decoder revisions",
         "Public mathematics verifier source hash"
@@ -22,7 +23,8 @@
       ],
       "checks": [
         "Prompt support is finite, normalized, and reconstructible",
-        "Hidden tests are disjoint from SFT, nuisance, and allocator data",
+        "Stable row, raw-content, and normalized-content hashes are recorded before partitioning",
+        "The acquisition manifest embeds the preflight manifest and retained role-file hashes",
         "Licenses and verifier requirements are recorded"
       ],
       "costs": [
@@ -44,6 +46,7 @@
         "process/trajectory_schema.json"
       ],
       "checks": [
+        "Every retained duplicate cluster is assigned wholly to nuisance-fit, alpha-selection, or confirmation",
         "Sampler frequencies agree with scored masses in finite-vocabulary conformance tests",
         "Current and stale sampler/scorer pairs agree on normalized masses, EOS-at-limit, and truncation semantics",
         "Prompt and sequence mixture masses normalize in high precision",

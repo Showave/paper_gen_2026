@@ -9,7 +9,7 @@ STYLE_FILES := \
 	template/preamble.tex
 BUILD := scripts/latex_build.sh
 
-.PHONY: all clean check-deps source-audit protocol-audits
+.PHONY: all clean check-deps source-audit provenance-audit protocol-audits
 
 all: $(PDFS)
 
@@ -26,6 +26,9 @@ check-deps:
 
 source-audit:
 	python3 scripts/audit_public_sources.py
+
+provenance-audit:
+	python3 scripts/materialize_public_data.py --self-test
 
 protocol-audits:
 	@for paper in $(PAPERS); do \

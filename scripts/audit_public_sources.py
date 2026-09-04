@@ -124,6 +124,11 @@ def validate_registry(registry: Any, source: Path) -> list[dict[str, Any]]:
             "rejected",
         }:
             fail(f"{key}: manual_review status must be pending, approved, or rejected")
+        if review["status"] == "approved" and not (
+            isinstance(review.get("review_record"), str)
+            and review["review_record"].strip()
+        ):
+            fail(f"{key}: approved manual review must name a review_record")
         requirements = review.get("requirements")
         if not isinstance(requirements, list) or not requirements:
             fail(f"{key}: manual review requirements are required")
@@ -178,6 +183,7 @@ def audit_live(item: dict[str, Any]) -> dict[str, Any]:
         "configs": item["configs"],
         "usage": item["usage"],
         "manual_review_status": item["manual_review"]["status"],
+        "manual_review_record": item["manual_review"].get("review_record"),
         "automated_checks_passed": True,
     }
 
@@ -207,6 +213,7 @@ def validate_snapshot(
             "configs": item["configs"],
             "usage": item["usage"],
             "manual_review_status": item["manual_review"]["status"],
+            "manual_review_record": item["manual_review"].get("review_record"),
             "automated_checks_passed": True,
         }
         for field, expected in fields.items():

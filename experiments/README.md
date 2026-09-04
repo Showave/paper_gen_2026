@@ -63,6 +63,50 @@ approved. The standalone `--require-manual-clearance` flag intentionally checks
 the entire registry. Do not change a pending status to `approved` without
 linking the site-local review record in the resulting acquisition artifact.
 
+## Row-level materialization and deduplication
+
+After clearance, a site-local exporter must write JSONL at the registry's exact
+revision and provide an input specification containing the export byte hash,
+exporter name/version, an admitted configuration, the recorded upstream split,
+stable-ID fields, per-row license strings, and an exact role already admitted
+by the registry. Every source-specific schema must project one nonempty text
+field to the paper-wide canonical `dedup-text` slot; this shared projection is
+what makes normalized hashes comparable across sources. The repository adapter
+never fetches an arbitrary URL:
+
+```bash
+python3 scripts/materialize_public_data.py \
+  --paper sft \
+  --input-spec /site/reviewed/sft_exports.json \
+  --output artifacts/sft-materialized
+```
+
+Real materialization fails unless every transitive dataset and model review is
+`approved` and names a nonempty `review_record`. The adapter records the source
+revision and stable row identifier, hashes the canonical raw row and selected
+content, applies a versioned Unicode/case/whitespace normalization, removes
+within-role duplicate rows, and quarantines every normalized-content cluster
+that crosses candidate-source, reference, benchmark, or other registered
+roles. Downstream splitters must assign a complete retained duplicate cluster
+to one of score, gate, audit, or training rather than splitting its members.
+It writes hash-verified acquisition and processing manifests plus retained
+role-specific JSONL; the five-stage acquisition artifact must embed those
+manifest and role-file hashes. Input bytes are hashed and parsed from the same
+read, and verification covers both acquisition and processed files.
+Semantic-near-duplicate and PII/secret scans remain site-local mandatory gates;
+normalized hashing is not represented as solving them.
+
+The only clearance bypass is a committed, generated fixture:
+
+```bash
+make provenance-audit
+```
+
+That fixture deliberately contains both a within-role duplicate and a collision
+between two registered candidate-source roles. Successful execution means both
+were detected and the cross-role rows were quarantined; every output is marked
+non-empirical.
+
 ## Reproducible design audits
 
 The repository includes deterministic, standard-library-only commands that

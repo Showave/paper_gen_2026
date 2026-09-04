@@ -13,6 +13,7 @@
       "inputs": [
         "Approved entries and exact revisions from experiments/public_source_registry.json",
         "Frozen eval section of experiments/pilot_preregistration.json",
+        "Verified preflight data/content manifests and retained role-file hashes from hash-pinned local JSONL exports",
         "Timestamped deployment-log sample or weighted benchmark frame",
         "Rater recruitment definition, target weights, consent, compensation, and withdrawal protocol",
         "Evaluated model, tokenizer, decoder, prompt-generator, and jury revisions"
@@ -22,6 +23,8 @@
       ],
       "checks": [
         "Target item, prompt, response, rater, and display-order masses sum to one",
+        "Stable row, raw-content, and normalized-content hashes are recorded before frame sampling",
+        "The acquisition manifest embeds the preflight manifest and retained role-file hashes",
         "Personal data and unsupported licenses are excluded",
         "The sealed target-random audit seed and cells are inaccessible to acquisition"
       ],
@@ -43,6 +46,7 @@
         "process/cell_manifest.json"
       ],
       "checks": [
+        "Every retained normalized duplicate cluster is assigned wholly to one frame unit or excluded",
         "Audit attempts are independent draws from the full target mass; hidden audit membership never removes a target unit from adaptive support",
         "AB and BA renders strip model identifiers and preserve content",
         "Assignment attempts, nonresponse, latency, and tie subtype have explicit fields"

@@ -288,6 +288,8 @@ def require_manual_source_clearance(
             not isinstance(item, dict)
             or not isinstance(item.get("manual_review"), dict)
             or item["manual_review"].get("status") != "approved"
+            or not isinstance(item["manual_review"].get("review_record"), str)
+            or not item["manual_review"]["review_record"].strip()
         ):
             blocked.append(key)
     if blocked:

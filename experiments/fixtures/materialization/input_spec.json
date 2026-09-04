@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "paper": "sft",
+  "synthetic_fixture": true,
+  "evidence_status": "Generated contract fixture only; these rows are not public-source or model-training evidence.",
+  "sources": [
+    {
+      "source_key": "smoltalk-sft",
+      "config": "smol-constraints",
+      "split": "train",
+      "path": "candidate.jsonl",
+      "sha256": "4c4de1e3c59478594702bc4fba3b7051a5e77da22b9c9c362efa132253d12ebd",
+      "role": "candidate-general",
+      "exporter": {
+        "name": "committed-synthetic-fixture",
+        "version": "1"
+      },
+      "row_id_fields": [
+        "id"
+      ],
+      "content_projection": [
+        {
+          "slot": "dedup-text",
+          "field": "dedup_text"
+        }
+      ],
+      "license_fields": [
+        "license"
+      ]
+    },
+    {
+      "source_key": "openr1-math-sft",
+      "config": "default",
+      "split": "train",
+      "path": "score.jsonl",
+      "sha256": "e86751d7b9d243ba4101afc53ad7b33b0daa090db50b8a50564f2d106e2d397a",
+      "role": "candidate-math",
+      "exporter": {
+        "name": "committed-synthetic-fixture",
+        "version": "1"
+      },
+      "row_id_fields": [
+        "id"
+      ],
+      "content_projection": [
+        {
+          "slot": "dedup-text",
+          "field": "dedup_text"
+        }
+      ],
+      "license_fields": [
+        "license"
+      ]
+    }
+  ]
+}

@@ -54,14 +54,17 @@ Run the CPU-only equation and protocol audits with:
 
 ```bash
 make source-audit
+make provenance-audit
 make protocol-audits
 ```
 
 The source audit validates the committed pinned-metadata snapshot but leaves
-all manual clearances pending. The ignored protocol artifacts are synthetic
-software checks, not paper results. See `experiments/README.md` for the
-five-stage execution contract and the boundary between these audits and the
-planned model/human experiments.
+all manual clearances pending. The provenance audit verifies row-level hashing,
+normalized duplicate removal, cross-role quarantine, and output-manifest
+integrity on a committed synthetic fixture. The ignored protocol artifacts are
+synthetic software checks, not paper results. See `experiments/README.md` for
+the five-stage execution contract and the boundary between these audits and
+the planned model/human experiments.
 
 Build or clean one paper with:
 

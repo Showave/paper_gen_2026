@@ -13,6 +13,7 @@
       "inputs": [
         "Approved entries and exact revisions from experiments/public_source_registry.json",
         "Frozen sft section of experiments/pilot_preregistration.json",
+        "Verified preflight data/content manifests and retained role-file hashes from hash-pinned local JSONL exports",
         "Versioned dataset identifiers, revisions, licenses, and terms",
         "Frozen source weights and target/protected capability definitions",
         "Base-model and tokenizer revisions"
@@ -21,7 +22,9 @@
         "acquire/data_manifest.json"
       ],
       "checks": [
-        "Every row has a stable identifier, source, license class, and content hash",
+        "Every row has a stable identifier, source revision, export line, license class, and raw plus normalized content hashes",
+        "Normalized duplicate clusters crossing registered source, reference, or benchmark roles are quarantined before use",
+        "The acquisition manifest embeds the preflight manifest and retained role-file hashes",
         "Personally identifying fields and undocumented data are excluded",
         "Sealed audit and benchmark contents are inaccessible to selection code"
       ],
