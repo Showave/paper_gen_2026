@@ -23,6 +23,8 @@
       ],
       "checks": [
         "Target item, prompt, response, rater, and display-order masses sum to one",
+        "The frame contains 200 reasoning, 200 math, and 128 coding roots with one-third source mass",
+        "frame_manifest.json lists 528 unique row_uid values with per-root mass 1/(3*n_source)",
         "Stable row, raw-content, and normalized-content hashes are recorded before frame sampling",
         "The acquisition manifest embeds the preflight manifest and retained role-file hashes",
         "Personal data and unsupported licenses are excluded",
@@ -71,6 +73,9 @@
       ],
       "checks": [
         "Predictions and draw probabilities are frozen before each outcome batch",
+        "Q_b and predictive probabilities use the same 4096 frozen Laplace-posterior draws",
+        "Each hypothetical outcome applies the frozen damped Newton mode/Hessian update before recomputing state mass",
+        "Posterior, frame-functional, and Newton-implementation hashes equal the frozen preregistration hashes",
         "Working-posterior Bayes-risk EVI is computed before p_b and does not call the terminal confidence-set action",
         "The judge-cell overlap graph is connected and both orders are represented",
         "Every target unit satisfies the logged positivity floor"
@@ -95,8 +100,9 @@
       ],
       "checks": [
         "Each draw logs pi, p_t, model revision, EVI, outcome, and pre-outcome timestamp",
+        "Executable DGPs, missingness laws, baseline policies, and factor crossings match replacement-preregistration hashes",
         "Simulation covers boundary effects, dependence, misspecification, small propensities, and drift",
-        "T counts assignment attempts; a cap, withdrawal, or nonresponse never triggers replacement"
+        "T counts all preassigned slots; a cap, withdrawal, or nonresponse records R_t=0, never triggers replacement, and does not stop later slots"
       ],
       "costs": [
         "cpu_seconds",
@@ -114,16 +120,18 @@
       "objective": "Freeze analysis, open the audit once, and report intervals, decisions, missingness bounds, and shift diagnostics.",
       "inputs": [
         "train/acquisition_ledger.jsonl",
-        "Frozen z_0.975 constant, clipping to [-1,1], practical margin, covariance rule, and equivalence margin",
+        "Frozen z_0.975 constant, clipping to [-1,1], practical margin, and replacement-preregistered covariance rule and equivalence margin",
         "Frozen epsilon-dependent worst-case nonresponse interval and response-drift gamma grid",
         "Sealed audit outcomes and temporal-wave bridge design"
       ],
       "artifacts": [
-        "evaluate/summary.json"
+        "evaluate/summary.json",
+        "evaluate/audit_ledger.jsonl"
       ],
       "checks": [
         "Estimator, martingale variance, maximum weight, and ESS reproduce from the ledger",
         "Any nonresponse switches the primary decision to the two one-sided martingale-Hoeffding endpoint bounds",
+        "All 200 audit slots remain; audit nonresponses use the frozen -1/+1 endpoint means and Hoeffding radius",
         "Adaptive-minus-audit uncertainty includes shared-rater covariance",
         "Tie subtypes, abstentions, nonresponse bounds, all domains, and negative results are retained"
       ],

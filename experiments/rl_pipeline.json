@@ -88,7 +88,7 @@
       "objective": "Audit projected bias/variance at frozen policies and freeze alpha on data disjoint from confirmation.",
       "inputs": [
         "build/model_manifest.json",
-        "Independent large current-policy reference samples",
+        "Two mutually independent large current-policy reference samples for each of D_select and D_confirm",
         "Disjoint nuisance-fit, alpha-selection, and untouched confirmation prompt partitions",
         "Matched 64-trajectory replications and measured cost ledger"
       ],
@@ -97,9 +97,9 @@
       ],
       "checks": [
         "Every theorem-facing trajectory is generated after iteration choices freeze and has use_count one",
-        "Source and prompt draws are preassigned; infrastructure failure aborts the batch without completion-time filtering or refill",
+        "Every theorem-facing draw reaches a scored outcome; an infrastructure-failed replication is retained but cannot enter a success-conditioned estimator claim",
         "The numerical mixture-weight bound and source-specific ESS are checked",
-        "Every alpha uses counts satisfying alpha = n_current / (n_current + n_stale)",
+        "The exploratory alpha-allocation coupling is logged as a design restriction rather than an unbiasedness requirement",
         "Generated-token, verifier-call, and added-scoring counters retain aborted candidates"
       ],
       "costs": [
@@ -116,14 +116,14 @@
       "objective": "Aggregate untouched-confirmation gradient bias, variance, MSE-times-cost, and deliberate ratio fault injections.",
       "inputs": [
         "train/trajectory_ledger.jsonl",
-        "Frozen projection, confirmation replications, Monte Carlo reference uncertainty, and seed pairing",
+        "Frozen projection, confirmation replications, independent R1/R2 reference pairs, and seed pairing",
         "Omitted-prompt-ratio and clipped-weight fault injections"
       ],
       "artifacts": [
         "evaluate/summary.json"
       ],
       "checks": [
-        "Monte Carlo reference uncertainty is propagated",
+        "Projected MSE uses the cross-reference product (g_hat - R1)^T(g_hat - R2)",
         "Selection targets D_select and confirmation targets the separately normalized D_confirm",
         "The selected alpha is evaluated once on untouched confirmation replications",
         "Every seed, parser failure, support failure, and negative result is retained"

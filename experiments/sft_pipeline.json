@@ -122,7 +122,8 @@
       ],
       "checks": [
         "Every table cell resolves to immutable run identifiers",
-        "Exploratory max-statistic interval is computed exactly as preregistered and is not used for confirmatory hypothesis acceptance",
+        "aggregate_sft_factorial.py reproduces every cell hypervolume and the registered cost-by-packer difference-in-differences",
+        "Exploratory paired max-t interval resamples complete seed blocks and is not used for confirmatory hypothesis acceptance",
         "Negative results, every seed, and score-to-audit gaps are retained"
       ],
       "costs": [

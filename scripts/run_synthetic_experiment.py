@@ -261,6 +261,132 @@ def sft_pack(subset: list[dict[str, Any]], config: dict[str, Any]) -> list[list[
     )
 
 
+def sft_packings(
+    subset: list[dict[str, Any]], config: dict[str, Any]
+) -> list[list[list[int]]]:
+    """Enumerate canonical feasible packings independently of subset search."""
+    lengths = [item["length"] for item in subset]
+    order = sorted(range(len(lengths)), key=lambda index: (-lengths[index], index))
+    packings: set[tuple[tuple[int, ...], ...]] = set()
+    bins: list[list[int]] = []
+    loads: list[int] = []
+
+    def search(position: int) -> None:
+        if position == len(order):
+            canonical = tuple(
+                sorted(tuple(sorted(group)) for group in bins if group)
+            )
+            packings.add(canonical)
+            return
+        item = order[position]
+        length = lengths[item]
+        seen_loads: set[int] = set()
+        for bin_index, load in enumerate(loads):
+            if load in seen_loads or load + length > config["pack_capacity"]:
+                continue
+            seen_loads.add(load)
+            bins[bin_index].append(item)
+            loads[bin_index] += length
+            search(position + 1)
+            loads[bin_index] -= length
+            bins[bin_index].pop()
+        if len(bins) < config["max_packs"]:
+            bins.append([item])
+            loads.append(length)
+            search(position + 1)
+            loads.pop()
+            bins.pop()
+
+    search(0)
+    return [[list(group) for group in packing] for packing in sorted(packings)]
+
+
+def sft_pack_cost(
+    subset: list[dict[str, Any]],
+    packing: list[list[int]],
+    config: dict[str, Any],
+) -> float:
+    loads = [sum(subset[index]["length"] for index in group) for group in packing]
+    return (
+        config["pack_launch_cost"] * len(loads)
+        + config["pack_load_quadratic"] * sum(load**2 for load in loads)
+    )
+
+
+def sft_profiled_pack(
+    subset: list[dict[str, Any]], config: dict[str, Any]
+) -> tuple[float, list[list[int]] | None]:
+    candidates = sft_packings(subset, config)
+    if not candidates:
+        return math.inf, None
+    cost, packing = min(
+        (sft_pack_cost(subset, packing, config), packing)
+        for packing in candidates
+    )
+    return cost, packing
+
+
+def sft_direct_joint(
+    items: list[dict[str, Any]], config: dict[str, Any]
+) -> tuple[list[dict[str, Any]], list[list[int]] | None]:
+    """Enumerate (subset, packing) pairs without calling profiled selection."""
+    best_subset: list[dict[str, Any]] = []
+    best_packing: list[list[int]] | None = None
+    best_key = (-math.inf, -math.inf, ())
+    for size in range(1, len(items) + 1):
+        for indices in itertools.combinations(range(len(items)), size):
+            subset = [items[index] for index in indices]
+            if (
+                sum(item["protected_risk"] for item in subset)
+                > config["planning_risk_limit"]
+            ):
+                continue
+            for packing in sft_packings(subset, config):
+                cost = sft_pack_cost(subset, packing, config)
+                if cost > config["pack_cost_budget"]:
+                    continue
+                key = (
+                    sum(item["utility"] for item in subset),
+                    -cost,
+                    tuple(item["id"] for item in subset),
+                )
+                if key > best_key:
+                    best_key = key
+                    best_subset = subset
+                    best_packing = packing
+    return best_subset, best_packing
+
+
+def sft_profiled_select(
+    items: list[dict[str, Any]], config: dict[str, Any]
+) -> tuple[list[dict[str, Any]], list[list[int]] | None]:
+    """Select subsets only after independently minimizing cost over packings."""
+    best_subset: list[dict[str, Any]] = []
+    best_packing: list[list[int]] | None = None
+    best_key = (-math.inf, -math.inf, ())
+    for size in range(1, len(items) + 1):
+        for indices in itertools.combinations(range(len(items)), size):
+            subset = [items[index] for index in indices]
+            if (
+                sum(item["protected_risk"] for item in subset)
+                > config["planning_risk_limit"]
+            ):
+                continue
+            cost, packing = sft_profiled_pack(subset, config)
+            if cost > config["pack_cost_budget"]:
+                continue
+            key = (
+                sum(item["utility"] for item in subset),
+                -cost,
+                tuple(item["id"] for item in subset),
+            )
+            if key > best_key:
+                best_key = key
+                best_subset = subset
+                best_packing = packing
+    return best_subset, best_packing
+
+
 def sft_select(items: list[dict[str, Any]], config: dict[str, Any]) -> dict[str, Any]:
     risk_limit = config["planning_risk_limit"]
     total_capacity = config["pack_capacity"] * config["max_packs"]
@@ -281,21 +407,17 @@ def sft_select(items: list[dict[str, Any]], config: dict[str, Any]) -> dict[str,
         )
         additive = [item for item in additive if item["id"] != removed["id"]]
 
-    joint = sft_best_subset(
-        items,
-        lambda subset: common(subset) and sft_pack(subset, config) is not None,
-    )
-    profiled = sft_best_subset(
-        items,
-        lambda subset: common(subset)
-        and (
-            sft_pack(subset, config) is not None
-        ),
-    )
+    joint, joint_packing = sft_direct_joint(items, config)
+    profiled, profiled_packing = sft_profiled_select(items, config)
+    additive_proposal_cost, _ = sft_profiled_pack(proposed_additive, config)
 
-    def result(subset: list[dict[str, Any]]) -> dict[str, Any]:
+    def result(
+        subset: list[dict[str, Any]], packing: list[list[int]] | None = None
+    ) -> dict[str, Any]:
         risk = sum(item["protected_risk"] for item in subset)
         count = len(subset)
+        if packing is None:
+            _, packing = sft_profiled_pack(subset, config)
         scales = config["gate_scales"]
         accepted_scale = 0.0
         for scale in scales:
@@ -307,16 +429,26 @@ def sft_select(items: list[dict[str, Any]], config: dict[str, Any]) -> dict[str,
             "ids": [item["id"] for item in subset],
             "utility": sum(item["utility"] for item in subset),
             "protected_proxy": risk,
-            "pack_count": len(sft_pack(subset, config) or []),
+            "pack_count": len(packing or []),
+            "profiled_cost": (
+                sft_pack_cost(subset, packing, config)
+                if packing is not None
+                else math.inf
+            ),
             "accepted_scale": accepted_scale,
         }
 
     return {
         "additive_proposal_ids": [item["id"] for item in proposed_additive],
         "additive_proposal_packable": sft_pack(proposed_additive, config) is not None,
+        "additive_proposal_profiled_cost": (
+            additive_proposal_cost
+            if math.isfinite(additive_proposal_cost)
+            else None
+        ),
         "score_then_pack": result(additive),
-        "joint": result(joint),
-        "profiled": result(profiled),
+        "joint": result(joint, joint_packing),
+        "profiled": result(profiled, profiled_packing),
     }
 
 
@@ -327,8 +459,8 @@ def run_sft(stage: str, work_dir: Path) -> dict[str, float]:
             {"id": "long-a", "length": 6, "utility": 10.0, "protected_risk": 1.0},
             {"id": "long-b", "length": 6, "utility": 9.0, "protected_risk": 1.0},
             {"id": "long-c", "length": 6, "utility": 8.0, "protected_risk": 1.0},
-            {"id": "short-a", "length": 4, "utility": 3.5, "protected_risk": 0.0},
-            {"id": "short-b", "length": 4, "utility": 3.0, "protected_risk": 0.0},
+            {"id": "short-a", "length": 4, "utility": 4.5, "protected_risk": 0.0},
+            {"id": "short-b", "length": 4, "utility": 4.0, "protected_risk": 0.0},
             {"id": "medium", "length": 5, "utility": 4.0, "protected_risk": 2.0},
         ]
         write_json(
@@ -378,6 +510,9 @@ def run_sft(stage: str, work_dir: Path) -> dict[str, float]:
         config = {
             "pack_capacity": 10,
             "max_packs": 2,
+            "pack_launch_cost": 8.0,
+            "pack_load_quadratic": 1.0,
+            "pack_cost_budget": 150.0,
             "planning_risk_limit": 3.0,
             "gate_tolerance": 3.2,
             "curvature": 0.2,
@@ -407,7 +542,7 @@ def run_sft(stage: str, work_dir: Path) -> dict[str, float]:
                 "config": config,
                 "items": previous["items"],
                 "assertions": [
-                    "joint selection equals exact selection under profiled pack cost",
+                    "direct subset-packing enumeration equals independent profiled-cost selection",
                     "all committed synthetic steps pass the actual-change gate",
                 ],
             },
@@ -456,22 +591,31 @@ def run_sft(stage: str, work_dir: Path) -> dict[str, float]:
     if not equivalence:
         fail("joint and exact profiled-cost selections diverged")
     gate = model["config"]["hoeffding_gate"]
+    binding_case = sft_select(model["items"], model["config"])
     summary = {
         "audit_type": "synthetic_design_audit",
         "empirical_evidence": False,
         "trials": len(rows),
         "checks": {
             "profiled_cost_equivalence": equivalence,
+            "numeric_profiled_cost_within_budget": all(
+                row["joint"]["profiled_cost"]
+                <= model["config"]["pack_cost_budget"]
+                for row in rows
+            ),
             "all_joint_plans_packable": all(row["joint"]["pack_count"] <= 2 for row in rows),
             "gate_always_found_safe_scale": all(
                 row["joint"]["accepted_scale"] > 0 for row in rows
             ),
-            "constructed_nonadditive_case_exercised": any(
+            "constructed_unpackable_additive_case_exercised": any(
                 not row["additive_proposal_packable"] for row in rows
-            )
-            and any(
-                row["joint"]["utility"] > row["score_then_pack"]["utility"]
-                for row in rows
+            ),
+            "constructed_binding_numeric_cost_case_exercised": (
+                binding_case["additive_proposal_packable"]
+                and binding_case["additive_proposal_profiled_cost"]
+                > model["config"]["pack_cost_budget"]
+                and binding_case["joint"]["profiled_cost"]
+                <= model["config"]["pack_cost_budget"]
             ),
             "hoeffding_radius_within_tolerance": gate["radius"]
             <= gate["per_round_tolerance"],
@@ -502,6 +646,7 @@ def run_sft(stage: str, work_dir: Path) -> dict[str, float]:
                 [row["joint"]["accepted_scale"] == 1.0 for row in rows]
             ),
             "hoeffding_gate": gate,
+            "binding_numeric_cost_case": binding_case,
         },
         "interpretation": (
             "Software/design check only; these values must not populate the paper's "
@@ -1201,6 +1346,20 @@ def run_eval(stage: str, work_dir: Path) -> dict[str, float]:
             "the preregistered condition grid nor provides human-evaluation evidence."
         ),
     }
+    write_jsonl(
+        work_dir / "evaluate" / "audit_ledger.jsonl",
+        [
+            {
+                "slot_id": slot,
+                "synthetic": True,
+                "response_observed": True,
+                "replacement_attempted": False,
+                "outcome": (-1, 0, 1)[slot % 3],
+                "target_to_draw_weight": 1.0,
+            }
+            for slot in range(200)
+        ],
+    )
     write_json(artifact, summary)
     assignments = len(rows) * model["config"]["budget"]
     return {

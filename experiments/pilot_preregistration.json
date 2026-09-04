@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "frozen_at_utc": "2026-09-03T01:32:01Z",
+  "frozen_at_utc": "2026-09-04T01:57:10Z",
   "evidence_status": "Preregistered pilot configuration only; no experiment or human study has been run.",
   "source_registry": "experiments/public_source_registry.json",
   "sft": {
@@ -94,6 +94,7 @@
       "cumulative_tolerance_budget": 0.2,
       "samples_per_slice_round": 512,
       "sampling": "with replacement from the frozen gate distribution",
+      "scale_evaluation": "one fresh block per protected slice and round, reused as a paired block across every scale in the frozen grid",
       "empirical_margin": 0.005,
       "total_gate_draws": 20480
     },
@@ -111,29 +112,57 @@
       "overrun_rule": "Retain and mark the run as a protocol failure. Before opening audits, refreeze a larger reserve and restart every paired method from the common initial state."
     },
     "primary_factorial": {
+      "evidence_status": "Exploratory H1 mechanism pilot only. H2, H3, confirmatory thresholds, and the 50M-token study are not frozen.",
+      "frozen_hypothesis": "H1-mechanism: measured profiled cost and fixed-budget pack search interact beyond their two main effects on the target/protected frontier.",
+      "target_settings": [
+        "math",
+        "code"
+      ],
       "factor_cost": [
         "additive_token",
-        "profiled_measured"
+        "measured_nonlinear"
       ],
       "factor_packer": [
         "deterministic_best_fit",
         "fixed_budget_beam"
       ],
+      "cells": {
+        "additive_token__deterministic_best_fit": "select with additive response-token cost, then deterministic length-descending best fit",
+        "additive_token__fixed_budget_beam": "fixed-budget beam uses additive response-token cost during every expansion",
+        "measured_nonlinear__deterministic_best_fit": "map each proposed subset to its deterministic best-fit packing and test budget feasibility using the calibrated cost of that exact packing",
+        "measured_nonlinear__fixed_budget_beam": "fixed-budget beam jointly tracks calibrated execution cost and physical pack state for every partial plan"
+      },
       "primary_mechanistic_contrast": "paired difference-in-differences in dominated hypervolume",
+      "contrast_formula": "(HV_measured,beam - HV_measured,best-fit) - (HV_additive,beam - HV_additive,best-fit), computed within seed, target setting, and budget before averaging",
+      "budget_feasibility": "Every cell reserves and charges the realized cost of its own packing. The best-fit cells evaluate their unique deterministic packing; beam cells evaluate each retained physical plan. No cell uses C*(B) from a packing it does not execute.",
+      "pairing_unit": "common initial checkpoint, seed, target setting, budget fraction, candidate stream, and protected-tolerance grid",
       "small_pool_exact_oracle_size": 24,
       "hypervolume_reference_box": [
         1.0,
         0.2
       ],
+      "hypervolume_coordinates": {
+        "x": "target audit NLL minus initial target audit NLL; lower is better",
+        "y": "maximum protected audit NLL minus its corresponding initial audit NLL; lower is better",
+        "reference_point": [
+          1.0,
+          0.2
+        ],
+        "outside_box_rule": "clip each coordinate only for hypervolume integration at its reference coordinate; retain and report the unclipped endpoint",
+        "dominated_or_duplicate_rule": "remove dominated points and count duplicate coordinates once within each frozen tolerance frontier"
+      },
       "protected_tolerance_grid": [
         0.0,
         0.01,
         0.02,
         0.05
       ],
-      "paired_interval": "studentized paired bootstrap with 10000 frozen resamples, reported as exploratory because five seeds do not support reliable tail calibration",
+      "paired_interval": "paired max-t bootstrap that resamples the five seed blocks jointly across every target-by-budget contrast; reported as exploratory because five seeds do not support reliable tail calibration",
+      "bootstrap_replicates": 10000,
+      "bootstrap_seed": 2026090393,
       "multiplicity": "max-statistic across budgets and target settings",
-      "missing_run_rule": "retain failure and assign the worst endpoint in the frozen reference box; also report complete cases"
+      "missing_run_rule": "retain failure and assign the worst endpoint in the frozen reference box; also report complete cases",
+      "infeasible_plan_rule": "record the null action with its charged search cost; never repair a cell using another cell's packing algorithm"
     }
   },
   "rl": {
@@ -153,7 +182,7 @@
       "selection_rule": "first 2048 examples after sorting SHA-256(source revision || stable problem id)",
       "size": 2048,
       "target_mass": "uniform with replacement",
-      "hidden_evaluators_are_disjoint": true,
+      "hidden_evaluator_status": "No hidden evaluator is admitted by this mathematics-only H1 pre-pilot. Any later code or held-out evaluator must be registered, cleared, materialized as a sealed role, and deduplicated before execution.",
       "audit_partition_laws": {
         "nuisance_fit": "uniform on hash ranks 0--1023",
         "alpha_selection": "uniform on hash ranks 1024--1535",
@@ -181,21 +210,25 @@
       ],
       "stratum_counts_by_alpha": [
         {
+          "allocation_id": "rho-0.25",
           "alpha": 0.25,
           "current": 16,
           "stale": 48
         },
         {
+          "allocation_id": "rho-0.50",
           "alpha": 0.5,
           "current": 32,
           "stale": 32
         },
         {
+          "allocation_id": "rho-0.75",
           "alpha": 0.75,
           "current": 48,
           "stale": 16
         },
         {
+          "allocation_id": "rho-1.00",
           "alpha": 1.0,
           "current": 64,
           "stale": 0
@@ -203,13 +236,24 @@
       ],
       "projection_dimension": 256,
       "projection_seed": 2026090391,
+      "projection_distribution": "independent Rademacher entries scaled by 1/sqrt(256), generated in row-major order",
+      "parameter_order": "lexicographic fully qualified names of trainable LoRA tensors, each flattened in contiguous row-major order",
       "nuisance_fit_prompt_fraction": 0.5,
       "alpha_selection_prompt_fraction": 0.25,
       "untouched_confirmation_prompt_fraction": 0.25,
       "selection_replications": 2000,
       "confirmation_replications": 2000,
-      "reference_current_policy_trajectories": 16384,
-      "selection_rule": "minimum projected-gradient MSE times measured accelerator-seconds; ties choose larger alpha"
+      "reference_replicas_per_target_law": 2,
+      "reference_current_policy_trajectories_per_replica": 16384,
+      "reference_independence": "For each of D_select and D_confirm, R1 and R2 are mutually independent and independent of every candidate replication.",
+      "reference_storage": "retain every per-trajectory projected gradient and trajectory id separately for R1 and R2",
+      "projected_mse_estimator": "(g_hat - R1)^T (g_hat - R2), averaged over paired replications; individual values may be negative",
+      "mse_interval": "three-way nonparametric bootstrap: independently resample candidate replications, R1 trajectories, and R2 trajectories; 10000 replicates with seed 2026090392",
+      "mse_bootstrap_replicates": 10000,
+      "mse_bootstrap_seed": 2026090392,
+      "selection_rule": "At a fixed 64-trajectory and verifier-call budget, minimize projected MSE times measured accelerator-seconds; ties choose larger alpha.",
+      "allocation_restriction_mode": "alpha_equals_sampling_fraction",
+      "allocation_restriction": "For this exploratory grid only, alpha equals n_current/(n_current+n_stale). This is not required for unbiasedness; confirmation must cross mixture mass with source allocation."
     },
     "proposal": {
       "support_floor_epsilon": 0.2,
@@ -238,7 +282,34 @@
       "gradient_clipping": null
     },
     "stale_actor": {
-      "construction": "the immediately preceding frozen policy checkpoint",
+      "construction_status": "unfrozen_blocker",
+      "frozen_policy_pair": {
+        "current_tensor_sha256": null,
+        "behavior_tensor_sha256": null,
+        "current_construction_manifest_sha256": null,
+        "tokenizer_sha256": null,
+        "chat_template_sha256": null,
+        "decoder_specification_sha256": null
+      },
+      "kl_audit": {
+        "prompt_law_manifest_sha256": null,
+        "sample_size": null,
+        "estimator": null,
+        "estimator_implementation_sha256": null
+      },
+      "verifier": {
+        "registry_key": null,
+        "implementation_revision": null,
+        "sealed_answer_manifest_sha256": null
+      },
+      "required_replacement_fields": [
+        "exact current-policy tensor hash and deterministic construction run",
+        "exact immediately preceding behavior-policy tensor hash",
+        "tokenizer and rendered chat-template hashes",
+        "KL prompt law, sample size, estimator, and threshold action",
+        "mathematics verifier implementation revision and sealed answer manifest"
+      ],
+      "construction": "planned immediately preceding frozen policy checkpoint; not executable from this preregistration",
       "maximum_policy_kl": 0.1,
       "batch_action": "abort before generation when the measured KL exceeds the registered stratum"
     },
@@ -259,7 +330,8 @@
       "refill_failed_or_slow_trajectories": false,
       "parse_timeout_sandbox_and_truncation": "retained as declared verifier outcomes",
       "infrastructure_failure_before_a_scored_sequence_exists": "abort the complete batch, charge incurred cost, perform no update, and retain the failure record",
-      "completion_time_filtering": false
+      "completion_time_filtering": false,
+      "theorem_facing_action": "Every preassigned draw must reach a scored outcome. Any infrastructure failure makes the replication operationally failed and ineligible for the estimator claim; it is never replaced or retried, and H1 cannot pass on successful replications alone."
     },
     "replay_factorial": {
       "buffer_capacity_trajectories": 4096,
@@ -280,6 +352,24 @@
     }
   },
   "eval": {
+    "execution_status": "blocked_unfrozen_estimand_generation",
+    "frozen_artifact_hashes": {
+      "prompt_generator_sha256": null,
+      "rendered_prompt_bundle_sha256": null,
+      "decoder_and_coupling_sha256": null,
+      "paired_response_manifest_sha256": null,
+      "simulation_implementation_sha256": null,
+      "posterior_configuration_sha256": null,
+      "frame_functional_sha256": null,
+      "newton_update_implementation_sha256": null
+    },
+    "required_replacement_fields": [
+      "prompt-generator code revision and meaning-preservation validation rule",
+      "two prompt variants and their exact weights for every root",
+      "rendered model prompts, chat templates, decoder parameters, and response coupling",
+      "response seeds and immutable paired-response artifact hashes",
+      "executable simulation DGPs, missingness mechanisms, baseline policies, and crossing plan"
+    ],
     "source_keys": [
       "livebench-reasoning-eval",
       "livebench-math-eval",
@@ -296,12 +386,18 @@
       "phi3-mini-instruct"
     ],
     "frame": {
-      "root_items": 600,
+      "root_items": 528,
+      "root_items_by_source": {
+        "livebench-reasoning-eval": 200,
+        "livebench-math-eval": 200,
+        "livebench-coding-eval": 128
+      },
       "prompt_variants_per_root": 2,
       "response_draws_per_variant": 1,
       "display_orders": 2,
-      "root_selection_rule": "sort by SHA-256(dataset revision || question_id), then take the first 200 roots from each source",
-      "target_root_mass": "uniform within source and one third per source",
+      "root_selection_rule": "retain all 200 reasoning roots, take the first 200 math roots after sorting SHA-256(dataset revision || question_id), and retain all 128 coding roots",
+      "target_root_mass": "one third per source and uniform within source, so each root has mass 1/(3*n_source)",
+      "frame_interpretation": "weighted public LiveBench frame only; not a product-domain or deployment-population sample",
       "audit_membership_removes_adaptive_support": false
     },
     "decision": {
@@ -349,7 +445,8 @@
       "sealed_target_random_audit_attempts": 200,
       "adaptive_fixed_budget_attempts": 1000,
       "optional_stopping": false,
-      "replacement_of_nonresponses": false
+      "replacement_of_nonresponses": false,
+      "fixed_slot_rule": "All 1000 assignment slots remain in the ledger. Unavailability, withdrawal, quota binding, or nonresponse records R_t=0 in the original slot; no replacement occurs and later slots continue."
     },
     "working_posterior": {
       "fixed_effect_prior_standard_deviation": 2.0,
@@ -360,14 +457,38 @@
       "hessian_damping": 0.001,
       "line_search": false,
       "feature_standardization": "pilot-frozen mean and standard deviation",
-      "jury_prompt_revision_rule": "SHA-256 of the rendered rubric and system prompt"
+      "jury_prompt_revision_rule": "SHA-256 of the rendered rubric and system prompt",
+      "posterior_representation": "q_b(theta) is the frozen Gaussian Laplace approximation N(theta_hat_b, H_b^-1)",
+      "state_probability": "common-random-number Monte Carlo probability that Delta(theta) lies above delta, below -delta, or inside [-delta,delta]",
+      "posterior_predictive": "common-random-number Monte Carlo integral of the Davidson categorical likelihood under q_b",
+      "hypothetical_update": "At theta_hat_b compute g=grad log p_theta(y|x) and J=-Hessian log p_theta(y|x). Set H_new=H_b+J+hessian_damping*I and theta_new=theta_hat_b+solve(H_new+newton_ridge*I,g); covariance is inverse(H_new+newton_ridge*I).",
+      "hessian_evaluation_point": "theta_hat_b before the hypothetical outcome",
+      "standard_normal_common_random_seed": 2026090322,
+      "common_monte_carlo_draws": 4096,
+      "factorization": "symmetric Cholesky after adding jitter in the fixed sequence [0, 1e-10, 1e-9, 1e-8, 1e-7, 1e-6]",
+      "factorization_failure": "Set EVI_b(x)=0 for the affected x, retain and report the failure, and do not retry with an unregistered update.",
+      "acquisition_scope": "approximate Bayesian risk-reduction score; alignment with the terminal confidence-set action is tested, not assumed"
     },
     "human_protocol": {
       "panel_size": 80,
       "target_rater_mass": "uniform over the enrolled panel",
       "same_root_repeated_for_one_rater": "not prohibited; repeats are retained because resampling would change the logged draw law",
+      "pilot_connectivity": "No requirement that every human rater appear in the 200-attempt pilot; human-rater effects use a proper partial-pooling prior. Connectivity checks apply only to the model-judge design.",
       "task_order": "independently randomized before outcomes",
       "audit_slots": "interleaved at hidden preassigned positions",
+      "audit_nonresponse": "Use all 200 fixed audit slots. Substitute -1/+1 endpoint outcomes for missing ratings and add one-sided Hoeffding radius sqrt(2*log(2/alpha)/200); never drop or replace a slot.",
+      "adaptive_audit_equivalence_status": "unfrozen_blocker",
+      "adaptive_audit": {
+        "equivalence_margin": null,
+        "covariance_implementation_sha256": null,
+        "small_cluster_correction": null,
+        "failure_rule": null
+      },
+      "adaptive_audit_required_fields": [
+        "equivalence margin",
+        "joint covariance estimator accounting for shared raters",
+        "small-cluster correction and failure rule"
+      ],
       "manual_requirements": [
         "ethics approval or documented exemption",
         "informed consent",
@@ -386,6 +507,8 @@
       ]
     },
     "simulation": {
+      "execution_status": "unfrozen_blocker",
+      "required_before_execution": "Executable DGP equations, factor crossing or fractional design, missingness laws, common-random-number schedule, and faithful Active Testing/CVE/PPAT/Neyman/EVI implementations must be hashed in a replacement preregistration.",
       "trials_per_condition": 2000,
       "seed": 2026090321,
       "coverage_boundary_values": [

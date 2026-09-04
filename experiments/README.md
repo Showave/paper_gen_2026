@@ -107,6 +107,20 @@ between two registered candidate-source roles. Successful execution means both
 were detected and the cross-role rows were quarantined; every output is marked
 non-empirical.
 
+The SFT factorial aggregator is independently executable:
+
+```bash
+make sft-factorial-audit
+```
+
+For real endpoints, `scripts/aggregate_sft_factorial.py` requires one
+run-manifest-linked row per frozen seed, target, budget, cell, and tolerance.
+It applies the registered failed/missing-run rule, computes lower-is-better
+dominated hypervolume, evaluates the paired cost-by-packer
+difference-in-differences, and forms simultaneous max-$t$ intervals by
+resampling complete seed blocks. Fixture endpoints cannot be consumed in
+`real` mode.
+
 ## Reproducible design audits
 
 The repository includes deterministic, standard-library-only commands that
