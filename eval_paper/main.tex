@@ -130,6 +130,12 @@ active-testing weights with a prediction control variate
 \cite{caron2026ppat}. Our distinction is decision-loss acquisition for
 three-way human comparisons over a crossed evaluation frame, not adaptive
 residualization or its central limit theorem by itself.
+DMLRank gives nonparametric, debiased inference for tie-aware preference
+rankings and derives budget-aware collection policies
+\cite{frauen2026dmlrank}. Its target is a multi-model ranking functional; ours
+is one frozen replacement decision for an explicitly weighted
+item--response--rater--order frame, with outcome-adaptive draw probabilities
+logged prequentially.
 
 \paragraph{Adaptive and dynamic evaluation.}
 Active acquisition can exploit historical dependence among benchmark items
@@ -236,6 +242,13 @@ professional expertise absent from the rater pool. Root-item provenance,
 inclusion weight, domain, language, safety category, near-duplicate cluster,
 prompt generator, response seeds, model revisions, tokenizer, and decoding
 parameters are versioned before labels are revealed.
+Each public root also records its pinned repository revision, export-byte hash,
+stable upstream identifier, canonical raw-row hash, and versioned
+normalized-content hash. Normalized duplicate clusters are formed before frame
+sampling and assigned as units; any separately admitted pilot-fitting or
+sealed source is a distinct registered role, and cross-role clusters are
+quarantined. Paraphrase and template leakage remain separate blocking checks,
+since hash inequality is not evidence of semantic independence.
 
 Each prompt variant is validated as meaning-preserving by a separate process;
 the target weights over variants are fixed, not chosen after seeing which model
@@ -707,6 +720,11 @@ The public-source registry pins each pilot frame and model revision.
 Automated license metadata is only a preflight; acquisition remains blocked
 until manual provenance, terms, privacy, human-subjects, and leakage reviews
 are approved.
+After those approvals, \texttt{scripts/materialize\_public\_data.py} verifies
+hash-pinned local exports, writes row-level provenance, and rejects retained
+content overlap across declared roles. Its only clearance bypass is a
+committed synthetic collision fixture whose artifacts are explicitly
+non-empirical.
 The same section fixes the Qwen, SmolLM, Mistral, and Phi jury revisions,
 posterior prior scales, one-step damped Newton approximation, unit annotation
 cost, nonresponse rule, and full simulation grids. These values specify a

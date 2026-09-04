@@ -126,6 +126,11 @@ baselines reduce variance while preserving a policy-gradient target
 inflation \cite{li2026length}. We instead represent length as a constrained
 cost and adapt the stale-source prompt proposal; these components are not
 claimed to subsume those methods.
+Discounted Beta--Bernoulli reward estimation reuses historical reward
+statistics to reduce group-estimator error while explicitly accepting bias
+\cite{kim2026dbb}. It is therefore a required bias--variance comparator:
+reusing summary statistics is distinct from our density-corrected use of newly
+drawn stale-policy trajectories.
 
 \paragraph{Off-policy stability and reward validity.}
 TOPR treats positive examples with an SFT/log-ratio-like term and truncates
@@ -292,6 +297,13 @@ MSE times measured unit cost, then freezes it for confirmation. Nuisance fitting
 $\alpha$ selection, and confirmation use three disjoint prompt partitions; the
 projection seed, dimension, reference sample, and confirmation replications
 are frozen before selection.
+Before these partitions are formed, every prompt is tied to a pinned source
+revision, export-byte hash, stable upstream identifier, raw-row hash, and
+versioned normalized-content hash. The downstream partitioner assigns every
+retained duplicate cluster wholly to fit, selection, or confirmation; any
+later admitted hidden evaluator is a separate registered role. Semantic
+overlap with such evaluators is a blocking audit rather than being inferred
+from normalized-hash inequality.
 
 $h_t^R,h_t^C,b_t$, and $q_t$ are trained only from data available before iteration
 $t$, then frozen. The sums below range over the complete finite prompt
@@ -466,7 +478,7 @@ one update and is never used again by the theorem-facing method. Staleness is
 stratified by measured policy KL, not checkpoint age.
 
 Baselines are on-policy RLOO, Dr.\ GRPO, separately tuned DAPO and GSPO, TOPR,
-variance-informed prompt allocation (VIP),
+variance-informed prompt allocation (VIP), DBB reward estimation,
 PrefixRL, PROS, SPEC-RL, MinPRO,
 the ICML replay design, POPO,
 plain bounded-mixture importance sampling, augmented sampling with uniform
@@ -654,6 +666,11 @@ separate token, verifier, accelerator, CPU, and wall-time costs. The public
 source registry pins prompt, checkpoint, and hidden-evaluator commits.
 Automated license metadata is only a preflight: real acquisition remains
 blocked on manual provenance, terms, privacy, and leakage review.
+Once approved, \texttt{scripts/materialize\_public\_data.py} verifies each
+site-local export hash, emits row-level provenance, deduplicates within roles,
+and quarantines normalized-content collisions across roles. The committed
+fixture exercises those rules without downloading prompts; all of its outputs
+are marked non-empirical.
 The companion \texttt{synthetic\_commands.json} fixes a four-cell trajectory
 law, $\alpha=1/2$, 32 draws per source, 2,000 replications, and seed 20260902.
 It enumerates the target and estimator expectations to machine precision,

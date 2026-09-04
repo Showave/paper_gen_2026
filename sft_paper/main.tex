@@ -130,6 +130,11 @@ instead scores examples in a coupled target-gradient subspace
 \cite{min2026gist}; UDS provides a low-overhead online utility--diversity
 selector without reference gradients \cite{zou2026uds}. Both are required
 comparators, and GIST scoring is also crossed with our pack-cost planner.
+P2D jointly selects task-sensitive attention heads and examples while charging
+selection and training latency \cite{chen2026p2d}. Because changing the
+trainable subspace changes both gradient geometry and cost, we treat P2D as an
+end-to-end comparator rather than attributing its gains to data selection
+alone.
 PartitionSel couples validation-gradient matching across domains under
 partition-matroid coverage constraints \cite{agrawal2026partitionsel}. Its
 source-constrained selector is a close matched-cost baseline; our separate
@@ -289,6 +294,14 @@ source-coverage floor so that the scheduler cannot permanently starve a source
 before it has evidence to do so. Personally identifying fields, benchmark
 solutions, and examples without a documented redistribution or research-use
 basis are excluded before any selection method sees the pool.
+Acquisition pins the repository revision and export-byte hash and records, for
+every row, a stable upstream identifier plus hashes of the canonical raw row,
+selected content, and a versioned Unicode-normalized form. Duplicate clusters
+are formed before split assignment: a normalized cluster crossing registered
+candidate-source, reference, or benchmark roles is quarantined in full, and a
+retained cluster is assigned wholly to one downstream split.
+Normalized equality is only an exact cleaning rule; semantic-near-duplicate,
+secret, and privacy scans remain separate blocking checks.
 
 Reference sets measure losses rather than benchmark exact match because the
 gate requires differentiability. For each capability, score, gate, audit, and
@@ -467,7 +480,7 @@ excluded from training cost; every method-specific query is included.
 
 Baselines are random plus identical packing, representation-similarity
 selection, LESS, FisherSFT, influence distillation, SPICE, DynamixSFT, a
-source-level dynamic allocator, GIST, UDS, PartitionSel, online
+source-level dynamic allocator, GIST, UDS, PartitionSel, P2D, online
 target-gradient alignment followed by packing, and the proposed joint
 scheduler. Every feasible baseline is reported
 both ungated and with the identical actual-update gate. The decisive decoupled
@@ -678,6 +691,12 @@ contrast. The public-source registry pins full dataset and checkpoint commits;
 its automated license metadata check is only a preflight, and real acquisition
 is blocked until every manual provenance, terms, privacy, and leakage review is
 approved.
+After approval, \texttt{scripts/materialize\_public\_data.py} accepts only
+hash-pinned local JSONL exports, emits row-level provenance and retained
+role-specific files, and verifies their artifact hashes. Its committed
+synthetic fixture contains within-role and cross-role duplicates and succeeds
+only when the former is collapsed and the latter is quarantined; it downloads
+no public rows and is not experimental evidence.
 With \texttt{--execute --synthetic-audit --commands
 experiments/synthetic\_commands.json}, a
 CPU-only audit exactly enumerates subset packability for two length-10 packs,
