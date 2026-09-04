@@ -13,5 +13,10 @@ __pycache__/
 # Keep source PDFs used as figures.
 !**/figures/*.pdf
 
+# Publish the three generated paper PDFs.
+!sft_paper/main.pdf
+!rl_paper/main.pdf
+!eval_paper/main.pdf
+
 # Local experiment outputs contain large artifacts and may contain private data.
 artifacts/
