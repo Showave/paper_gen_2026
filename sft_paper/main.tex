@@ -42,7 +42,7 @@ valid score, norm, and local-curvature bounds; the empirical gate does not by
 itself establish that event or imply general capability safety. This
 methods-first draft specifies the estimator, algorithm, falsification tests,
 and matched-budget protocol, while deliberately withholding empirical claims
-until the predeclared experiments are executed.
+until the specified experiments are executed.
 \end{abstract}
 
 \section{Introduction}
@@ -163,6 +163,12 @@ Hierarchical Balance Packing profiles multiple length and parallelism groups
 work with fine-grained slices \cite{liu2025slimpack}. They are systems
 comparators in our study. Neither supplies evidence that a data selector should
 change its subset because of profiled physical cost.
+Threshold Filtering Packing explicitly selects related and diverse examples
+for a common pack \cite{dong2025tfp}, and packing analyses compare related
+versus unrelated co-packing across model and dataset scales
+\cite{wang2025packing}. Those methods permit or study cross-example context.
+Our boundary-masked setting instead holds the gradient for a fixed subset
+invariant and couples selection to packing only through measured feasible cost.
 
 \section{Problem Setting}
 \label{sec:setting}
@@ -250,15 +256,10 @@ Thus $S_c>0$ predicts a loss decrease. For SGD,
 $\Delta=-\eta\nabla L_B^{\mathrm{tr}}$ and positive gradient alignment is
 beneficial.
 
-The theorem-facing AdamW configuration disables gradient clipping. A practical
-clipped variant must form one post-unscale, post-reduction clipped gradient for
-the complete accumulation window and use that tensor in both moments, the
-candidate displacement, and all logs; per-microbatch clipping is a different
-update.
-
-Writing $G_B=N_B^{-1}\sum_{i\in B}\nabla\ell_i$, the exact AdamW displacement
-is not additive in per-example gradients because its candidate second moment
-contains ${G_B}^{\odot 2}$. For planning only, we freeze the
+Writing $G_B=N_B^{-1}\sum_{i\in B}\nabla\ell_i$, the exact pilot AdamW
+displacement is not additive in per-example gradients because its candidate
+second moment contains the globally clipped
+${\overline G_B}^{\odot 2}$ defined below. For planning only, we freeze the
 previous denominator and use the affine surrogate
 \begin{equation}
 \widetilde\Delta_t(B)=d_t-\eta_t A_tG_B,
@@ -266,7 +267,9 @@ previous denominator and use the affine surrogate
 \end{equation}
 where diagonal $A_t\succeq0$ is fixed at the pre-update state and $d_t$
 contains known momentum and weight-decay terms. We never call
-$\widetilde\Delta$ the exact AdamW update.
+$\widetilde\Delta$ the exact AdamW update. In particular, its raw-gradient
+linearity omits global clipping; clipping discrepancy is measured as part of
+optimizer-surrogate error.
 
 To reduce storage, a fresh Rademacher projection
 $R_t\in\{\pm1/\sqrt{k}\}^{k\times p}$ stores
@@ -360,9 +363,15 @@ as a protocol failure; before sealed audits open, every paired method is
 restarted from the common initial state under a newly frozen larger reserve.
 
 \paragraph{Actual-update gate.}
-After one backward pass on the selected window, we construct AdamW moments
-$m^+=\beta_1m+(1-\beta_1)G_B$ and
-$v^+=\beta_2v+(1-\beta_2)G_B^{\odot2}$ without committing them. Bias-corrected
+After one backward pass on the selected window, form the single post-unscale,
+post-reduction gradient used by the frozen optimizer,
+\begin{equation}
+\overline G_B=G_B\min\{1,g_{\max}/\|G_B\|_2\},
+\end{equation}
+with the multiplier defined as one when $G_B=0$ and
+$g_{\max}=\infty$ denoting no clipping. We construct AdamW moments
+$m^+=\beta_1m+(1-\beta_1)\overline G_B$ and
+$v^+=\beta_2v+(1-\beta_2)\overline G_B^{\odot2}$ without committing them. Bias-corrected
 moments define direction
 $a_t=-\widehat m^+/(\sqrt{\widehat v^+}+\epsilon)-\lambda\theta_t$ and candidate
 displacement $\Delta_t(\alpha)=\alpha\eta_ta_t$. For the finite grid
@@ -373,7 +382,9 @@ D_{c,j}(\alpha)=
 \phi_c(z_j;\theta_t).
 \end{equation}
 Here $\phi_c$ is example-average NLL clipped to $[0,M_\phi]$ solely for the
-gate. With $n_c$ fresh IID gate examples and at most $T_{\max}$ rounds, define
+gate. One fresh IID block is drawn for each $(c,t)$ before inspecting any
+scale, and that same paired block evaluates every $\alpha\in\mathcal A$. With
+$n_c$ examples per block and at most $T_{\max}$ rounds, define
 \begin{equation}
 U_{c,t}(\alpha)=\overline D_{c,t}(\alpha)+
 M_\phi\sqrt{\frac{2\log(C|\mathcal A|T_{\max}/\delta_g)}{n_c}}.
@@ -401,8 +412,9 @@ remains an empirical endpoint, not a consequence of the gate.
 \STATE Build feasible isolated pack plans with beam search.
 \STATE Re-score a fixed shortlist on independent references and select.
 \STATE Compute its exact gradient, moments, and scaled AdamW candidates.
+\STATE Draw one fresh protected block and freeze it across all scales.
 \FOR{$\alpha\in\mathcal A$ from largest to smallest}
-  \STATE Evaluate fresh protected gate losses.
+  \STATE Evaluate protected losses on the frozen round block.
   \IF{all upper statistics are below their tolerances}
     \STATE Commit $\Delta_t(\alpha)$ and optimizer state; \textbf{break}.
   \ENDIF
@@ -439,16 +451,19 @@ score, norm, and curvature event required by \cref{prop:control}.
 \section{Experiments}
 \label{sec:experiments}
 
-The study tests three predeclared hypotheses. \textbf{H1}: joint
+The confirmatory study plans three hypotheses. \textbf{H1}: joint
 selection--packing gives a better target-loss/worst-protected-loss frontier than
 the same score followed by best-fit packing. \textbf{H2}: any gain remains after
 charging selector, gate, and rejected-update costs. \textbf{H3}: the
 actual-update gate reduces audit regressions relative to proxy-only
 constraints. Failure of any hypothesis is a substantive negative result.
+Only the exploratory H1 mechanism factorial is frozen in the committed pilot;
+H2, H3, and every confirmatory acceptance threshold remain planned rather than
+predeclared.
 The primary statistic is the paired difference in dominated hypervolume over a
 fixed tolerance and budget grid with a fixed reference box. H1 succeeds only
 if its simultaneous 95\% lower bound exceeds zero. H3 compares protected
-regression at a predeclared noninferior target-NLL change so that shrinking all
+regression at a planned noninferior target-NLL change so that shrinking all
 updates cannot win trivially.
 
 \subsection{Experimental Setup}
@@ -544,7 +559,7 @@ scheduling, not the single best endpoint.
 
 \subsection{Ablations and Mechanistic Analysis}
 
-Predeclared one-factor contrasts compare offline versus online refresh,
+Planned confirmatory one-factor contrasts compare offline versus online refresh,
 score-then-pack versus joint planning, target-only versus protected constraints,
 SGD geometry versus frozen-Adam geometry, additive token cost versus measured
 cost, and proxy-only versus actual-update gating. A small fractional factorial
@@ -687,7 +702,10 @@ artifacts. The full $B_{50M}$ confirmatory configuration is not yet frozen.
 It hashes the exact SFT section of
 \texttt{experiments/pilot\_preregistration.json}, including the fixed
 eight-pack window, optimizer, selector, gate, cost-failure rule, and factorial
-contrast. The public-source registry pins full dataset and checkpoint commits;
+contrast. Its software audit independently enumerates $(B,\pi)$ pairs and,
+separately, minimizes a numeric nonlinear pack cost over $\pi$ before selecting
+$B$; equality is therefore not implemented by calling the same subset
+predicate twice. The public-source registry pins full dataset and checkpoint commits;
 its automated license metadata check is only a preflight, and real acquisition
 is blocked until every manual provenance, terms, privacy, and leakage review is
 approved.
@@ -699,14 +717,20 @@ only when the former is collapsed and the latter is quarantined; it downloads
 no public rows and is not experimental evidence.
 With \texttt{--execute --synthetic-audit --commands
 experiments/synthetic\_commands.json}, a
-CPU-only audit exactly enumerates subset packability for two length-10 packs,
-checks direct joint selection against the profiled-cost form, and exercises the
+CPU-only audit exactly enumerates packings for two length-10 packs under a
+quadratic load plus launch cost, checks direct joint selection against an
+independently computed profiled-cost form, and exercises the
 finite gate grid over 512 seeded score perturbations. A separate frozen
 Hoeffding fixture uses $M_\phi=1$, $C=2$, $|\mathcal A|=3$,
 $T_{\max}=10$, $\delta_g=0.05$, and $\tau=0.2$, which fixes
 $n_c=355$. Every output is marked non-empirical. These fixtures test
 implementation invariants and a constructed non-additive-cost case; they are
 not evidence that the method improves SFT.
+\texttt{scripts/aggregate\_sft\_factorial.py} separately implements the frozen
+reference-box clipping, failed-run assignment, dominated hypervolume,
+cost-by-packer difference-in-differences, and paired max-$t$ seed bootstrap.
+Its self-test uses only generated endpoints and cannot populate
+\cref{tab:main}.
 
 \subsection{Numerical Packing Check}
 Before training, randomly sampled windows are evaluated both unpacked and with

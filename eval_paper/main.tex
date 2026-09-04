@@ -86,8 +86,9 @@ explicit human-preference estimand?} We make four scoped contributions:
   \item We combine value-of-information acquisition with randomized exploration
   and a draw-level sequential augmented Hansen--Hurwitz estimator. We state
   its response-and-design assumptions and fixed-budget asymptotic conditions.
-  \item We pre-specify simulations, a sealed target-random human audit, shift tests,
-  and ablations that separate interval validity from label efficiency.
+  \item We lay out planned simulations, a sealed target-random human audit,
+    shift tests, and ablations that separate interval validity from label
+    efficiency; executable DGPs remain a preregistration blocker.
 \end{itemize}
 
 \paragraph{Evidence status.}
@@ -125,9 +126,12 @@ do not by themselves justify reusing an outcome-adaptively acquired
 calibration sample. Classical unequal-probability
 with-replacement estimation \cite{hansen1943sampling} and inference for
 adaptively collected data \cite{hadad2021confidence} supply the statistical
-foundation. Prediction-Powered Active Testing (PPAT) independently combines
+foundation. Prediction-Powered Active Testing (PPAT) combines
 active-testing weights with a prediction control variate
-\cite{caron2026ppat}. Our distinction is decision-loss acquisition for
+\cite{caron2026ppat}; Active Testing supplies the earlier adaptive risk
+estimation framework \cite{kossen2021active}, while control-variate evaluation
+combines synthetic and human feedback for unbiased head-to-head win rates
+\cite{zhou2025synthetic}. Our distinction is decision-loss acquisition for
 three-way human comparisons over a crossed evaluation frame, not adaptive
 residualization or its central limit theorem by itself.
 DMLRank gives nonparametric, debiased inference for tie-aware preference
@@ -363,16 +367,19 @@ One explicit working predictor is
 \begin{align}
 \eta_{jico}&=\alpha_j+d_j(\beta+b_i+b_{iv}+b_{ic})
 +\gamma_j^Oo+\gamma_j^L\ell_{ic}\nonumber\\
-&\quad+\gamma_j^Ss_{jic}+u_{j,d(i)}+f_{\mathrm{fam}(j),ic},\\
+&\quad+\gamma_j^Ss_{jic}+u_{j,d(i)},\\
 \kappa_{jico}&=\kappa_j+t_i+t_{iv}+z_{ic}^{\top}\xi_j,
 \end{align}
 with $d_j>0$ and partially pooled effects. Identifiability constraints set
 weighted human-panel offset to zero and weighted log-discrimination to zero,
-center item and variant effects, and require a connected judge--cell overlap
-graph with both orders and estimable covariate contrasts. Family effects model
-some shared jury error; conditional independence remains only a working
-assumption. The two recorded tie subtypes are collapsed to zero before this
-three-category model and analyzed separately.
+center item and variant effects, and require a connected model-judge--cell
+overlap graph with both orders and estimable covariate contrasts. The public
+pilot has one checkpoint per jury family, so it does not estimate a separate
+family-variance component. Human-rater effects are partially pooled under a
+proper prior and do not require every rater to appear in the 200-attempt pilot.
+Conditional independence is only a working assumption. The two recorded tie
+subtypes are collapsed to zero before this three-category model and analyzed
+separately.
 
 The human scale is anchored by the frozen weighted panel rather than assuming
 jury consistency equals validity. Length and family coefficients remain
@@ -389,17 +396,33 @@ L=\begin{pmatrix}
 \label{eq:loss}
 \end{equation}
 Stakeholder-specific alternatives are sensitivity analyses, not post-hoc
-replacements. At batch start $b$, let $Q_b$ be the frozen working posterior
-over states $S\in\{A,B,E\}$. Define its Bayes risk
+replacements. Let $\vartheta$ collect the finite working-model coefficients.
+At batch start $b$, freeze the Laplace posterior
+$q_b(\vartheta)=\mathcal N(\widehat\vartheta_b,H_b^{-1})$, the deterministic
+frame functional $\Delta(\vartheta)$, and
+\begin{align}
+Q_b(S=s)&=\int\mathbf 1\{S(\Delta(\vartheta))=s\}
+q_b(\vartheta)d\vartheta,\\
+\widehat p_b(y\mid x)&=\int p_\vartheta(y\mid x)q_b(\vartheta)d\vartheta.
+\end{align}
+Both integrals use frozen common Monte Carlo draws. Define Bayes risk
 \begin{equation}
 \widetilde R(Q)=
 \min_{d\in\{A,B,E,\mathrm{NE}\}}
 \sum_s L_{ds}Q(S=s),
 \end{equation}
 breaking action ties in the fixed order $\mathrm{NE},E,A,B$. Let
-$U(Q_b;x,y)$ be the posterior obtained by the predeclared single
-Laplace/Newton update for hypothetical outcome $y$; neither the update nor its
-hyperparameters depend on $p_b$. For target unit $x$ with annotation cost
+$q_b^{x,y}$ be obtained from $q_b$ by one predeclared damped Newton update of
+the mode and observed Hessian using $\log p_\vartheta(y\mid x)$, with frozen
+prior, ridge, damping, and no-line-search rule. Then $U(Q_b;x,y)$ is the state
+distribution induced by $q_b^{x,y}$ through the same
+$\Delta(\vartheta)$ and common draws. Neither the update nor its
+hyperparameters depend on $p_b$. The update evaluates gradient and Hessian at
+$\widehat\vartheta_b$, uses the frozen ridge/damping formula in the
+preregistration, and factorizes with a fixed jitter ladder. Standard-normal
+draws use seed 2026090322. If every registered Cholesky attempt fails, that
+cell receives EVI zero and the failure is retained rather than silently
+changing the approximation. For target unit $x$ with annotation cost
 $k_x$, define
 \begin{align}
 \operatorname{EVI}_{b}(x)
@@ -420,9 +443,12 @@ All EVI values are computed before $p_b$, after which $Q_b,p_b,m_b$, and
 $\bar m_b$ are frozen for the complete batch; each draw-level $p_t$ equals
 that $p_b$. This removes any dependence of EVI on its own acquisition
 probability and gives $p_t(x)\ge\epsilon\pi(x)$ and
-$\pi(x)/p_t(x)\le1/\epsilon$. EVI is myopically optimal only under a correct
-posterior and no exploration constraint; we claim neither finite-horizon
-optimality nor a general regret bound.
+$\pi(x)/p_t(x)\le1/\epsilon$. Exact EVI is myopically optimal only under a
+correct posterior, exact update, and no exploration constraint; the implemented
+approximation claims neither finite-horizon optimality nor a general regret
+bound. It scores approximate Bayesian risk
+reduction, whereas the terminal action uses a confidence set; their alignment
+is a required simulation diagnostic, not an identity.
 
 \section{Validation}
 \label{sec:validation}
@@ -526,6 +552,11 @@ predictable mean bounds $\Delta_F$; two one-sided martingale--Hoeffding bounds
 give coverage at least $1-\alpha$ without a response-mechanism assumption.
 Write $[L_T,U_T]$ for the applicable interval. It is widened by $\gamma$ in
 the response-drift sensitivity analysis.
+This guarantee is intentionally severe: at the pilot values
+$\epsilon=0.2$, $T=1000$, and $\alpha=0.05$, $c_\alpha=0.9448$.
+Consequently even one missing outcome will generally force
+$\mathrm{NE}$; simulation must report this degeneracy rather than presenting
+the bound as label-efficient.
 The terminal action used with \cref{eq:loss} and in the final report is
 \begin{equation}
 \widehat a=
@@ -563,17 +594,22 @@ $\delta\pm c/\sqrt T$, tie prevalence, item correlation, judge-family
 correlation, repeated-rater effects, order/length/family effects, outcome-model
 misspecification, rare strata, small propensities, nonresponse, and temporal
 shift. For each condition, 2,000 Monte Carlo trials compare target-random
-human sampling, static independent calibration, PPAT-style residual
-acquisition, variance-optimal residual sampling, pure uncertainty sampling,
-and EVI. Each acquisition policy is crossed with the same valid
+human sampling, static independent calibration, Active Testing, control-variate
+evaluation, PPAT-style residual acquisition, variance-optimal residual
+sampling, pure uncertainty sampling, and EVI. Each acquisition policy is crossed with the same valid
 \cref{eq:estimator}; augmentation is then ablated at fixed policy. Primary
 metrics are bias, RMSE, 95\% coverage, interval width, false decisive actions,
 equivalence decisions, abstention, realized loss, maximum weight, and ESS,
-with Monte Carlo uncertainty.
+with Monte Carlo uncertainty. The simulation separately reports whether
+Bayes-risk acquisition actually lowers realized loss under the terminal
+confidence-set action.
 
-The planned real study freezes 600 probability-weighted root items spanning
-declared product domains, two validated prompt forms per item, and paired
-response draws from two fixed open model revisions. Four model-judge families
+The planned public study freezes all 200 roots at the pinned LiveBench
+reasoning revision, 200 hash-ranked roots from math, and all 128 coding roots:
+a 528-root weighted public-benchmark frame. Each source receives mass $1/3$
+and roots are uniform within source. This is neither a product-domain sample
+nor a deployment population. It uses two validated prompt forms per item and
+paired response draws from two fixed open model revisions. Four model-judge families
 score all cells in both orders. A 200-rating uniform human pilot precedes 800
 sequential ratings; a separate 200-rating target-random audit sampled from
 \cref{eq:target-mass} remains sealed. All counts and fixed budget $T=1000$
@@ -582,10 +618,11 @@ missing response is not replaced. A frozen panel of 80 raters
 is recruited against a written definition, assigned
 target weights, trained on a fixed handbook, and screened with non-study
 examples. The expected load is 12.5 primary attempts per rater; realized load,
-withdrawals, and response are reported. A binding operational quota would
-destroy per-draw positivity for that rater and therefore halts the
-point-identified primary analysis rather than triggering silent reassignment.
-The report then gives only the predeclared partial-identification bounds.
+withdrawals, and response are reported. All $T$ assignment slots are
+preassigned. Rater unavailability, withdrawal, or a binding quota records
+$R_t=0$ in its original slot; no replacement occurs, later slots continue, and
+the analysis remains at fixed $T$ using the predeclared partial-identification
+bounds.
 Identifiers are hidden, both display orders are balanced in expectation, and
 every skip or nonresponse is retained. Attempt position is randomized, sealed
 audit attempts are interleaved at hidden prespecified slots, and the drift
@@ -617,9 +654,10 @@ Sealed audit & -- & -- & -- & pending \\
 \end{small}
 \end{table}
 
-Efficiency is claimed only if interval validity is retained in simulation and
-an interval for the adaptive-minus-audit difference lies within a predeclared
-equivalence margin, accounting for any shared-rater covariance. Jury-only
+Efficiency will be claimed only if interval validity is retained in simulation
+and an interval for the adaptive-minus-audit difference lies within a frozen
+equivalence margin using a frozen joint-covariance procedure. Neither is yet
+registered, so the current draft permits no equivalence claim. Jury-only
 rankings are diagnostic and never substitute for \cref{eq:estimand}.
 
 \subsection{Robustness and Ablations}
@@ -727,8 +765,12 @@ committed synthetic collision fixture whose artifacts are explicitly
 non-empirical.
 The same section fixes the Qwen, SmolLM, Mistral, and Phi jury revisions,
 posterior prior scales, one-step damped Newton approximation, unit annotation
-cost, nonresponse rule, and full simulation grids. These values specify a
+cost, nonresponse rule, and planned simulation factor levels. These values specify a
 public pre-pilot; they do not replace a deployment-log sampling design.
+The prompt-generator and rendered model prompts, variant weights, decoder and
+response-coupling seeds, response artifacts, and executable simulation DGPs
+are still unfrozen. Real response generation or human acquisition is blocked
+until a replacement preregistration hashes those estimand-defining objects.
 The companion \texttt{synthetic\_commands.json} fixes a 16-unit frame,
 $\epsilon=0.2$, $T=300$, 2,000 trials, and seed 20260902. It uses deliberately
 misspecified prequential predictions to check the exact one-draw identity,
@@ -763,13 +805,20 @@ interval.
 \subsection{Human Audit}
 The audit draws complete $(i,c,h,o)$ units from $\pi$ before adaptation and is
 stored behind a separate random seed. It estimates the same finite-frame target
-by the unweighted sample mean; if operational assignment changes its draw law,
-the exact target-to-draw ratio is retained.
+from 200 fixed audit slots by the unweighted sample mean. Missing audit outcomes
+are replaced by $-1$ and $+1$ for lower and upper endpoint means, with
+one-sided Hoeffding radius
+$\sqrt{2\log(2/\alpha)/200}$; they are never dropped or replaced. If
+operational assignment changes the draw law, the exact target-to-draw ratio is
+retained and the corresponding bounded-weight interval is used.
 Audit membership never removes a unit from adaptive support: only the audit
-seed, assignments, and outcomes are hidden. The streams are independent
-conditional on the common frozen frame.
+seed, assignments, and outcomes are hidden. Assignment seeds are independent,
+but outcomes from shared raters may be correlated and are not treated as
+independent in a future contrast.
 Its outcomes are opened only after the adaptive algorithm, model
-hyperparameters, and primary analysis are frozen.
+hyperparameters, and primary analysis are frozen. An adaptive-minus-audit
+equivalence test remains blocked until its margin and shared-rater covariance
+procedure are frozen.
 
 \section{Additional Validity Evidence}
 \label{app:additional}

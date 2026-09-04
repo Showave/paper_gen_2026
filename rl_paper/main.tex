@@ -75,6 +75,12 @@ trajectories from a logged policy and prompt distribution. These are combined
 with a positive fraction of current-policy trajectories. An augmented
 importance estimator uses a frozen outcome predictor to reduce residual
 variance, then takes exactly one policy update and consumes the data.
+This does not reuse rollout FLOPs: its plausible benefit is lower
+residual-gradient variance per total generation and scoring cost when the
+alternative proposal reaches informative regions. Current and stale actors may
+generate in parallel while the learner remains frozen. Learner--actor
+asynchrony is a separate non-theorem practical variant, not a claimed benefit
+of the core algorithm.
 
 Our contributions are deliberately scoped:
 \begin{itemize}
@@ -146,6 +152,13 @@ Direct replay studies optimize the generation--staleness--diversity trade-off
 decoupled off-policy correction \cite{mao2026popo}. Both are stronger practical
 comparators than naive reuse. Their empirical utility does not imply the
 conditional unbiasedness claimed for our newly sampled, single-use design.
+Asynchronous RLHF separates generation from learning on lagged policies
+\cite{noukhovitch2025async}; it motivates the stale-actor systems layout but
+does not provide our conditional estimator identity. Statistically, the design
+is a restricted stratified multiple-importance sampler with augmentation.
+Classical work optimizes mixture allocation and control variates jointly
+\cite{he2014optimal}; our pilot deliberately studies a small fixed grid rather
+than claiming a new general MIS principle or optimal allocation.
 
 PrefixRL and PROS instead reuse an old prefix while generating a new
 continuation \cite{setlur2026prefixrl,huang2026pros}; they change the prompt or
@@ -154,9 +167,9 @@ compute comparators, not instances of \cref{eq:estimator}. At the systems
 layer, HybridFlow decouples RL control and distributed computation
 \cite{sheng2025hybridflow}; our implementation follows that separation so
 rollout, cross-policy scoring, and update costs remain individually measurable.
-SPEC-RL uses old trajectories only as speculative drafts and verifies accepted
-tokens under the current policy, retaining an on-policy rollout law
-\cite{liu2025specrl}. MinPRO instead replaces exact causal-prefix ratios by a
+In its exact-acceptance setting, SPEC-RL uses old trajectories as speculative
+drafts while preserving the current-policy rollout law; its lenient setting
+does not have that exact claim \cite{liu2025specrl}. MinPRO instead replaces exact causal-prefix ratios by a
 stabilized minimum-ratio surrogate under policy lag \cite{lei2026minpro}.
 These methods target complementary systems and biased-stability trade-offs.
 
@@ -263,7 +276,8 @@ Let $h_t^R(z)$ and $h_t^C(z)$ be frozen action-conditional predictors of reward
 and length, and set $h_t=h_t^R-\lambda_th_t^C$. This separation allows the
 dual variable to change without retraining the two predictors. Let $b_t(x)$ be
 a frozen prompt-only baseline. In stale-source conditions, fix integers
-$n_P,n_G\ge1$ and $\alpha=n_P/(n_P+n_G)$ before sampling. Draw
+$n_P,n_G\ge1$ and mixture mass $\alpha\in(0,1)$ independently before sampling;
+write $\rho=n_P/(n_P+n_G)$ for the allocation fraction. Draw
 $Z_i^P\sim P_{\theta_t}$ and $Z_j^G\sim G_t$. For $\alpha<1$, deterministic
 stratification gives
 \begin{align}
@@ -279,7 +293,8 @@ The first line uses current-policy samples and the second uses stale-source
 samples. All $w,h,b$ are stop-gradient quantities. The $\alpha=1$ limit omits
 the stale-source sum and sets $n_G=0$; it reduces exactly to ordinary on-policy
 $(U-b)s$. The outcome predictor is critic-like infrastructure; we do not call
-the method critic-free.
+the method critic-free. The exploratory pilot restricts $\rho=\alpha$ to keep
+64 total trajectories; the identity itself does not.
 
 For conditionally IID trajectories within each of two independent strata define
 $A=(h-b)s+\alpha w(U-h)s$ under $P$ and
@@ -337,6 +352,11 @@ sequence that reaches any declared verifier status is retained regardless of
 completion time. An infrastructure failure before a scored sequence exists
 aborts the complete batch, charges incurred cost, and performs no update;
 workers are never refilled selectively.
+This prevents selective refill but does not make completion ignorable. The
+theorem-facing audit therefore requires every preassigned draw to reach a
+scored outcome almost surely. If any infrastructure failure occurs, that
+replication is retained as an operational failure, never retried, and excluded
+from the estimator claim; H1 cannot pass from a success-conditioned subset.
 
 Terminal $U_\lambda$ multiplies the unnormalized sequence score in
 \cref{eq:score}; the theorem does not assign token-level causal credit. Reward
@@ -385,7 +405,8 @@ be interchanged; (iii) the deterministic reward does not directly depend on
 $\theta$; (iv) $b_t$ depends only on $X$; (v) current and stale samples are
 conditionally independent, newly drawn, and have not influenced $\theta_t$;
 (vi) $P_t$ and $G_t$ have exactly evaluable masses on a common sample space, so
-$M_t$ is computed exactly; and (vii) required moments are finite. With exact
+$M_t$ is computed exactly; (vii) every preassigned draw reaches a scored
+outcome almost surely; and (viii) required moments are finite. With exact
 \cref{eq:weight} and none of the clipping or normalization operations excluded
 above,
 \begin{equation}
@@ -412,9 +433,16 @@ $m_0(z)=\mathbb E[U\mid Z=z]$, the population bias is
 \mathbb E_M[(\widetilde w-w)(m_0-h)s].
 \label{eq:bias}
 \end{equation}
-Thus either an exact density ratio or an exact action-conditional outcome model
+This is a weight-misspecification identity only under frozen common weights.
+For source-specific fixed implementations it becomes
+\begin{equation}
+\alpha\mathbb E_P[(\widetilde w_P-w)(m_0-h)s]+
+(1-\alpha)\mathbb E_G[(\widetilde w_G-w)(m_0-h)s].
+\end{equation}
+Thus either exact density ratios or an exact action-conditional outcome model
 removes this bias. Low prediction error or calibration alone is insufficient,
-and batch-normalized or data-dependent weights are not covered. In
+and focal-batch nuisance fitting, batch-normalized weights, and data-dependent
+weights are not covered. In
 deterministic RLVR, $m_0(z)=U(z)$, so an exact outcome model makes the stale
 residual vanish and leaves an on-policy direct estimator. We therefore
 describe \cref{eq:estimator} as augmented importance sampling rather than
@@ -449,9 +477,19 @@ normalization. Each can fail independently.
 \paragraph{Frozen-policy audit.}
 For each of two model families and both math and code verifiers, freeze a
 current policy, one stale policy, nuisance models, prompts, and decoders.
-Generate an independent, much larger $P$-only reference sample and propagate
-its Monte Carlo uncertainty when estimating the target gradient on fixed
-adapter layers and projections frozen before outcomes. Nuisance and proposal
+For each target law generate two mutually independent large $P$-only reference
+estimates $R_1,R_2$, independent also of candidate estimate $\widehat g$, on
+adapter layers and projections frozen before outcomes. We estimate projected
+MSE by
+\begin{equation}
+\widehat{\operatorname{MSE}}_\times=
+(\widehat g-R_1)^\top(\widehat g-R_2).
+\end{equation}
+Its expectation is projected MSE although one realization may be negative.
+Intervals independently resample candidate replications, $R_1$ trajectories,
+and $R_2$ trajectories, retaining their shared-reference dependence.
+Selection and confirmation use separate reference pairs under their respective
+laws. Nuisance and proposal
 models are trained on disjoint data. Repeated subsamples compare on-policy
 policy gradient, ordinary
 importance sampling, bounded mixture importance sampling, augmentation with
@@ -466,7 +504,10 @@ $D_{\rm select}$, and $D_{\rm confirm}$; selection MSE is not described as an
 estimate under the confirmation or full-frame law. For
 $\alpha\in\{.25,.5,.75,1\}$ it fixes
 $(n_P,n_G)\in\{(16,48),(32,32),(48,16),(64,0)\}$ and minimizes projected MSE
-times measured accelerator-seconds. Code, second-family, H2, and H3
+times measured accelerator-seconds at a common 64-trajectory and verifier-call
+budget. Tying mixture mass to allocation fraction is a pilot restriction, not
+a condition for unbiasedness; a confirmatory design must vary them separately.
+Code, second-family, H2, and H3
 confirmatory runs require a later frozen configuration.
 
 \paragraph{End-to-end training.}
@@ -643,7 +684,7 @@ log-probabilities, reward components, parser status, generated tokens, verifier
 version, nuisance-model revision, use count, and policy-update identifier. The
 run aborts if a supposedly theorem-facing trajectory has use count above one
 or if its source probability cannot be reconstructed.
-For all candidate trajectories, including rejected and retried candidates, the
+For all candidate trajectories, including those in aborted batches, the
 ledger computes
 \begin{align}
 K_{\mathrm{gen}}&=\sum_z C(z),&
@@ -663,7 +704,12 @@ stage and artifact contract tied to the hashed RL section of
 \texttt{experiments/pilot\_preregistration.json}; site-local commands are
 required to execute it, and each executed stage records output hashes and
 separate token, verifier, accelerator, CPU, and wall-time costs. The public
-source registry pins prompt, checkpoint, and hidden-evaluator commits.
+source registry pins the prompt source and base checkpoint only. The current
+and stale policy tensor hashes, tokenizer/decoder hashes, KL sampling law, and
+mathematics-verifier revision are still unfrozen blockers; this H1 pre-pilot
+cannot execute until a replacement configuration records them. A hidden code
+evaluator is outside this mathematics-only pre-pilot and must be registered by
+any later code study.
 Automated license metadata is only a preflight: real acquisition remains
 blocked on manual provenance, terms, privacy, and leakage review.
 Once approved, \texttt{scripts/materialize\_public\_data.py} verifies each
