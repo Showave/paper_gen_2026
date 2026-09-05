@@ -1,6 +1,6 @@
 #!/bin/sh
 # Build one paper directory (argument: sft_paper, rl_paper, or eval_paper).
-# Prefers latexmk; falls back to pdflatex + bibtex. On macOS, prepends
+# Prefers latexmk; falls back to pdflatex + bibtex, then Tectonic. On macOS, prepends
 # MacTeX's /Library/TeX/texbin so GUI TeX installs work from make.
 set -eu
 
@@ -11,7 +11,7 @@ usage() {
 
 print_install_help() {
   cat >&2 <<'EOF'
-error: no LaTeX engine found (need latexmk or pdflatex).
+error: no LaTeX engine found (need latexmk, pdflatex, or tectonic).
 
 Install a TeX distribution, then open a new terminal and retry `make`.
 
@@ -31,6 +31,10 @@ Install a TeX distribution, then open a new terminal and retry `make`.
     sudo apt-get update
     sudo apt-get install -y texlive-latex-recommended texlive-latex-extra \
       texlive-fonts-recommended texlive-science latexmk
+
+  Portable fallback:
+    install the latest Tectonic release from
+    https://tectonic-typesetting.github.io/book/latest/installation/
 
 If TeX is already installed, it is often missing from PATH. Try:
     export PATH="/Library/TeX/texbin:$PATH"
@@ -79,7 +83,12 @@ if [ "$mode" = "deps" ]; then
   else
     echo "bibtex: missing"
   fi
-  if have latexmk || have pdflatex; then
+  if have tectonic; then
+    echo "tectonic: $(command -v tectonic)"
+  else
+    echo "tectonic: missing"
+  fi
+  if have latexmk || have pdflatex || have tectonic; then
     exit 0
   fi
   print_install_help
@@ -94,11 +103,11 @@ export BIBINPUTS=".:${BIBINPUTS:-}"
 
 if [ "$mode" = "clean" ]; then
   if have latexmk; then
-    latexmk -C main.tex
-  else
-    rm -f main.aux main.bbl main.blg main.fdb_latexmk main.fls \
-      main.log main.out main.pdf main.synctex.gz
+    # A log left by another supported engine may not be parseable by latexmk.
+    latexmk -C main.tex >/dev/null 2>&1 || true
   fi
+  rm -f main.aux main.bbl main.blg main.fdb_latexmk main.fls \
+    main.log main.out main.pdf main.synctex.gz main.xdv
   exit 0
 fi
 
@@ -111,17 +120,24 @@ if have latexmk; then
   exit 0
 fi
 
-if ! have pdflatex; then
-  print_install_help
-  exit 127
+if have pdflatex; then
+  echo "warning: latexmk not found; using pdflatex + bibtex" >&2
+  pdflatex -interaction=nonstopmode -halt-on-error main.tex
+  if have bibtex; then
+    bibtex main
+  else
+    echo "warning: bibtex not found; bibliography may be incomplete" >&2
+  fi
+  pdflatex -interaction=nonstopmode -halt-on-error main.tex
+  pdflatex -interaction=nonstopmode -halt-on-error main.tex
+  exit 0
 fi
 
-echo "warning: latexmk not found; using pdflatex + bibtex" >&2
-pdflatex -interaction=nonstopmode -halt-on-error main.tex
-if have bibtex; then
-  bibtex main
-else
-  echo "warning: bibtex not found; bibliography may be incomplete" >&2
+if have tectonic; then
+  echo "warning: latexmk and pdflatex not found; using tectonic" >&2
+  tectonic --keep-logs -Z search-path=../template/icml2026 main.tex
+  exit 0
 fi
-pdflatex -interaction=nonstopmode -halt-on-error main.tex
-pdflatex -interaction=nonstopmode -halt-on-error main.tex
+
+print_install_help
+exit 127
