@@ -13,7 +13,7 @@
       "inputs": [
         "Approved entries and exact revisions from experiments/public_source_registry.json",
         "Frozen eval section of experiments/pilot_preregistration.json",
-        "Verified preflight data/content manifests and retained role-file hashes from hash-pinned local JSONL exports",
+        "Verified preflight data/content manifests, passing content-readiness ledger, and retained role-file hashes from hash-pinned local JSONL exports",
         "Timestamped deployment-log sample or weighted benchmark frame",
         "Rater recruitment definition, target weights, consent, compensation, and withdrawal protocol",
         "Evaluated model, tokenizer, decoder, prompt-generator, and jury revisions"
@@ -26,6 +26,7 @@
         "The frame contains 200 reasoning, 200 math, and 128 coding roots with one-third source mass",
         "frame_manifest.json lists 528 unique row_uid values with per-root mass 1/(3*n_source)",
         "Stable row, raw-content, and normalized-content hashes are recorded before frame sampling",
+        "The frozen PII, secret, and lexical near-duplicate gates report no retained-content finding; passing is not represented as semantic or privacy clearance",
         "The acquisition manifest embeds the preflight manifest and retained role-file hashes",
         "Personal data and unsupported licenses are excluded",
         "The sealed target-random audit seed and cells are inaccessible to acquisition"
@@ -42,13 +43,15 @@
       "inputs": [
         "acquire/frame_manifest.json",
         "Prompt-variant weights, response seeds, coupling rule, and semantic-cluster threshold",
-        "Rubric, tie subtypes, skip reasons, and sensitive-content warnings"
+        "Rubric, tie subtypes, skip reasons, and sensitive-content warnings",
+        "Frozen experiments/content_gates.json, its hash-bound ledger, and a reviewed paraphrase/template-leakage audit"
       ],
       "artifacts": [
         "process/cell_manifest.json"
       ],
       "checks": [
         "Every retained normalized duplicate cluster is assigned wholly to one frame unit or excluded",
+        "The cell manifest embeds the passing content-readiness ledger hash and accounts for every scanned record with an included partition or explicit exclusion reason",
         "Audit attempts are independent draws from the full target mass; hidden audit membership never removes a target unit from adaptive support",
         "AB and BA renders strip model identifiers and preserve content",
         "Assignment attempts, nonresponse, latency, and tie subtype have explicit fields"

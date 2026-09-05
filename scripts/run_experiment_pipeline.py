@@ -19,6 +19,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from run_content_gates import (
+    GateError as ContentGateError,
+    verify_readiness_ledger,
+)
+
 
 REQUIRED_STAGES = ("acquire", "process", "build", "train", "evaluate")
 REQUIRED_STAGE_FIELDS = ("objective", "inputs", "artifacts", "checks", "costs")
@@ -40,6 +45,25 @@ def load_json(path: Path) -> Any:
 def canonical_digest(value: Any) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(payload).hexdigest()
+
+
+def canonical_utf8_digest(value: Any) -> str:
+    payload = json.dumps(
+        value,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def is_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def validate_plan(plan: Any, source: Path) -> None:
@@ -126,6 +150,25 @@ def validate_preregistration_section(
     source_keys = nested(section, "source_keys")
     if not isinstance(source_keys, list) or not source_keys:
         fail(f"{paper} preregistration needs source_keys")
+    content_readiness = nested(section, "content_readiness")
+    if (
+        not isinstance(content_readiness, dict)
+        or content_readiness.get("required_status") != "pass"
+        or not isinstance(content_readiness.get("specification_path"), str)
+        or not isinstance(content_readiness.get("specification_sha256"), str)
+        or not isinstance(content_readiness.get("implementation_path"), str)
+        or not isinstance(content_readiness.get("implementation_sha256"), str)
+    ):
+        fail(f"{paper} preregistration must bind a passing content-readiness gate")
+    for kind in ("specification", "implementation"):
+        declared_path = Path(content_readiness[f"{kind}_path"])
+        if (
+            declared_path.is_absolute()
+            or ".." in declared_path.parts
+            or digest_file(repo / declared_path)
+            != content_readiness[f"{kind}_sha256"]
+        ):
+            fail(f"{paper} content-readiness {kind} hash does not match")
     registry_path = Path(str(preregistration.get("source_registry", "")))
     if registry_path.is_absolute() or ".." in registry_path.parts:
         fail("source_registry must be repository relative")
@@ -564,6 +607,181 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def confined_work_path(work_dir: Path, declared: Any) -> Path:
+    if not isinstance(declared, str) or not declared:
+        fail("process artifact path must be a nonempty string")
+    relative = Path(declared)
+    if (
+        relative.is_absolute()
+        or ".." in relative.parts
+        or not relative.parts
+        or relative.parts[0] != "process"
+    ):
+        fail(f"process artifact path must stay under process/: {declared!r}")
+    root = work_dir.resolve()
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            fail(f"process artifact path traverses a symlink: {declared!r}")
+    resolved = current.resolve()
+    if root not in resolved.parents:
+        fail(f"process artifact path escapes the work directory: {declared!r}")
+    return resolved
+
+
+def lineage_record_id(row: dict[str, Any]) -> Any:
+    provenance = row.get("provenance")
+    return provenance.get("record_id") if isinstance(provenance, dict) else None
+
+
+def validate_process_content_lineage(
+    paper: str,
+    work_dir: Path,
+    section: dict[str, Any],
+    ledger: dict[str, Any],
+    ledger_sha256: str,
+) -> int:
+    process_manifests = {
+        "sft": work_dir / "process" / "splits_manifest.json",
+        "rl": work_dir / "process" / "trajectory_schema.json",
+        "eval": work_dir / "process" / "cell_manifest.json",
+    }
+    process_manifest = load_json(process_manifests[paper])
+    if (
+        not isinstance(process_manifest, dict)
+        or process_manifest.get("content_readiness_ledger_sha256")
+        != ledger_sha256
+    ):
+        fail(
+            f"{paper} process manifest does not bind the verified "
+            "content-readiness ledger"
+        )
+    readiness = nested(section, "content_readiness")
+    required_partitions = readiness.get("required_partitions")
+    allowed_exclusion_reasons = readiness.get("allowed_exclusion_reasons")
+    if (
+        not isinstance(required_partitions, list)
+        or not required_partitions
+        or len(required_partitions) != len(set(required_partitions))
+        or not isinstance(allowed_exclusion_reasons, list)
+        or not allowed_exclusion_reasons
+        or len(allowed_exclusion_reasons) != len(set(allowed_exclusion_reasons))
+    ):
+        fail(f"{paper} preregistration has invalid content-lineage categories")
+
+    source_rows_by_id: dict[str, str] = {}
+    for role_file in ledger.get("role_files", []):
+        if (
+            not isinstance(role_file, dict)
+            or not isinstance(role_file.get("path"), str)
+        ):
+            fail(f"{paper} readiness ledger has an invalid retained-role file")
+        path = confined_work_path(work_dir, role_file["path"])
+        rows = load_jsonl(path)
+        if (
+            role_file.get("sha256") != digest_file(path)
+            or role_file.get("rows") != len(rows)
+        ):
+            fail(f"{paper} retained-role artifact hash or count is stale")
+        for row in rows:
+            record_id = lineage_record_id(row)
+            if not is_sha256(record_id) or record_id in source_rows_by_id:
+                fail(f"{paper} retained-role artifact has a duplicate record ID")
+            source_rows_by_id[record_id] = canonical_utf8_digest(row)
+    if canonical_digest(sorted(source_rows_by_id)) != ledger.get(
+        "retained_record_ids_sha256"
+    ):
+        fail(f"{paper} retained-role artifacts do not reproduce the readiness ledger")
+
+    partitions = process_manifest.get("content_partitions")
+    if not isinstance(partitions, list) or len(partitions) != len(
+        required_partitions
+    ):
+        fail(f"{paper} process manifest has incomplete partition artifacts")
+    observed_partition_by_id: dict[str, str] = {}
+    declared_partitions: set[str] = set()
+    for declaration in partitions:
+        if not isinstance(declaration, dict):
+            fail(f"{paper} content partition declaration must be an object")
+        partition = declaration.get("partition")
+        if partition not in required_partitions or partition in declared_partitions:
+            fail(f"{paper} content partition name is invalid or duplicated")
+        declared_partitions.add(partition)
+        path = confined_work_path(work_dir, declaration.get("path"))
+        rows = load_jsonl(path)
+        if (
+            declaration.get("sha256") != digest_file(path)
+            or declaration.get("rows") != len(rows)
+        ):
+            fail(f"{paper} content partition artifact hash or count is stale")
+        partition_record_ids: set[str] = set()
+        for row in rows:
+            record_id = lineage_record_id(row)
+            if not is_sha256(record_id):
+                fail(f"{paper} content partition row has an invalid record ID")
+            if record_id in observed_partition_by_id:
+                fail(f"{paper} scanned record appears more than once in partitions")
+            if (
+                record_id not in source_rows_by_id
+                or canonical_utf8_digest(row) != source_rows_by_id[record_id]
+            ):
+                fail(
+                    f"{paper} content partition row differs from its scanned "
+                    "retained record"
+                )
+            observed_partition_by_id[record_id] = partition
+            partition_record_ids.add(record_id)
+        if declaration.get("record_ids_sha256") != canonical_digest(
+            sorted(partition_record_ids)
+        ):
+            fail(f"{paper} content partition record-ID hash is stale")
+    if declared_partitions != set(required_partitions):
+        fail(f"{paper} process manifest omits a required partition")
+
+    lineage = process_manifest.get("content_lineage")
+    if (
+        not isinstance(lineage, list)
+        or len(lineage) != ledger.get("summary", {}).get("retained_rows_scanned")
+    ):
+        fail(f"{paper} process manifest has incomplete content lineage")
+    record_ids: set[str] = set()
+    included_partition_by_id: dict[str, str] = {}
+    excluded_ids: set[str] = set()
+    for record in lineage:
+        if not isinstance(record, dict):
+            fail(f"{paper} content-lineage record must be an object")
+        record_id = record.get("record_id")
+        disposition = record.get("disposition")
+        partition = record.get("partition")
+        exclusion_reason = record.get("exclusion_reason")
+        if not is_sha256(record_id) or record_id in record_ids:
+            fail(f"{paper} content lineage has an invalid record identifier")
+        record_ids.add(record_id)
+        if disposition == "included":
+            if partition not in required_partitions or exclusion_reason is not None:
+                fail(f"{paper} included lineage record needs one frozen partition")
+            included_partition_by_id[record_id] = partition
+        elif disposition == "excluded":
+            if partition is not None or exclusion_reason not in allowed_exclusion_reasons:
+                fail(f"{paper} excluded lineage record needs one frozen reason")
+            excluded_ids.add(record_id)
+        else:
+            fail(f"{paper} content lineage has an invalid disposition")
+    if canonical_digest(sorted(record_ids)) != ledger.get(
+        "retained_record_ids_sha256"
+    ):
+        fail(f"{paper} process lineage omits or adds a scanned record")
+    if included_partition_by_id != observed_partition_by_id:
+        fail(
+            f"{paper} included lineage does not reproduce hashed partition "
+            "artifacts"
+        )
+    if excluded_ids.intersection(observed_partition_by_id):
+        fail(f"{paper} excluded content appears in a partition artifact")
+    return len(record_ids)
+
+
 def validate_real_stage(
     paper: str,
     stage_name: str,
@@ -571,6 +789,79 @@ def validate_real_stage(
     section: dict[str, Any],
     run_manifest: dict[str, Any],
 ) -> dict[str, Any]:
+    content_validation: dict[str, Any] = {}
+    if stage_name in REQUIRED_STAGES:
+        specification_path = (
+            Path(__file__).resolve().parents[1]
+            / nested(section, "content_readiness.specification_path")
+        )
+        try:
+            verify_readiness_ledger(work_dir, specification_path)
+        except ContentGateError as exc:
+            fail(f"{paper} {stage_name} content-readiness validation failed: {exc}")
+        ledger_path = work_dir / "process" / "content_readiness_ledger.json"
+        ledger = load_json(ledger_path)
+        acquisition = load_json(work_dir / "acquire" / "data_manifest.json")
+        current_registry = load_json(
+            Path(__file__).resolve().parents[1]
+            / "experiments"
+            / "public_source_registry.json"
+        )
+        expected_review_keys = referenced_registry_keys(section)
+        review_records = (
+            acquisition.get("manual_review_records")
+            if isinstance(acquisition, dict)
+            else None
+        )
+        reviews_by_key = {
+            review.get("key"): review
+            for review in review_records
+            if isinstance(review, dict) and isinstance(review.get("key"), str)
+        } if isinstance(review_records, list) else {}
+        if (
+            not isinstance(ledger, dict)
+            or ledger.get("paper") != paper
+            or ledger.get("synthetic_fixture") is not False
+            or not isinstance(acquisition, dict)
+            or acquisition.get("paper") != paper
+            or acquisition.get("synthetic_fixture") is not False
+            or acquisition.get("registry_sha256")
+            != canonical_utf8_digest(current_registry)
+            or acquisition.get("preregistration_section_sha256")
+            != canonical_utf8_digest(section)
+            or run_manifest.get("source_registry_sha256")
+            != canonical_digest(current_registry)
+            or run_manifest.get("preregistration_sha256")
+            != canonical_digest(section)
+            or set(reviews_by_key) != expected_review_keys
+            or any(
+                review.get("status") != "approved"
+                or not isinstance(review.get("review_record"), str)
+                or not review["review_record"].strip()
+                for review in reviews_by_key.values()
+            )
+        ):
+            fail(
+                f"{paper} {stage_name} does not use the current approved real "
+                "materialization"
+            )
+        content_validation = {
+            "content_readiness_status": "pass",
+            "content_readiness_ledger_sha256": digest_file(ledger_path),
+        }
+        if stage_name != "acquire":
+            content_validation["content_lineage_records"] = (
+                validate_process_content_lineage(
+                    paper,
+                    work_dir,
+                    section,
+                    ledger,
+                    content_validation["content_readiness_ledger_sha256"],
+                )
+            )
+            if stage_name == "process":
+                return content_validation
+
     if paper == "sft" and stage_name == "evaluate":
         summary = load_json(work_dir / "evaluate" / "summary.json")
         factorial = nested(section, "primary_factorial")
@@ -586,7 +877,11 @@ def validate_real_stage(
             or len(summary["contrasts"]) != 6
         ):
             fail("SFT summary does not match the frozen factorial aggregation")
-        return {"factorial_contrasts": 6, "execution_class": "real"}
+        return {
+            **content_validation,
+            "factorial_contrasts": 6,
+            "execution_class": "real",
+        }
 
     if paper == "eval" and stage_name == "acquire":
         frame = load_json(work_dir / "acquire" / "frame_manifest.json")
@@ -627,7 +922,11 @@ def validate_real_stage(
             observed_mass += mass
         if observed_counts != expected or not math.isclose(observed_mass, 1.0):
             fail("evaluation root records do not reproduce counts and total mass")
-        return {"root_items": sum(expected.values()), "source_mass_valid": True}
+        return {
+            **content_validation,
+            "root_items": sum(expected.values()),
+            "source_mass_valid": True,
+        }
 
     if paper == "eval" and stage_name == "build":
         model = load_json(
@@ -659,7 +958,7 @@ def validate_real_stage(
             )
         ):
             fail("evaluation model manifest does not freeze the EVI computation")
-        return {"evi_configuration_valid": True}
+        return {**content_validation, "evi_configuration_valid": True}
 
     if paper == "eval" and stage_name == "train":
         rows = load_jsonl(work_dir / "train" / "acquisition_ledger.jsonl")
@@ -673,7 +972,11 @@ def validate_real_stage(
         ):
             fail("evaluation acquisition ledger violates the fixed-slot contract")
         missing = sum(not row["response_observed"] for row in rows)
-        return {"fixed_slots": expected_slots, "nonresponses": missing}
+        return {
+            **content_validation,
+            "fixed_slots": expected_slots,
+            "nonresponses": missing,
+        }
 
     if paper == "eval" and stage_name == "evaluate":
         summary = load_json(work_dir / "evaluate" / "summary.json")
@@ -737,6 +1040,7 @@ def validate_real_stage(
         ):
             fail("evaluation summary does not match the frozen audit contrast")
         return {
+            **content_validation,
             "audit_contrast_valid": True,
             "audit_interval_recomputed": expected_interval,
         }
@@ -855,6 +1159,7 @@ def validate_real_stage(
             ) != stale:
                 fail("RL confirmation candidate allocation is incomplete")
         return {
+            **content_validation,
             "attempts": len(rows),
             "infrastructure_failures": failures,
             "trajectory_ids_disjoint": True,
@@ -955,9 +1260,9 @@ def validate_real_stage(
             fail("RL selected cell is not the frozen MSE-times-cost argmin")
         if failures is None or summary.get("h1_eligible") != (failures == 0):
             fail("RL H1 eligibility must be false after any infrastructure failure")
-        return {"h1_eligible": failures == 0}
+        return {**content_validation, "h1_eligible": failures == 0}
 
-    return {"declared_checks_require_site_validator": True}
+    return content_validation or {"declared_checks_require_site_validator": True}
 
 
 def atomic_json(path: Path, value: Any) -> None:
@@ -1070,6 +1375,45 @@ def execute(
         name = stage["name"]
         if name not in selected:
             continue
+        stage_index = REQUIRED_STAGES.index(name)
+        for predecessor in plan["stages"][:stage_index]:
+            predecessor_name = predecessor["name"]
+            predecessor_record = manifest["stages"].get(predecessor_name)
+            if (
+                not isinstance(predecessor_record, dict)
+                or predecessor_record.get("status") != "completed"
+            ):
+                fail(
+                    f"stage {name} requires completed predecessor "
+                    f"{predecessor_name}"
+                )
+            current_artifacts = [
+                digest_artifact(work_dir / relative)
+                for relative in predecessor["artifacts"]
+            ]
+            if predecessor_record.get("artifacts") != current_artifacts:
+                fail(
+                    f"completed predecessor {predecessor_name} has stale artifacts"
+                )
+            current_costs = load_json(work_dir / predecessor_name / "costs.json")
+            if predecessor_record.get("costs") != current_costs:
+                fail(f"completed predecessor {predecessor_name} has stale costs")
+            if not synthetic_audit:
+                semantic_validation = validate_real_stage(
+                    plan["paper"],
+                    predecessor_name,
+                    work_dir,
+                    preregistration_section,
+                    manifest,
+                )
+                if (
+                    predecessor_record.get("semantic_validation")
+                    != semantic_validation
+                ):
+                    fail(
+                        f"completed predecessor {predecessor_name} has stale "
+                        "semantic validation"
+                    )
         previous_stage = manifest["stages"].get(name, {})
         if previous_stage.get("status") == "completed" and not force:
             print(f"[{name}] already completed; skipping")
@@ -1117,7 +1461,12 @@ def execute(
             invalid_costs = [
                 key
                 for key in stage["costs"]
-                if not isinstance(costs[key], (int, float)) or costs[key] < 0
+                if (
+                    not isinstance(costs[key], (int, float))
+                    or isinstance(costs[key], bool)
+                    or not math.isfinite(costs[key])
+                    or costs[key] < 0
+                )
             ]
             if invalid_costs:
                 fail(f"stage {name} has invalid nonnegative costs: {', '.join(invalid_costs)}")

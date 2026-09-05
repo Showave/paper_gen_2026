@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "frozen_at_utc": "2026-09-04T01:57:10Z",
+  "frozen_at_utc": "2026-09-05T01:02:24Z",
   "evidence_status": "Preregistered pilot configuration only; no experiment or human study has been run.",
   "source_registry": "experiments/public_source_registry.json",
   "sft": {
@@ -11,6 +11,28 @@
       "commitpackft-sft",
       "bigcodebench-eval"
     ],
+    "content_readiness": {
+      "specification_path": "experiments/content_gates.json",
+      "specification_sha256": "e3669787fd7d91e6f7f375052ea02964dcd670263e5d3aa51e89d8a435f75a64",
+      "implementation_path": "scripts/run_content_gates.py",
+      "implementation_sha256": "ecd6d43241582649d1016506e9a37d86b9f2e252a23d255157f8517b97bd30d0",
+      "required_status": "pass",
+      "required_partitions": [
+        "candidate",
+        "score",
+        "gate",
+        "audit",
+        "sealed-benchmark"
+      ],
+      "allowed_exclusion_reasons": [
+        "semantic-overlap",
+        "privacy-or-secret",
+        "license-or-terms",
+        "schema-invalid",
+        "preregistered-quality-filter"
+      ],
+      "interpretation": "A passing deterministic lexical and pattern-based preflight is required but does not establish semantic independence, privacy clearance, or manual approval."
+    },
     "development_model_keys": [
       "qwen25-instruct-1p5b",
       "smollm2-instruct-1p7b"
@@ -170,6 +192,26 @@
     "source_keys": [
       "dapo-math-rl"
     ],
+    "content_readiness": {
+      "specification_path": "experiments/content_gates.json",
+      "specification_sha256": "e3669787fd7d91e6f7f375052ea02964dcd670263e5d3aa51e89d8a435f75a64",
+      "implementation_path": "scripts/run_content_gates.py",
+      "implementation_sha256": "ecd6d43241582649d1016506e9a37d86b9f2e252a23d255157f8517b97bd30d0",
+      "required_status": "pass",
+      "required_partitions": [
+        "nuisance-fit",
+        "alpha-selection",
+        "confirmation"
+      ],
+      "allowed_exclusion_reasons": [
+        "semantic-overlap",
+        "privacy-or-secret",
+        "license-or-terms",
+        "schema-invalid",
+        "preregistered-quality-filter"
+      ],
+      "interpretation": "A passing deterministic lexical and pattern-based preflight is required but does not establish semantic independence, privacy clearance, or manual approval."
+    },
     "development_model_key": "qwen25-math-1p5b",
     "seeds": [
       2026090311,
@@ -353,6 +395,24 @@
   },
   "eval": {
     "execution_status": "blocked_unfrozen_estimand_generation",
+    "content_readiness": {
+      "specification_path": "experiments/content_gates.json",
+      "specification_sha256": "e3669787fd7d91e6f7f375052ea02964dcd670263e5d3aa51e89d8a435f75a64",
+      "implementation_path": "scripts/run_content_gates.py",
+      "implementation_sha256": "ecd6d43241582649d1016506e9a37d86b9f2e252a23d255157f8517b97bd30d0",
+      "required_status": "pass",
+      "required_partitions": [
+        "frame"
+      ],
+      "allowed_exclusion_reasons": [
+        "semantic-overlap",
+        "privacy-or-secret",
+        "license-or-terms",
+        "schema-invalid",
+        "preregistered-quality-filter"
+      ],
+      "interpretation": "A passing deterministic lexical and pattern-based preflight is required but does not establish semantic independence, privacy clearance, or manual approval."
+    },
     "frozen_artifact_hashes": {
       "prompt_generator_sha256": null,
       "rendered_prompt_bundle_sha256": null,

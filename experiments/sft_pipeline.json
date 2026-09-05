@@ -13,7 +13,7 @@
       "inputs": [
         "Approved entries and exact revisions from experiments/public_source_registry.json",
         "Frozen sft section of experiments/pilot_preregistration.json",
-        "Verified preflight data/content manifests and retained role-file hashes from hash-pinned local JSONL exports",
+        "Verified preflight data/content manifests, passing content-readiness ledger, and retained role-file hashes from hash-pinned local JSONL exports",
         "Versioned dataset identifiers, revisions, licenses, and terms",
         "Frozen source weights and target/protected capability definitions",
         "Base-model and tokenizer revisions"
@@ -24,6 +24,7 @@
       "checks": [
         "Every row has a stable identifier, source revision, export line, license class, and raw plus normalized content hashes",
         "Normalized duplicate clusters crossing registered source, reference, or benchmark roles are quarantined before use",
+        "The frozen PII, secret, and lexical near-duplicate gates report no retained-content finding; passing is not represented as semantic or privacy clearance",
         "The acquisition manifest embeds the preflight manifest and retained role-file hashes",
         "Personally identifying fields and undocumented data are excluded",
         "Sealed audit and benchmark contents are inaccessible to selection code"
@@ -40,13 +41,15 @@
       "inputs": [
         "acquire/data_manifest.json",
         "Tokenizer hash and response-only masking policy",
-        "Source-template and semantic-cluster deduplication thresholds"
+        "Frozen experiments/content_gates.json and its hash-bound content-readiness ledger",
+        "Reviewed site-local semantic-cluster audit configuration"
       ],
       "artifacts": [
         "process/splits_manifest.json"
       ],
       "checks": [
         "Candidate, score, gate, audit, and benchmark clusters are disjoint",
+        "The downstream split manifest embeds the passing content-readiness ledger hash and accounts for every scanned record with an included partition or explicit exclusion reason",
         "Packed and unpacked losses and trainable gradients agree within the frozen tolerance",
         "Response-token counts and length histograms are reported by source"
       ],

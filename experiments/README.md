@@ -93,19 +93,63 @@ It writes hash-verified acquisition and processing manifests plus retained
 role-specific JSONL; the five-stage acquisition artifact must embed those
 manifest and role-file hashes. Input bytes are hashed and parsed from the same
 read, and verification covers both acquisition and processed files.
-Semantic-near-duplicate and PII/secret scans remain site-local mandatory gates;
-normalized hashing is not represented as solving them.
+Before publishing a materialization, the adapter now runs the frozen
+`experiments/content_gates.json` contract. It uses canonical projected text for
+lexical comparison and scans every retained raw dictionary key and string value
+for named PII and secret patterns. It records no matched spans and rejects
+retained character-5-gram near-duplicates within or across roles.
+Small artifacts use exhaustive pair comparison; larger ones use deterministic
+one-permutation MinHash LSH candidate generation followed by exact Jaccard
+scoring. The emitted `process/content_readiness_ledger.json` binds the gate
+specification and implementation to the acquisition, content, and retained-file
+hashes. Because LSH is not recall-complete, any artifact above the exhaustive
+limit is recorded as `inconclusive`. Version 1 accepts no external override:
+larger artifacts remain blocked until a replacement preregistration defines
+and validates a reviewed, hash-bound, recall-complete audit artifact. Re-run
+the scanner or verify an existing passing ledger with:
+
+```bash
+python3 scripts/run_content_gates.py \
+  --materialization artifacts/sft-materialized
+python3 scripts/run_content_gates.py \
+  --materialization artifacts/sft-materialized \
+  --verify-ledger
+```
+
+For real five-stage execution, the work directory must retain this
+`acquire/` and `process/` materialization layout. The runner recomputes the
+readiness ledger after both acquisition and processing, and
+`splits_manifest.json`, `trajectory_schema.json`, or `cell_manifest.json`
+(depending on the paper) must record its exact
+`content_readiness_ledger_sha256`. Its `content_lineage` list must account for
+every scanned record exactly once as either `included` with one output
+partition or `excluded` with one frozen reason. The `content_partitions`
+declarations name every preregistered partition and bind JSONL containing exact
+retained materialization records, plus its row count, file hash, and record-ID
+hash. A scanned ID cannot occur twice or carry substituted content; included
+lineage must reproduce those files exactly. Every later real stage revalidates
+the ledger, lineage, partition artifacts, and immutable predecessors before it
+runs. A declarative check string alone is not accepted.
+
+This is a deterministic lexical and pattern-based preflight, not a semantic,
+privacy, legal, or human-subjects clearance. The detector families do not cover
+multilingual paraphrase, images, or audio. Reviewed site-local semantic and
+privacy audits therefore remain mandatory; a passing exhaustive ledger cannot
+change a registry review from `pending` to `approved`.
 
 The only clearance bypass is a committed, generated fixture:
 
 ```bash
 make provenance-audit
+make content-gates-audit
 ```
 
 That fixture deliberately contains both a within-role duplicate and a collision
 between two registered candidate-source roles. Successful execution means both
-were detected and the cross-role rows were quarantined; every output is marked
-non-empirical.
+were detected, the cross-role rows were quarantined, and the retained rows pass
+the content-readiness contract. The separate gate self-test uses only generated
+strings to exercise each detector family and near-duplicate rejection. Every
+output is marked non-empirical.
 
 The SFT factorial aggregator is independently executable:
 

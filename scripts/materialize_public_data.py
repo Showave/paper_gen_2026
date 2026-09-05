@@ -25,6 +25,13 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
+from run_content_gates import (
+    DEFAULT_SPECIFICATION as DEFAULT_CONTENT_GATE_SPECIFICATION,
+    GateError as ContentGateError,
+    audit_materialization as audit_content_readiness,
+    verify_readiness_ledger,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REGISTRY = ROOT / "experiments" / "public_source_registry.json"
@@ -282,6 +289,26 @@ def validate_preregistration(
     return section, referenced_registry_keys(section)
 
 
+def require_content_gate_specification(section: dict[str, Any]) -> None:
+    readiness = section.get("content_readiness")
+    if (
+        not isinstance(readiness, dict)
+        or readiness.get("specification_path") != "experiments/content_gates.json"
+        or readiness.get("implementation_path") != "scripts/run_content_gates.py"
+        or readiness.get("required_status") != "pass"
+        or not isinstance(readiness.get("specification_sha256"), str)
+        or not isinstance(readiness.get("implementation_sha256"), str)
+        or digest_file(DEFAULT_CONTENT_GATE_SPECIFICATION)
+        != readiness["specification_sha256"]
+        or digest_file(ROOT / "scripts" / "run_content_gates.py")
+        != readiness["implementation_sha256"]
+    ):
+        fail(
+            "preregistration does not bind the current content gate specification "
+            "and implementation"
+        )
+
+
 def require_clearance(
     referenced: set[str], entries: dict[str, dict[str, Any]]
 ) -> None:
@@ -491,6 +518,7 @@ def materialize(
     section, referenced = validate_preregistration(
         preregistration, paper, preregistration_path
     )
+    require_content_gate_specification(section)
     if not referenced.issubset(entries):
         fail("preregistration references an unregistered source or model")
     if synthetic_fixture:
@@ -588,6 +616,7 @@ def materialize(
                     "split": declaration["split"],
                     "role": declaration["role"],
                     "exporter": declaration["exporter"],
+                    "content_projection": declaration["content_projection"],
                     "input_sha256": declaration["sha256"],
                     "input_rows": len(rows),
                     "materialized_path": str(destination.relative_to(staging)),
@@ -766,6 +795,15 @@ def materialize(
             },
         }
         write_json(staging / "process" / "content_manifest.json", process_manifest)
+        try:
+            audit_content_readiness(
+                staging,
+                DEFAULT_CONTENT_GATE_SPECIFICATION,
+                write_ledger=True,
+                require_pass=True,
+            )
+        except ContentGateError as exc:
+            fail(f"content readiness gate failed: {exc}")
         verify_output(staging)
         staging.replace(output)
     except Exception:
@@ -834,6 +872,10 @@ def verify_output(output: Path) -> None:
         path = output / process[artifact_field]
         if digest_file(path) != process[digest_field]:
             fail(f"artifact hash mismatch: {path}")
+    try:
+        verify_readiness_ledger(output, DEFAULT_CONTENT_GATE_SPECIFICATION)
+    except ContentGateError as exc:
+        fail(f"content readiness ledger failed verification: {exc}")
 
 
 def run_self_test() -> None:
@@ -861,6 +903,113 @@ def run_self_test() -> None:
         observed = {field: summary.get(field) for field in expected}
         if observed != expected:
             fail(f"synthetic fixture summary differs: {observed} != {expected}")
+        readiness_path = output / "process" / "content_readiness_ledger.json"
+        readiness = read_json(readiness_path)
+        forged_readiness = dict(readiness)
+        forged_readiness["summary"] = dict(readiness["summary"])
+        forged_readiness["summary"]["retained_rows_scanned"] = 0
+        write_json(readiness_path, forged_readiness)
+        try:
+            verify_output(output)
+        except ContractError as exc:
+            if "content readiness ledger" not in str(exc):
+                raise
+        else:
+            fail("artifact verification accepted a forged readiness ledger")
+        write_json(readiness_path, readiness)
+        from run_experiment_pipeline import (
+            validate_process_content_lineage,
+            validate_real_stage,
+        )
+
+        process_manifest_path = output / "process" / "splits_manifest.json"
+        content_lineage = []
+        content_partitions = []
+        for role_file in summary["retained_role_files"]:
+            retained_rows = read_jsonl(output / role_file["path"])
+            record_ids = []
+            for retained in retained_rows:
+                record_id = retained["provenance"]["record_id"]
+                record_ids.append(record_id)
+                content_lineage.append(
+                    {
+                        "record_id": record_id,
+                        "disposition": "included",
+                        "partition": role_file["role"],
+                        "exclusion_reason": None,
+                    }
+                )
+            content_partitions.append(
+                {
+                    "partition": role_file["role"],
+                    "path": role_file["path"],
+                    "rows": role_file["rows"],
+                    "sha256": role_file["sha256"],
+                    "record_ids_sha256": digest_value(sorted(record_ids)),
+                }
+            )
+        write_json(
+            process_manifest_path,
+            {
+                "content_readiness_ledger_sha256": digest_file(readiness_path),
+                "content_lineage": content_lineage,
+                "content_partitions": content_partitions,
+            },
+        )
+        fixture_section = {
+            "content_readiness": {
+                "required_partitions": [
+                    partition["partition"] for partition in content_partitions
+                ],
+                "allowed_exclusion_reasons": ["generated-self-test"],
+            }
+        }
+        validated_records = validate_process_content_lineage(
+            "sft",
+            output,
+            fixture_section,
+            readiness,
+            digest_file(readiness_path),
+        )
+        if validated_records != len(content_lineage):
+            fail("process lineage validator did not account for every fixture row")
+        write_json(
+            process_manifest_path,
+            {"content_readiness_ledger_sha256": "0" * 64},
+        )
+        try:
+            validate_process_content_lineage(
+                "sft",
+                output,
+                fixture_section,
+                readiness,
+                digest_file(readiness_path),
+            )
+        except SystemExit as exc:
+            if "does not bind" not in str(exc):
+                raise
+        else:
+            fail("process lineage validator accepted an unbound readiness ledger")
+        section = read_json(DEFAULT_PREREGISTRATION)["sft"]
+        acquisition = read_json(output / "acquire" / "data_manifest.json")
+        try:
+            validate_real_stage(
+                "sft",
+                "build",
+                output,
+                section,
+                {
+                    "source_registry_sha256": acquisition["registry_sha256"],
+                    "preregistration_sha256": acquisition[
+                        "preregistration_section_sha256"
+                    ],
+                },
+            )
+        except SystemExit as exc:
+            if "current approved real materialization" not in str(exc):
+                raise
+        else:
+            fail("real validator accepted the synthetic clearance bypass")
         role_path = output / summary["retained_role_files"][0]["path"]
         with role_path.open("ab") as handle:
             handle.write(b"\n")
@@ -889,7 +1038,7 @@ def run_self_test() -> None:
             fail("real materialization ran without approved review records")
     print(
         "validated clearance blocking, row provenance, deduplication, quarantine, "
-        "and tamper detection"
+        "content readiness, and tamper detection"
     )
 
 

@@ -318,7 +318,10 @@ versioned normalized-content hash. The downstream partitioner assigns every
 retained duplicate cluster wholly to fit, selection, or confirmation; any
 later admitted hidden evaluator is a separate registered role. Semantic
 overlap with such evaluators is a blocking audit rather than being inferred
-from normalized-hash inequality.
+from normalized-hash inequality. A hash-bound preflight rejects named
+PII/secret patterns and retained character-5-gram near-duplicates, but this
+lexical heuristic does not replace reviewed multilingual, paraphrase, or
+hidden-evaluator leakage analysis.
 
 $h_t^R,h_t^C,b_t$, and $q_t$ are trained only from data available before iteration
 $t$, then frozen. The sums below range over the complete finite prompt
@@ -498,6 +501,10 @@ bias, variance, MSE, interval coverage, effective sample size (ESS), and
 compute. Fault injection deliberately omits prompt ratios, uses base-model
 rather than decoder probabilities, fits the focal nuisance outcome, clips
 weights, and reuses data that formed the target policy.
+The committed finite-law Gate~0 currently executes the omitted-prompt-ratio
+and clipping cases. Base-versus-decoder scoring, focal nuisance fitting, and
+reuse are pending executable validators and must pass before Phase~A; listing
+them here is a test plan, not evidence that they have run.
 The committed public-data configuration is a one-family mathematics pre-pilot
 for H1 only. It uses disjoint normalized laws $D_{\rm fit}$,
 $D_{\rm select}$, and $D_{\rm confirm}$; selection MSE is not described as an
@@ -717,6 +724,13 @@ site-local export hash, emits row-level provenance, deduplicates within roles,
 and quarantines normalized-content collisions across roles. The committed
 fixture exercises those rules without downloading prompts; all of its outputs
 are marked non-empirical.
+\texttt{scripts/run\_content\_gates.py} also binds the frozen
+\texttt{experiments/content\_gates.json} contract to the materialization hashes
+and fails closed on retained named PII/secret patterns or lexical
+near-duplicates. Because the large-artifact MinHash-LSH candidate screen can
+miss pairs, it is always inconclusive and blocking until a reviewed
+recall-complete audit is hash-bound. Even an exhaustive pass neither clears a
+source nor establishes semantic independence from a hidden evaluator.
 The companion \texttt{synthetic\_commands.json} fixes a four-cell trajectory
 law, $\alpha=1/2$, 32 draws per source, 2,000 replications, and seed 20260902.
 It enumerates the target and estimator expectations to machine precision,

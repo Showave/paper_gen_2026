@@ -55,6 +55,7 @@ Run the CPU-only equation and protocol audits with:
 ```bash
 make source-audit
 make provenance-audit
+make content-gates-audit
 make sft-factorial-audit
 make protocol-audits
 ```
@@ -62,7 +63,12 @@ make protocol-audits
 The source audit validates the committed pinned-metadata snapshot but leaves
 all manual clearances pending. The provenance audit verifies row-level hashing,
 normalized duplicate removal, cross-role quarantine, and output-manifest
-integrity on a committed synthetic fixture. The factorial audit exercises the
+integrity on a committed synthetic fixture; it also requires a passing
+content-readiness ledger. The content-gate audit separately exercises the
+named PII and secret detectors and the deterministic character-ngram
+near-duplicate screen. That lexical screen is a blocking heuristic, not a
+certificate of semantic independence or manual clearance; artifacts above the
+exhaustive comparison limit remain inconclusive and blocked. The factorial audit exercises the
 registered hypervolume, paired difference-in-differences, missing-run, and
 simultaneous max-$t$ aggregation rules without using empirical endpoints.
 The ignored protocol artifacts are
