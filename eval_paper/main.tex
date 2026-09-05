@@ -252,7 +252,10 @@ normalized-content hash. Normalized duplicate clusters are formed before frame
 sampling and assigned as units; any separately admitted pilot-fitting or
 sealed source is a distinct registered role, and cross-role clusters are
 quarantined. Paraphrase and template leakage remain separate blocking checks,
-since hash inequality is not evidence of semantic independence.
+since hash inequality is not evidence of semantic independence. A hash-bound
+preflight additionally rejects named PII/secret patterns and retained
+character-5-gram near-duplicates; it is a lexical heuristic, not a substitute
+for reviewed multilingual, paraphrase, privacy, or benchmark-leakage audits.
 
 Each prompt variant is validated as meaning-preserving by a separate process;
 the target weights over variants are fixed, not chosen after seeing which model
@@ -628,7 +631,7 @@ every skip or nonresponse is retained. Attempt position is randomized, sealed
 audit attempts are interleaved at hidden prespecified slots, and the drift
 sensitivity grid is frozen before labels.
 
-\subsection{Main Findings}
+\subsection{Planned Primary Endpoints}
 
 \begin{table}[H]
 \caption{Primary finite-frame decision results. Dashes indicate that human
@@ -647,7 +650,6 @@ Target random & -- & -- & -- & pending \\
 Static calibration & -- & -- & -- & pending \\
 PPAT-style & -- & -- & -- & pending \\
 EVI & -- & -- & -- & pending \\
-EVI + SAHH & -- & -- & -- & pending \\
 Sealed audit & -- & -- & -- & pending \\
 \bottomrule
 \end{tabular}
@@ -763,6 +765,13 @@ hash-pinned local exports, writes row-level provenance, and rejects retained
 content overlap across declared roles. Its only clearance bypass is a
 committed synthetic collision fixture whose artifacts are explicitly
 non-empirical.
+\texttt{scripts/run\_content\_gates.py} binds the frozen
+\texttt{experiments/content\_gates.json} contract to those hashes and blocks
+retained named PII/secret patterns and lexical near-duplicates. Its
+large-artifact MinHash-LSH candidate generation can miss qualifying pairs, so
+that path is always inconclusive and blocking pending a reviewed
+recall-complete audit. An exhaustive pass still cannot establish semantic
+independence or approve a pending source review.
 The same section fixes the Qwen, SmolLM, Mistral, and Phi jury revisions,
 posterior prior scales, one-step damped Newton approximation, unit annotation
 cost, nonresponse rule, and planned simulation factor levels. These values specify a

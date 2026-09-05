@@ -303,8 +303,11 @@ selected content, and a versioned Unicode-normalized form. Duplicate clusters
 are formed before split assignment: a normalized cluster crossing registered
 candidate-source, reference, or benchmark roles is quarantined in full, and a
 retained cluster is assigned wholly to one downstream split.
-Normalized equality is only an exact cleaning rule; semantic-near-duplicate,
-secret, and privacy scans remain separate blocking checks.
+Normalized equality is only an exact cleaning rule. A hash-bound preflight
+then blocks named PII/secret patterns and retained character-5-gram
+near-duplicates. This deterministic lexical screen is not a semantic or privacy
+certificate: reviewed multilingual, paraphrase, benchmark-leakage, and privacy
+audits remain separate blocking checks.
 
 Reference sets measure losses rather than benchmark exact match because the
 gate requires differentiability. For each capability, score, gate, audit, and
@@ -382,9 +385,11 @@ D_{c,j}(\alpha)=
 \phi_c(z_j;\theta_t).
 \end{equation}
 Here $\phi_c$ is example-average NLL clipped to $[0,M_\phi]$ solely for the
-gate. One fresh IID block is drawn for each $(c,t)$ before inspecting any
-scale, and that same paired block evaluates every $\alpha\in\mathcal A$. With
-$n_c$ examples per block and at most $T_{\max}$ rounds, define
+gate. For each protected slice $c$, one fresh block is drawn with replacement
+from its frozen gate law before inspecting any scale. Blocks are independent
+across slices and rounds, while every $\alpha\in\mathcal A$ shares the same
+paired block within $(c,t)$. With $n_c$ examples per block and at most
+$T_{\max}$ rounds, define
 \begin{equation}
 U_{c,t}(\alpha)=\overline D_{c,t}(\alpha)+
 M_\phi\sqrt{\frac{2\log(C|\mathcal A|T_{\max}/\delta_g)}{n_c}}.
@@ -412,9 +417,11 @@ remains an empirical endpoint, not a consequence of the gate.
 \STATE Build feasible isolated pack plans with beam search.
 \STATE Re-score a fixed shortlist on independent references and select.
 \STATE Compute its exact gradient, moments, and scaled AdamW candidates.
-\STATE Draw one fresh protected block and freeze it across all scales.
+\FOR{$c=1,\ldots,C$}
+  \STATE Draw a fresh protected block $Z_{c,t}$; freeze it across scales.
+\ENDFOR
 \FOR{$\alpha\in\mathcal A$ from largest to smallest}
-  \STATE Evaluate protected losses on the frozen round block.
+  \STATE Evaluate protected losses on all frozen round blocks.
   \IF{all upper statistics are below their tolerances}
     \STATE Commit $\Delta_t(\alpha)$ and optimizer state; \textbf{break}.
   \ENDIF
@@ -715,6 +722,13 @@ role-specific files, and verifies their artifact hashes. Its committed
 synthetic fixture contains within-role and cross-role duplicates and succeeds
 only when the former is collapsed and the latter is quarantined; it downloads
 no public rows and is not experimental evidence.
+\texttt{scripts/run\_content\_gates.py} additionally binds
+\texttt{experiments/content\_gates.json} to those artifacts and fails closed on
+retained named PII/secret patterns or lexical near-duplicates. Its exhaustive
+small-artifact path can pass; the non-recall-complete MinHash-LSH path for
+larger artifacts is always inconclusive and blocking pending a reviewed
+recall-complete audit. Neither is evidence of semantic independence or
+completed manual review.
 With \texttt{--execute --synthetic-audit --commands
 experiments/synthetic\_commands.json}, a
 CPU-only audit exactly enumerates packings for two length-10 packs under a
