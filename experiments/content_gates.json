@@ -47,6 +47,13 @@
       "sealed-root-frame"
     ]
   },
+  "external_overlap_audit": {
+    "bundle_path": "process/external_overlap_audit",
+    "contract_path": "experiments/external_overlap_audit.json",
+    "contract_sha256": "51c19c946cb5f4aaaccfd2c87a87f3d14f16516589179340361908a78b4b312e",
+    "validator_path": "scripts/validate_external_overlap_audit.py",
+    "validator_sha256": "c621c44a28e5b23935fc71066062379bfe97902b90d3c77704972e7dd6b775e2"
+  },
   "failure_policy": {
     "pii_in_retained_content": "block",
     "secret_in_retained_content": "block",
@@ -58,7 +65,7 @@
   },
   "limitations": [
     "Character n-gram similarity is a deterministic lexical heuristic, not a semantic-independence certificate.",
-    "MinHash LSH candidate generation above the exhaustive limit can miss qualifying pairs, so it is always inconclusive and cannot produce a passing ledger.",
+    "MinHash LSH candidate generation above the exhaustive limit can miss qualifying pairs, so it is inconclusive unless a frozen reviewed exact engine supplies a hash-bound, gap-free audit of all n*(n-1)/2 pairs.",
     "The detectors do not cover multilingual paraphrase, images, audio, or legal and human-subjects review.",
     "A passing ledger cannot approve a pending manual review in the public-source registry."
   ]

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "frozen_at_utc": "2026-09-05T01:02:24Z",
+  "frozen_at_utc": "2026-09-08T00:00:19Z",
   "evidence_status": "Preregistered pilot configuration only; no experiment or human study has been run.",
   "source_registry": "experiments/public_source_registry.json",
   "sft": {
@@ -13,9 +13,9 @@
     ],
     "content_readiness": {
       "specification_path": "experiments/content_gates.json",
-      "specification_sha256": "e3669787fd7d91e6f7f375052ea02964dcd670263e5d3aa51e89d8a435f75a64",
+      "specification_sha256": "9c0e05d087b0534cb80cca512e7a62ac985d2aef7561441e489498cd44a6c01b",
       "implementation_path": "scripts/run_content_gates.py",
-      "implementation_sha256": "ecd6d43241582649d1016506e9a37d86b9f2e252a23d255157f8517b97bd30d0",
+      "implementation_sha256": "4073d40bcc4fd7e2a7d8c4a8eea57eb8bf68a0ab83005472e8b64e960f2a68ef",
       "required_status": "pass",
       "required_partitions": [
         "candidate",
@@ -194,9 +194,9 @@
     ],
     "content_readiness": {
       "specification_path": "experiments/content_gates.json",
-      "specification_sha256": "e3669787fd7d91e6f7f375052ea02964dcd670263e5d3aa51e89d8a435f75a64",
+      "specification_sha256": "9c0e05d087b0534cb80cca512e7a62ac985d2aef7561441e489498cd44a6c01b",
       "implementation_path": "scripts/run_content_gates.py",
-      "implementation_sha256": "ecd6d43241582649d1016506e9a37d86b9f2e252a23d255157f8517b97bd30d0",
+      "implementation_sha256": "4073d40bcc4fd7e2a7d8c4a8eea57eb8bf68a0ab83005472e8b64e960f2a68ef",
       "required_status": "pass",
       "required_partitions": [
         "nuisance-fit",
@@ -397,9 +397,9 @@
     "execution_status": "blocked_unfrozen_estimand_generation",
     "content_readiness": {
       "specification_path": "experiments/content_gates.json",
-      "specification_sha256": "e3669787fd7d91e6f7f375052ea02964dcd670263e5d3aa51e89d8a435f75a64",
+      "specification_sha256": "9c0e05d087b0534cb80cca512e7a62ac985d2aef7561441e489498cd44a6c01b",
       "implementation_path": "scripts/run_content_gates.py",
-      "implementation_sha256": "ecd6d43241582649d1016506e9a37d86b9f2e252a23d255157f8517b97bd30d0",
+      "implementation_sha256": "4073d40bcc4fd7e2a7d8c4a8eea57eb8bf68a0ab83005472e8b64e960f2a68ef",
       "required_status": "pass",
       "required_partitions": [
         "frame"

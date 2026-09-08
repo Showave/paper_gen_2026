@@ -103,10 +103,35 @@ one-permutation MinHash LSH candidate generation followed by exact Jaccard
 scoring. The emitted `process/content_readiness_ledger.json` binds the gate
 specification and implementation to the acquisition, content, and retained-file
 hashes. Because LSH is not recall-complete, any artifact above the exhaustive
-limit is recorded as `inconclusive`. Version 1 accepts no external override:
-larger artifacts remain blocked until a replacement preregistration defines
-and validates a reviewed, hash-bound, recall-complete audit artifact. Re-run
-the scanner or verify an existing passing ledger with:
+limit is recorded as `inconclusive`.
+
+For a larger reviewed export, `--prepare-external-overlap-audit` may retain an
+otherwise valid materialization whose sole unresolved failure is approximate
+candidate generation. This is an explicitly unready artifact: every real
+pipeline stage continues to reject it. A site-local exact engine must then
+write `process/external_overlap_audit/manifest.json` and its shard files under
+the materialization. The frozen
+`experiments/external_overlap_audit.json` contract orders records by identifier,
+indexes the complete upper triangle, and requires contiguous half-open pair
+ranges that cover exactly `n*(n-1)/2` comparisons. The validator binds every
+shard to the materialization, gate specification, reviewed engine source,
+runtime image, and review record; rejects gaps, overlaps, approximation,
+errors, and early termination; and independently checks every reported pair's
+identity, role, threshold, and score. It also reconstructs a complete
+shared-5-gram pair index in temporary SQLite storage and exactly scores every
+such pair. Since every pair with positive Jaccard similarity shares a 5-gram
+and all frozen thresholds are positive, this independently detects an omitted
+qualifying pair without materializing all `n*(n-1)/2` outcomes in the bundle.
+Thus shard coverage is retained as an engine-governance attestation, while
+readiness depends on the independently reproduced qualifying-pair set. It
+records no matched text.
+
+The committed engine fields are intentionally null and
+`execution_status` is `unfrozen_blocker`, so no large artifact can currently
+pass through this route. After independent engine review and replacement
+preregistration, rerun the gate; only a zero-finding, fully covered exact bundle
+can replace the approximate blocker. Re-run the scanner or verify an existing
+passing ledger with:
 
 ```bash
 python3 scripts/run_content_gates.py \
@@ -114,6 +139,9 @@ python3 scripts/run_content_gates.py \
 python3 scripts/run_content_gates.py \
   --materialization artifacts/sft-materialized \
   --verify-ledger
+python3 scripts/validate_external_overlap_audit.py \
+  --materialization artifacts/sft-materialized \
+  --bundle artifacts/sft-materialized/process/external_overlap_audit
 ```
 
 For real five-stage execution, the work directory must retain this
@@ -142,6 +170,7 @@ The only clearance bypass is a committed, generated fixture:
 ```bash
 make provenance-audit
 make content-gates-audit
+make external-overlap-audit
 ```
 
 That fixture deliberately contains both a within-role duplicate and a collision
@@ -149,7 +178,9 @@ between two registered candidate-source roles. Successful execution means both
 were detected, the cross-role rows were quarantined, and the retained rows pass
 the content-readiness contract. The separate gate self-test uses only generated
 strings to exercise each detector family and near-duplicate rejection. Every
-output is marked non-empirical.
+output is marked non-empirical. The external-overlap self-test uses generated
+identifiers only and verifies engine binding, complete pair-space sharding,
+shard hashes, and fail-closed gap and early-termination handling.
 
 The SFT factorial aggregator is independently executable:
 

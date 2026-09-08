@@ -56,6 +56,7 @@ Run the CPU-only equation and protocol audits with:
 make source-audit
 make provenance-audit
 make content-gates-audit
+make external-overlap-audit
 make sft-factorial-audit
 make protocol-audits
 ```
@@ -67,8 +68,13 @@ integrity on a committed synthetic fixture; it also requires a passing
 content-readiness ledger. The content-gate audit separately exercises the
 named PII and secret detectors and the deterministic character-ngram
 near-duplicate screen. That lexical screen is a blocking heuristic, not a
-certificate of semantic independence or manual clearance; artifacts above the
-exhaustive comparison limit remain inconclusive and blocked. The factorial audit exercises the
+certificate of semantic independence or manual clearance. Artifacts above the
+exhaustive comparison limit remain inconclusive unless a reviewed exact engine
+provides hash-bound shards covering all unordered pairs; that engine is still
+an explicitly unfrozen blocker. The external-overlap audit checks the generated
+contract fixture's engine binding, pair-space coverage, shard hashes, and
+failure handling, then independently rejects omitted qualifying pairs with a
+disk-backed exact shared-5-gram join. The factorial audit exercises the
 registered hypervolume, paired difference-in-differences, missing-run, and
 simultaneous max-$t$ aggregation rules without using empirical endpoints.
 The ignored protocol artifacts are

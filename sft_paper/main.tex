@@ -307,7 +307,9 @@ Normalized equality is only an exact cleaning rule. A hash-bound preflight
 then blocks named PII/secret patterns and retained character-5-gram
 near-duplicates. This deterministic lexical screen is not a semantic or privacy
 certificate: reviewed multilingual, paraphrase, benchmark-leakage, and privacy
-audits remain separate blocking checks.
+audits remain separate blocking checks. Above the exhaustive limit, only a
+reviewed exact engine whose hash-bound shards cover all unordered pairs can
+lift the lexical blocker; the committed engine attestation is still unfrozen.
 
 Reference sets measure losses rather than benchmark exact match because the
 gate requires differentiability. For each capability, score, gate, audit, and
@@ -349,7 +351,8 @@ $\overline q_t=\widehat q_t+e_t^q$. The ideal round-level decision is
 \overline C_t^{\mathrm{all}}(B,\pi)\le B_t^{\mathrm{rem}},\nonumber\\
 &N_{\min}\le N_B\le N_{\max},\quad
 |\operatorname{range}(\pi)|\le P,\nonumber\\
-&\text{\cref{eq:packing} and source-coverage constraints hold.}\nonumber
+&\text{\cref{eq:packing} holds,}\nonumber\\
+&\text{and source-coverage constraints hold.}\nonumber
 \end{align}
 Here $\overline q_t$ estimates a trust-radius bound on
 $\|\widetilde\Delta_t\|^2$, $\tau_{c,t}$ is an allowed one-step reference-loss
@@ -539,8 +542,10 @@ intentional: no measurements had been run when this draft was written.}
 \begin{small}
 \begin{tabular}{lcccc}
 \toprule
-Method & Target audit NLL & Worst protected $\Delta$NLL
-& Accelerator-seconds & Packed tokens/s \\
+Method & \shortstack{Target audit\\NLL}
+& \shortstack{Worst protected\\$\Delta$NLL}
+& \shortstack{Accelerator-\\seconds}
+& \shortstack{Packed\\tokens/s} \\
 \midrule
 Random + best-fit packing & -- & -- & -- & -- \\
 Representation similarity + best-fit & -- & -- & -- & -- \\
@@ -726,9 +731,23 @@ no public rows and is not experimental evidence.
 \texttt{experiments/content\_gates.json} to those artifacts and fails closed on
 retained named PII/secret patterns or lexical near-duplicates. Its exhaustive
 small-artifact path can pass; the non-recall-complete MinHash-LSH path for
-larger artifacts is always inconclusive and blocking pending a reviewed
-recall-complete audit. Neither is evidence of semantic independence or
-completed manual review.
+larger artifacts is inconclusive by itself.
+\texttt{scripts/validate\_external\_overlap\_audit.py} now defines the only
+large-artifact completion route: records are ordered by identifier, unordered
+pairs receive row-major upper-triangle ordinals, and contiguous shard ranges
+must cover exactly $n(n-1)/2$ comparisons without gaps or overlaps. Each shard
+binds the materialization, gate specification, reviewed engine source, runtime
+image, and review record; approximation, early termination, shard errors, or
+any qualifying pair blocks the ledger. Reported pair identities, roles,
+thresholds, and scores are independently checked without persisting matched
+text. A temporary disk-backed exact join also enumerates every pair sharing a
+5-gram and rejects omitted findings; this is recall-complete for the positive
+frozen Jaccard thresholds because any qualifying pair must share a gram. Shard
+coverage is therefore an engine-governance attestation, whereas readiness
+depends on reproducing the complete qualifying-pair set. The committed engine
+hashes remain null blockers, so this contract is executable only as a generated
+software self-test and no large real artifact currently passes. Neither lexical
+route is evidence of semantic independence or completed manual review.
 With \texttt{--execute --synthetic-audit --commands
 experiments/synthetic\_commands.json}, a
 CPU-only audit exactly enumerates packings for two length-10 packs under a

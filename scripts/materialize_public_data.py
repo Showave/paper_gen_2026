@@ -511,6 +511,7 @@ def materialize(
     preregistration_path: Path,
     synthetic_fixture: bool,
     force: bool,
+    prepare_external_overlap_audit: bool,
 ) -> dict[str, Any]:
     registry = read_json(registry_path)
     entries = validate_registry(registry, registry_path)
@@ -796,25 +797,45 @@ def materialize(
         }
         write_json(staging / "process" / "content_manifest.json", process_manifest)
         try:
-            audit_content_readiness(
+            readiness = audit_content_readiness(
                 staging,
                 DEFAULT_CONTENT_GATE_SPECIFICATION,
                 write_ledger=True,
-                require_pass=True,
+                require_pass=not prepare_external_overlap_audit,
             )
         except ContentGateError as exc:
             fail(f"content readiness gate failed: {exc}")
-        verify_output(staging)
+        if prepare_external_overlap_audit and (
+            readiness["status"] not in {"pass", "inconclusive"}
+            or (
+                readiness["status"] == "inconclusive"
+                and readiness["blocking_failures"]
+                != [{"gate": "approximate_candidate_generation", "count": 1}]
+            )
+        ):
+            fail(
+                "external-overlap preparation can defer only the large-artifact "
+                "approximate-candidate blocker"
+            )
+        verify_output(
+            staging,
+            allow_inconclusive_overlap=prepare_external_overlap_audit,
+        )
         staging.replace(output)
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
 
-    verify_output(output)
+    verify_output(
+        output,
+        allow_inconclusive_overlap=prepare_external_overlap_audit,
+    )
     return process_manifest
 
 
-def verify_output(output: Path) -> None:
+def verify_output(
+    output: Path, *, allow_inconclusive_overlap: bool = False
+) -> None:
     acquisition_path = output / "acquire" / "data_manifest.json"
     process_path = output / "process" / "content_manifest.json"
     acquisition = read_json(acquisition_path)
@@ -873,7 +894,11 @@ def verify_output(output: Path) -> None:
         if digest_file(path) != process[digest_field]:
             fail(f"artifact hash mismatch: {path}")
     try:
-        verify_readiness_ledger(output, DEFAULT_CONTENT_GATE_SPECIFICATION)
+        verify_readiness_ledger(
+            output,
+            DEFAULT_CONTENT_GATE_SPECIFICATION,
+            allow_inconclusive=allow_inconclusive_overlap,
+        )
     except ContentGateError as exc:
         fail(f"content readiness ledger failed verification: {exc}")
 
@@ -891,6 +916,7 @@ def run_self_test() -> None:
             preregistration_path=DEFAULT_PREREGISTRATION,
             synthetic_fixture=True,
             force=False,
+            prepare_external_overlap_audit=False,
         )
         expected = {
             "input_row_count": 5,
@@ -1030,6 +1056,7 @@ def run_self_test() -> None:
                 preregistration_path=DEFAULT_PREREGISTRATION,
                 synthetic_fixture=False,
                 force=False,
+                prepare_external_overlap_audit=False,
             )
         except ContractError as exc:
             if "missing approved review records" not in str(exc):
@@ -1058,6 +1085,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--force", action="store_true")
     parser.add_argument(
+        "--prepare-external-overlap-audit",
+        action="store_true",
+        help=(
+            "retain an otherwise valid large materialization with an "
+            "inconclusive lexical ledger so a frozen exact external engine can "
+            "write process/external_overlap_audit; all downstream real stages "
+            "still require a passing ledger"
+        ),
+    )
+    parser.add_argument(
         "--verify-output",
         type=Path,
         help="verify an existing materialization artifact and exit",
@@ -1068,6 +1105,10 @@ def parse_args() -> argparse.Namespace:
         help="run the committed synthetic contract test and exit",
     )
     args = parser.parse_args()
+    if args.synthetic_fixture and args.prepare_external_overlap_audit:
+        parser.error(
+            "--prepare-external-overlap-audit is only for reviewed real exports"
+        )
     if args.self_test or args.verify_output:
         return args
     if args.paper is None or args.input_spec is None or args.output is None:
@@ -1093,9 +1134,15 @@ def main() -> None:
             preregistration_path=args.preregistration.resolve(),
             synthetic_fixture=args.synthetic_fixture,
             force=args.force,
+            prepare_external_overlap_audit=args.prepare_external_overlap_audit,
+        )
+        prefix = (
+            "prepared unready materialization for exact external overlap audit"
+            if args.prepare_external_overlap_audit
+            else "materialized"
         )
         print(
-            f"materialized {summary['input_row_count']} rows; retained "
+            f"{prefix}: {summary['input_row_count']} rows; retained "
             f"{summary['retained_row_count']}, suppressed "
             f"{summary['within_role_duplicate_rows_suppressed']}, quarantined "
             f"{summary['cross_role_rows_quarantined']}"

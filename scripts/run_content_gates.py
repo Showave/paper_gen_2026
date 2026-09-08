@@ -14,15 +14,25 @@ import hashlib
 import itertools
 import json
 import math
+import os
 import re
+import stat
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from validate_external_overlap_audit import (
+    ExternalAuditError,
+    expected_binding as external_audit_binding,
+    validate_contract as validate_external_audit_contract,
+    validate_external_overlap_bundle,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SPECIFICATION = ROOT / "experiments" / "content_gates.json"
+DEFAULT_EXTERNAL_AUDIT_BUNDLE = Path("process") / "external_overlap_audit"
 SPACE_RE = re.compile(r"\s+")
 HEX_64_RE = re.compile(r"^[0-9a-f]{64}$")
 MAX_U64 = (1 << 64) - 1
@@ -89,12 +99,35 @@ def digest_file(path: Path) -> str:
 
 
 def read_json(path: Path) -> Any:
+    value, _ = read_json_with_sha256(path)
+    return value
+
+
+def read_json_with_sha256(path: Path) -> tuple[Any, str]:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        descriptor = os.open(
+            path,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+        )
     except FileNotFoundError:
         fail(f"file not found: {path}")
-    except json.JSONDecodeError as exc:
-        fail(f"invalid JSON in {path}: {exc}")
+    except OSError as exc:
+        fail(f"could not open regular JSON file {path}: {exc}")
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            fail(f"JSON input must be a regular file: {path}")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
+            payload = handle.read()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    observed = hashlib.sha256(payload).hexdigest()
+    try:
+        return json.loads(payload.decode("utf-8")), observed
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        fail(f"invalid UTF-8 JSON in {path}: {exc}")
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -263,6 +296,36 @@ def validate_specification(value: Any, path: Path) -> dict[str, Any]:
         or any(policy != "block" for policy in policies.values())
     ):
         fail(f"{path}: every v1 finding must use the fail-closed policy")
+
+    external = value.get("external_overlap_audit")
+    expected_paths = {
+        "contract": "experiments/external_overlap_audit.json",
+        "validator": "scripts/validate_external_overlap_audit.py",
+    }
+    if (
+        not isinstance(external, dict)
+        or set(external)
+        != {
+            "bundle_path",
+            "contract_path",
+            "contract_sha256",
+            "validator_path",
+            "validator_sha256",
+        }
+    ):
+        fail(f"{path}: external overlap audit binding is required")
+    for name, expected_path in expected_paths.items():
+        declared = external.get(f"{name}_path")
+        declared_sha256 = external.get(f"{name}_sha256")
+        if (
+            declared != expected_path
+            or not isinstance(declared_sha256, str)
+            or not HEX_64_RE.fullmatch(declared_sha256)
+            or digest_file(ROOT / expected_path) != declared_sha256
+        ):
+            fail(f"{path}: external overlap {name} binding is stale")
+    if external.get("bundle_path") != str(DEFAULT_EXTERNAL_AUDIT_BUNDLE):
+        fail(f"{path}: external overlap bundle path is not frozen")
     return value
 
 
@@ -652,21 +715,85 @@ def ledger_status(blocking_failures: list[dict[str, Any]]) -> str:
 def build_ledger(
     materialization: Path, specification_path: Path
 ) -> dict[str, Any]:
-    specification = validate_specification(
-        read_json(specification_path), specification_path
+    specification_value, specification_sha256 = read_json_with_sha256(
+        specification_path
     )
+    specification = validate_specification(specification_value, specification_path)
     rows, inputs = load_materialized_rows(materialization, specification)
     sensitive = specification["sensitive_content"]
     pii = sensitive_findings(rows, sensitive["pii_detectors"], PII_PATTERNS)
     secrets = sensitive_findings(
         rows, sensitive["secret_detectors"], SECRET_PATTERNS
     )
-    (
-        near_duplicates,
-        too_short,
-        candidate_method,
-        pairs_scored,
-    ) = near_duplicate_findings(rows, specification)
+    external_result: dict[str, Any] | None = None
+    external_bundle = materialization / DEFAULT_EXTERNAL_AUDIT_BUNDLE
+    if external_bundle.exists():
+        resolved_bundle = external_bundle.resolve()
+        if (
+            external_bundle.is_symlink()
+            or materialization.resolve() not in resolved_bundle.parents
+        ):
+            fail("external overlap bundle must stay inside the materialization")
+        if len(rows) <= specification["similarity"]["candidate_generation"][
+            "exhaustive_max_rows"
+        ]:
+            fail("external overlap bundle is forbidden for an exhaustive artifact")
+        minimum = specification["similarity"]["minimum_normalized_characters"]
+        too_short = [
+            {"record_id": row.record_id, "role": row.role}
+            for row in rows
+            if len(normalize_text(row.similarity_text)) < minimum
+        ]
+        ngrams_by_record_id = {
+            row.record_id: (
+                character_ngrams(row.similarity_text)
+                if len(normalize_text(row.similarity_text)) >= minimum
+                else frozenset()
+            )
+            for row in rows
+        }
+        external_configuration = specification["external_overlap_audit"]
+        contract_path = ROOT / external_configuration["contract_path"]
+        try:
+            contract_value, contract_sha256 = read_json_with_sha256(contract_path)
+            if contract_sha256 != external_configuration["contract_sha256"]:
+                fail("external overlap contract changed after gate validation")
+            contract = validate_external_audit_contract(
+                contract_value, contract_path
+            )
+            binding = external_audit_binding(
+                paper=inputs["paper"],
+                retained_rows=len(rows),
+                retained_record_ids_sha256=inputs[
+                    "retained_record_ids_sha256"
+                ],
+                gate_specification_sha256=specification_sha256,
+                acquisition_manifest_sha256=inputs[
+                    "acquisition_manifest_sha256"
+                ],
+                content_manifest_sha256=inputs["content_manifest_sha256"],
+                role_files=inputs["role_files"],
+            )
+            external_result = validate_external_overlap_bundle(
+                resolved_bundle,
+                contract=contract,
+                binding=binding,
+                roles_by_record_id={row.record_id: row.role for row in rows},
+                ngrams_by_record_id=ngrams_by_record_id,
+                gate_specification=specification,
+            )
+        except ExternalAuditError as exc:
+            fail(f"external overlap audit failed validation: {exc}")
+        near_duplicates = external_result["findings"]
+        candidate_method = "external_exact_all_pairs_sharded"
+        pairs_scored = external_result["pairs_compared"]
+    else:
+        (
+            near_duplicates,
+            too_short,
+            candidate_method,
+            pairs_scored,
+        ) = near_duplicate_findings(rows, specification)
     counts = {
         "pii_in_retained_content": len(pii),
         "secret_in_retained_content": len(secrets),
@@ -683,7 +810,10 @@ def build_ledger(
             finding["finding_type"] == "training_protected_near_duplicate"
             for finding in near_duplicates
         ),
-        "approximate_candidate_generation": int(candidate_method != "exhaustive"),
+        "approximate_candidate_generation": int(
+            candidate_method
+            not in {"exhaustive", "external_exact_all_pairs_sharded"}
+        ),
     }
     blocking = [
         {"gate": gate, "count": count}
@@ -706,7 +836,7 @@ def build_ledger(
             if ROOT.resolve() in specification_path.resolve().parents
             else specification_path.resolve()
         ),
-        "gate_specification_sha256": digest_file(specification_path),
+        "gate_specification_sha256": specification_sha256,
         "gate_implementation_sha256": digest_file(Path(__file__).resolve()),
         "acquisition_manifest_sha256": inputs["acquisition_manifest_sha256"],
         "content_manifest_sha256": inputs["content_manifest_sha256"],
@@ -725,6 +855,15 @@ def build_ledger(
             "too_short_for_similarity": too_short,
             "near_duplicates": near_duplicates,
         },
+        "external_overlap_audit": (
+            None
+            if external_result is None
+            else {
+                key: value
+                for key, value in external_result.items()
+                if key != "findings"
+            }
+        ),
         "blocking_failures": blocking,
         "checks": {
             "materialization_hash_chain_verified": True,
@@ -733,7 +872,8 @@ def build_ledger(
             "all_rows_similarity_eligible": not too_short,
             "no_lexical_near_duplicates": not near_duplicates,
             "similarity_candidate_generation_recall_complete": (
-                candidate_method == "exhaustive"
+                candidate_method
+                in {"exhaustive", "external_exact_all_pairs_sharded"}
             ),
             "manual_clearance_inferred_from_pass": False,
             "semantic_independence_claimed": False,
@@ -766,7 +906,10 @@ def audit_materialization(
 
 
 def verify_readiness_ledger(
-    materialization: Path, specification_path: Path = DEFAULT_SPECIFICATION
+    materialization: Path,
+    specification_path: Path = DEFAULT_SPECIFICATION,
+    *,
+    allow_inconclusive: bool = False,
 ) -> None:
     materialization = materialization.resolve()
     specification_path = specification_path.resolve()
@@ -776,6 +919,12 @@ def verify_readiness_ledger(
     expected = build_ledger(materialization, specification_path)
     if not isinstance(ledger, dict) or ledger != expected:
         fail("content-readiness ledger is missing, stale, or blocked")
+    if allow_inconclusive and ledger["status"] == "inconclusive":
+        if ledger["blocking_failures"] != [
+            {"gate": "approximate_candidate_generation", "count": 1}
+        ]:
+            fail("inconclusive ledger contains a non-overlap blocking failure")
+        return
     if ledger["status"] != "pass" or ledger["blocking_failures"]:
         fail("content-readiness ledger is not passing")
 

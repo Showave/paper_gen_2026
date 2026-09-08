@@ -256,6 +256,9 @@ since hash inequality is not evidence of semantic independence. A hash-bound
 preflight additionally rejects named PII/secret patterns and retained
 character-5-gram near-duplicates; it is a lexical heuristic, not a substitute
 for reviewed multilingual, paraphrase, privacy, or benchmark-leakage audits.
+Above the exhaustive limit, only a reviewed exact engine whose hash-bound
+shards cover every unordered pair can lift the lexical blocker; the committed
+engine attestation is still unfrozen.
 
 Each prompt variant is validated as meaning-preserving by a separate process;
 the target weights over variants are fixed, not chosen after seeing which model
@@ -769,9 +772,22 @@ non-empirical.
 \texttt{experiments/content\_gates.json} contract to those hashes and blocks
 retained named PII/secret patterns and lexical near-duplicates. Its
 large-artifact MinHash-LSH candidate generation can miss qualifying pairs, so
-that path is always inconclusive and blocking pending a reviewed
-recall-complete audit. An exhaustive pass still cannot establish semantic
-independence or approve a pending source review.
+that path is inconclusive by itself.
+\texttt{scripts/validate\_external\_overlap\_audit.py} orders records by
+identifier, indexes the row-major upper triangle, and requires contiguous
+shards covering exactly $n(n-1)/2$ comparisons without gaps or overlaps. It
+binds every shard to the materialization, gate configuration, reviewed exact
+engine, runtime image, and review record; approximation, early termination,
+shard errors, or any qualifying pair blocks readiness. Reported pair
+identities, roles, thresholds, and scores are independently checked without
+storing matched text. A temporary disk-backed exact join additionally
+enumerates every pair sharing a 5-gram and rejects omissions; this is
+recall-complete for the positive frozen Jaccard thresholds because any
+qualifying pair must share a gram. Shard coverage is an engine-governance
+attestation, whereas readiness depends on reproducing the complete
+qualifying-pair set. The committed engine fields remain null blockers, so no
+large real frame can yet pass this route. An exact lexical pass still cannot
+establish semantic independence or approve a pending source review.
 The same section fixes the Qwen, SmolLM, Mistral, and Phi jury revisions,
 posterior prior scales, one-step damped Newton approximation, unit annotation
 cost, nonresponse rule, and planned simulation factor levels. These values specify a

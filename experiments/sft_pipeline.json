@@ -42,6 +42,7 @@
         "acquire/data_manifest.json",
         "Tokenizer hash and response-only masking policy",
         "Frozen experiments/content_gates.json and its hash-bound content-readiness ledger",
+        "For more than 4096 retained rows, a frozen reviewed exact engine and hash-bound external-overlap shards covering every unordered pair",
         "Reviewed site-local semantic-cluster audit configuration"
       ],
       "artifacts": [
@@ -49,6 +50,7 @@
       ],
       "checks": [
         "Candidate, score, gate, audit, and benchmark clusters are disjoint",
+        "Any external lexical audit attests exactly n*(n-1)/2 gap-free pair ordinals, while a disk-backed exact shared-5-gram join independently reproduces every qualifying pair",
         "The downstream split manifest embeds the passing content-readiness ledger hash and accounts for every scanned record with an included partition or explicit exclusion reason",
         "Packed and unpacked losses and trainable gradients agree within the frozen tolerance",
         "Response-token counts and length histograms are reported by source"

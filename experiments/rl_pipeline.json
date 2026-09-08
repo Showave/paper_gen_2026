@@ -42,13 +42,15 @@
         "Temperature-softmax decoder specification and maximum response length",
         "Deterministic allowed-vocabulary rule with no top-k, top-p, repetition, minimum-length, or forced-token processor",
         "Parser, timeout, sandbox-error, EOS, and truncation reward rules",
-        "Frozen experiments/content_gates.json, its hash-bound ledger, and a reviewed hidden-evaluator semantic-overlap audit"
+        "Frozen experiments/content_gates.json, its hash-bound ledger, and a reviewed hidden-evaluator semantic-overlap audit",
+        "For more than 4096 retained rows, a frozen reviewed exact engine and hash-bound external-overlap shards covering every unordered pair"
       ],
       "artifacts": [
         "process/trajectory_schema.json"
       ],
       "checks": [
         "Every retained duplicate cluster is assigned wholly to nuisance-fit, alpha-selection, or confirmation",
+        "Any external lexical audit attests exactly n*(n-1)/2 gap-free pair ordinals, while a disk-backed exact shared-5-gram join independently reproduces every qualifying pair",
         "The trajectory schema embeds the passing content-readiness ledger hash and accounts for every scanned record with an included partition or explicit exclusion reason",
         "Sampler frequencies agree with scored masses in finite-vocabulary conformance tests",
         "Current and stale sampler/scorer pairs agree on normalized masses, EOS-at-limit, and truncation semantics",

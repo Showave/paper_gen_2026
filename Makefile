@@ -9,7 +9,7 @@ STYLE_FILES := \
 	template/preamble.tex
 BUILD := scripts/latex_build.sh
 
-.PHONY: all clean check-deps source-audit provenance-audit content-gates-audit sft-factorial-audit protocol-audits
+.PHONY: all clean check-deps source-audit provenance-audit content-gates-audit external-overlap-audit sft-factorial-audit protocol-audits
 
 all: $(PDFS)
 
@@ -32,6 +32,9 @@ provenance-audit:
 
 content-gates-audit:
 	python3 scripts/run_content_gates.py --self-test
+
+external-overlap-audit:
+	python3 scripts/validate_external_overlap_audit.py --self-test
 
 sft-factorial-audit:
 	python3 scripts/aggregate_sft_factorial.py --self-test

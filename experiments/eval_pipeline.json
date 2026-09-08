@@ -44,13 +44,15 @@
         "acquire/frame_manifest.json",
         "Prompt-variant weights, response seeds, coupling rule, and semantic-cluster threshold",
         "Rubric, tie subtypes, skip reasons, and sensitive-content warnings",
-        "Frozen experiments/content_gates.json, its hash-bound ledger, and a reviewed paraphrase/template-leakage audit"
+        "Frozen experiments/content_gates.json, its hash-bound ledger, and a reviewed paraphrase/template-leakage audit",
+        "For more than 4096 retained rows, a frozen reviewed exact engine and hash-bound external-overlap shards covering every unordered pair"
       ],
       "artifacts": [
         "process/cell_manifest.json"
       ],
       "checks": [
         "Every retained normalized duplicate cluster is assigned wholly to one frame unit or excluded",
+        "Any external lexical audit attests exactly n*(n-1)/2 gap-free pair ordinals, while a disk-backed exact shared-5-gram join independently reproduces every qualifying pair",
         "The cell manifest embeds the passing content-readiness ledger hash and accounts for every scanned record with an included partition or explicit exclusion reason",
         "Audit attempts are independent draws from the full target mass; hidden audit membership never removes a target unit from adaptive support",
         "AB and BA renders strip model identifiers and preserve content",
