@@ -15,6 +15,7 @@ cross-role quarantine, and artifact verification.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import re
@@ -503,6 +504,71 @@ def provenance_record(
     }
 
 
+def derive_dispositions(
+    records: list[dict[str, Any]],
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    int,
+    int,
+]:
+    clusters: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    exact_clusters: Counter[str] = Counter()
+    for record in records:
+        clusters[record["normalized_content_sha256"]].append(record)
+        exact_clusters[record["exact_content_sha256"]] += 1
+
+    retained: list[dict[str, Any]] = []
+    suppressed: list[dict[str, Any]] = []
+    quarantined: list[dict[str, Any]] = []
+    cross_role_clusters: list[dict[str, Any]] = []
+    for cluster_id, members in sorted(clusters.items()):
+        roles = sorted({member["requested_role"] for member in members})
+        if len(roles) > 1:
+            cross_role_clusters.append(
+                {
+                    "cluster_id": cluster_id,
+                    "roles": roles,
+                    "record_ids": sorted(member["record_id"] for member in members),
+                }
+            )
+            for member in members:
+                quarantined.append(
+                    {
+                        **member,
+                        "quarantine_reason": "cross-role-normalized-duplicate",
+                    }
+                )
+            continue
+        ordered = sorted(
+            members,
+            key=lambda item: (
+                item["source_key"],
+                item["stable_row_id_sha256"],
+                item["raw_row_sha256"],
+            ),
+        )
+        retained.append({**ordered[0], "duplicate_cluster_id": cluster_id})
+        for member in ordered[1:]:
+            suppressed.append(
+                {
+                    **member,
+                    "duplicate_cluster_id": cluster_id,
+                    "canonical_record_id": ordered[0]["record_id"],
+                }
+            )
+    return (
+        sorted(retained, key=lambda item: item["record_id"]),
+        sorted(suppressed, key=lambda item: item["record_id"]),
+        sorted(quarantined, key=lambda item: item["record_id"]),
+        cross_role_clusters,
+        sum(count > 1 for count in exact_clusters.values()),
+        sum(len(members) > 1 for members in clusters.values()),
+    )
+
+
 def materialize(
     paper: str,
     input_spec_path: Path,
@@ -617,7 +683,9 @@ def materialize(
                     "split": declaration["split"],
                     "role": declaration["role"],
                     "exporter": declaration["exporter"],
+                    "row_id_fields": declaration["row_id_fields"],
                     "content_projection": declaration["content_projection"],
+                    "license_fields": declaration.get("license_fields", []),
                     "input_sha256": declaration["sha256"],
                     "input_rows": len(rows),
                     "materialized_path": str(destination.relative_to(staging)),
@@ -672,51 +740,14 @@ def materialize(
         }
         write_json(staging / "acquire" / "data_manifest.json", acquisition)
 
-        clusters: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        exact_clusters: Counter[str] = Counter()
-        for record in records:
-            clusters[record["normalized_content_sha256"]].append(record)
-            exact_clusters[record["exact_content_sha256"]] += 1
-
-        retained: list[dict[str, Any]] = []
-        suppressed: list[dict[str, Any]] = []
-        quarantined: list[dict[str, Any]] = []
-        cross_role_clusters: list[dict[str, Any]] = []
-        for cluster_id, members in sorted(clusters.items()):
-            roles = sorted({member["requested_role"] for member in members})
-            if len(roles) > 1:
-                cross_role_clusters.append(
-                    {
-                        "cluster_id": cluster_id,
-                        "roles": roles,
-                        "record_ids": sorted(member["record_id"] for member in members),
-                    }
-                )
-                for member in members:
-                    quarantined.append(
-                        {
-                            **member,
-                            "quarantine_reason": "cross-role-normalized-duplicate",
-                        }
-                    )
-                continue
-            ordered = sorted(
-                members,
-                key=lambda item: (
-                    item["source_key"],
-                    item["stable_row_id_sha256"],
-                    item["raw_row_sha256"],
-                ),
-            )
-            retained.append({**ordered[0], "duplicate_cluster_id": cluster_id})
-            for member in ordered[1:]:
-                suppressed.append(
-                    {
-                        **member,
-                        "duplicate_cluster_id": cluster_id,
-                        "canonical_record_id": ordered[0]["record_id"],
-                    }
-                )
+        (
+            retained,
+            suppressed,
+            quarantined,
+            cross_role_clusters,
+            exact_duplicate_cluster_count,
+            normalized_duplicate_cluster_count,
+        ) = derive_dispositions(records)
 
         retained_by_role: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for record in retained:
@@ -769,12 +800,8 @@ def materialize(
             "input_row_count": len(records),
             "retained_row_count": len(retained),
             "within_role_duplicate_rows_suppressed": len(suppressed),
-            "exact_duplicate_clusters": sum(
-                count > 1 for count in exact_clusters.values()
-            ),
-            "normalized_duplicate_clusters": sum(
-                len(members) > 1 for members in clusters.values()
-            ),
+            "exact_duplicate_clusters": exact_duplicate_cluster_count,
+            "normalized_duplicate_clusters": normalized_duplicate_cluster_count,
             "cross_role_clusters_quarantined": len(cross_role_clusters),
             "cross_role_rows_quarantined": len(quarantined),
             "cross_role_clusters": cross_role_clusters,
@@ -833,6 +860,24 @@ def materialize(
     return process_manifest
 
 
+def confined_output_path(output: Path, declared: Any) -> Path:
+    if not isinstance(declared, str) or not declared:
+        fail("artifact path must be a nonempty relative string")
+    relative = Path(declared)
+    if relative.is_absolute() or ".." in relative.parts:
+        fail(f"artifact path escapes materialization: {declared!r}")
+    root = output.resolve()
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            fail(f"artifact path traverses a symlink: {declared!r}")
+    resolved = current.resolve()
+    if root not in resolved.parents:
+        fail(f"artifact path escapes materialization: {declared!r}")
+    return resolved
+
+
 def verify_output(
     output: Path, *, allow_inconclusive_overlap: bool = False
 ) -> None:
@@ -844,28 +889,109 @@ def verify_output(
         if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
             fail(f"{path}: expected schema_version 1")
 
-    provenance_path = output / acquisition["row_provenance_path"]
+    provenance_path = confined_output_path(
+        output, acquisition["row_provenance_path"]
+    )
     if digest_file(provenance_path) != acquisition["row_provenance_sha256"]:
         fail("row provenance ledger hash does not match acquisition manifest")
     provenance = read_jsonl(provenance_path)
     if len(provenance) != acquisition["row_count"]:
         fail("row provenance count does not match acquisition manifest")
-    materialized_count = 0
+    expected_provenance: list[dict[str, Any]] = []
+    raw_rows_by_id: dict[str, dict[str, Any]] = {}
     for input_file in acquisition.get("inputs", []):
-        path = output / input_file["materialized_path"]
+        required_input_fields = {
+            "source_key",
+            "repo_id",
+            "revision",
+            "config",
+            "split",
+            "role",
+            "row_id_fields",
+            "content_projection",
+            "license_fields",
+            "materialized_path",
+            "materialized_sha256",
+            "input_rows",
+        }
+        if not isinstance(input_file, dict) or not required_input_fields.issubset(
+            input_file
+        ):
+            fail("acquisition input declaration is incomplete")
+        path = confined_output_path(output, input_file["materialized_path"])
         if digest_file(path) != input_file["materialized_sha256"]:
             fail(f"materialized acquisition file hash mismatch: {path}")
         values = read_jsonl(path)
         if len(values) != input_file["input_rows"]:
             fail(f"materialized acquisition row count mismatch: {path}")
-        materialized_count += len(values)
-    if materialized_count != acquisition["row_count"]:
+        declaration = {
+            "source_key": input_file["source_key"],
+            "config": input_file["config"],
+            "split": input_file["split"],
+            "role": input_file["role"],
+            "row_id_fields": input_file["row_id_fields"],
+            "content_projection": input_file["content_projection"],
+            "license_fields": input_file["license_fields"],
+        }
+        entry = {
+            "repo_id": input_file["repo_id"],
+            "revision": input_file["revision"],
+        }
+        for line_number, value in enumerate(values, start=1):
+            if (
+                not isinstance(value, dict)
+                or set(value) != {"provenance", "row"}
+                or not isinstance(value["row"], dict)
+            ):
+                fail(f"materialized acquisition row has an invalid schema: {path}")
+            expected = provenance_record(
+                value["row"], line_number, declaration, entry
+            )
+            expected["record_id"] = digest_value(
+                {
+                    "source_key": input_file["source_key"],
+                    "revision": input_file["revision"],
+                    "config": input_file["config"],
+                    "split": input_file["split"],
+                    "stable_row_id": expected["stable_row_id"],
+                }
+            )
+            if value["provenance"] != expected:
+                fail(f"materialized provenance does not recompute: {path}")
+            if expected["record_id"] in raw_rows_by_id:
+                fail("materialized acquisition contains a duplicate record ID")
+            expected_provenance.append(expected)
+            raw_rows_by_id[expected["record_id"]] = value["row"]
+    expected_provenance.sort(key=lambda item: item["record_id"])
+    if len(expected_provenance) != acquisition["row_count"]:
         fail("materialized acquisition counts do not match row provenance")
+    if provenance != expected_provenance:
+        fail("row provenance ledger is not a bijection of materialized inputs")
+
+    (
+        expected_retained,
+        expected_suppressed,
+        expected_quarantined,
+        expected_cross_role_clusters,
+        expected_exact_duplicate_clusters,
+        expected_normalized_duplicate_clusters,
+    ) = derive_dispositions(expected_provenance)
+    expected_retained_by_role: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for record in expected_retained:
+        expected_retained_by_role[record["requested_role"]].append(record)
 
     hashes_by_role: dict[str, set[str]] = {}
     retained_count = 0
+    observed_roles: set[str] = set()
     for role_file in process["retained_role_files"]:
-        path = output / role_file["path"]
+        if (
+            not isinstance(role_file, dict)
+            or not isinstance(role_file.get("role"), str)
+            or role_file["role"] in observed_roles
+        ):
+            fail("retained role declarations must have unique roles")
+        observed_roles.add(role_file["role"])
+        path = confined_output_path(output, role_file["path"])
         if digest_file(path) != role_file["sha256"]:
             fail(f"retained role file hash mismatch: {path}")
         values = read_jsonl(path)
@@ -876,8 +1002,19 @@ def verify_output(
         }
         if len(hashes) != len(values):
             fail(f"retained role still contains normalized duplicates: {path}")
+        expected_values = [
+            {
+                "provenance": record,
+                "row": raw_rows_by_id[record["record_id"]],
+            }
+            for record in expected_retained_by_role.get(role_file["role"], [])
+        ]
+        if values != expected_values:
+            fail(f"retained role rows do not reproduce canonical dispositions: {path}")
         hashes_by_role[role_file["role"]] = hashes
         retained_count += len(values)
+    if observed_roles != set(expected_retained_by_role):
+        fail("retained role files omit or add a canonical role")
     roles = sorted(hashes_by_role)
     for index, left in enumerate(roles):
         for right in roles[index + 1 :]:
@@ -886,13 +1023,33 @@ def verify_output(
     if retained_count != process["retained_row_count"]:
         fail("retained row count does not match process manifest")
 
-    for artifact_field, digest_field in (
-        ("duplicate_suppressed_path", "duplicate_suppressed_sha256"),
-        ("quarantine_path", "quarantine_sha256"),
-    ):
-        path = output / process[artifact_field]
+    disposition_artifacts = (
+        (
+            "duplicate_suppressed_path",
+            "duplicate_suppressed_sha256",
+            expected_suppressed,
+        ),
+        ("quarantine_path", "quarantine_sha256", expected_quarantined),
+    )
+    for artifact_field, digest_field, expected_values in disposition_artifacts:
+        path = confined_output_path(output, process[artifact_field])
         if digest_file(path) != process[digest_field]:
             fail(f"artifact hash mismatch: {path}")
+        if read_jsonl(path) != expected_values:
+            fail(f"{artifact_field} does not reproduce canonical dispositions")
+    expected_summary = {
+        "input_row_count": len(expected_provenance),
+        "retained_row_count": len(expected_retained),
+        "within_role_duplicate_rows_suppressed": len(expected_suppressed),
+        "exact_duplicate_clusters": expected_exact_duplicate_clusters,
+        "normalized_duplicate_clusters": expected_normalized_duplicate_clusters,
+        "cross_role_clusters_quarantined": len(expected_cross_role_clusters),
+        "cross_role_rows_quarantined": len(expected_quarantined),
+    }
+    if any(process.get(field) != value for field, value in expected_summary.items()):
+        fail("process summary does not reproduce canonical dispositions")
+    if process.get("cross_role_clusters") != expected_cross_role_clusters:
+        fail("cross-role cluster summary does not reproduce")
     try:
         verify_readiness_ledger(
             output,
@@ -929,6 +1086,71 @@ def run_self_test() -> None:
         observed = {field: summary.get(field) for field in expected}
         if observed != expected:
             fail(f"synthetic fixture summary differs: {observed} != {expected}")
+
+        def expect_chain_rejection(name: str, mutate: Any) -> None:
+            case = Path(directory) / f"chain-fault-{name}"
+            shutil.copytree(output, case)
+            mutate(case)
+            try:
+                verify_output(case)
+            except ContractError:
+                return
+            fail(f"materialization chain accepted {name}")
+
+        def forge_provenance(case: Path) -> None:
+            acquisition_path = case / "acquire" / "data_manifest.json"
+            acquisition = read_json(acquisition_path)
+            path = case / acquisition["row_provenance_path"]
+            rows = read_jsonl(path)
+            rows[0]["record_id"] = "f" * 64
+            write_jsonl(path, rows)
+            acquisition["row_provenance_sha256"] = digest_file(path)
+            write_json(acquisition_path, acquisition)
+
+        def omit_disposition(case: Path) -> None:
+            process_path = case / "process" / "content_manifest.json"
+            process = read_json(process_path)
+            path = case / process["quarantine_path"]
+            rows = read_jsonl(path)
+            rows.pop()
+            write_jsonl(path, rows)
+            process["quarantine_sha256"] = digest_file(path)
+            process["cross_role_rows_quarantined"] = len(rows)
+            write_json(process_path, process)
+
+        def forge_canonical_representative(case: Path) -> None:
+            process_path = case / "process" / "content_manifest.json"
+            process = read_json(process_path)
+            path = case / process["duplicate_suppressed_path"]
+            rows = read_jsonl(path)
+            rows[0]["canonical_record_id"] = "0" * 64
+            write_jsonl(path, rows)
+            process["duplicate_suppressed_sha256"] = digest_file(path)
+            write_json(process_path, process)
+
+        def insert_orphan_retained(case: Path) -> None:
+            process_path = case / "process" / "content_manifest.json"
+            process = read_json(process_path)
+            role_file = process["retained_role_files"][0]
+            path = case / role_file["path"]
+            rows = read_jsonl(path)
+            orphan = copy.deepcopy(rows[0])
+            orphan["provenance"]["record_id"] = "e" * 64
+            orphan["provenance"]["normalized_content_sha256"] = "d" * 64
+            rows.append(orphan)
+            write_jsonl(path, rows)
+            role_file["rows"] = len(rows)
+            role_file["sha256"] = digest_file(path)
+            process["retained_row_count"] += 1
+            write_json(process_path, process)
+
+        expect_chain_rejection("forged-record-id", forge_provenance)
+        expect_chain_rejection("undisposed-acquired-row", omit_disposition)
+        expect_chain_rejection(
+            "wrong-canonical-representative", forge_canonical_representative
+        )
+        expect_chain_rejection("orphan-retained-row", insert_orphan_retained)
+
         readiness_path = output / "process" / "content_readiness_ledger.json"
         readiness = read_json(readiness_path)
         forged_readiness = dict(readiness)
@@ -997,7 +1219,7 @@ def run_self_test() -> None:
             readiness,
             digest_file(readiness_path),
         )
-        if validated_records != len(content_lineage):
+        if validated_records["records"] != len(content_lineage):
             fail("process lineage validator did not account for every fixture row")
         write_json(
             process_manifest_path,
@@ -1064,8 +1286,8 @@ def run_self_test() -> None:
         else:
             fail("real materialization ran without approved review records")
     print(
-        "validated clearance blocking, row provenance, deduplication, quarantine, "
-        "content readiness, and tamper detection"
+        "validated clearance blocking, closed provenance/disposition chain, "
+        "deduplication, quarantine, content readiness, and rehashed fault rejection"
     )
 
 

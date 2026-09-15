@@ -53,7 +53,8 @@
         "Candidate, score, gate, audit, and benchmark clusters are disjoint",
         "Any external lexical audit attests exactly n*(n-1)/2 gap-free pair ordinals, while a disk-backed exact shared-5-gram join independently reproduces every qualifying pair",
         "The downstream split manifest embeds the passing content-readiness ledger hash and accounts for every scanned record with an included partition or explicit exclusion reason",
-        "validate_sft_reference_contract.py reproduces every cluster UID, digest-mass bucket, capability mapping, and candidate/score/gate/audit assignment without moving boundaries",
+        "validate_sft_reference_contract.py loads the semantic-audit artifact, closes every cluster against retained source/configuration/role provenance, and reproduces hash-sorted largest-remainder candidate/score/gate/audit assignments exactly",
+        "Included semantic-cluster members equal the partition JSONL union, excluded semantic clusters equal content-lineage exclusions, and no retained candidate record is orphaned",
         "Each target setting has one target and exactly two protected capability slices; all required per-source partitions are nonempty",
         "Packed and unpacked losses and trainable gradients agree within the frozen tolerance",
         "Response-token counts and length histograms are reported by source"

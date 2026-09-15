@@ -317,8 +317,13 @@ each stale row stores projected $B$, and each reference row stores projected
 $U_\lambda s$. The aggregator must reconstruct
 $\overline A+(1-\alpha)\overline B$; a generic field called ``gradient'' is
 insufficient. Every attempted row also retains allocated accelerator-seconds,
-including failed and reference draws. Any infrastructure failure blocks H1
-aggregation rather than allowing a success-conditioned MSE.
+including failed and reference draws. Any infrastructure failure blocks
+estimator-claim eligibility rather than allowing a success-conditioned MSE.
+This projected-term schema is only an intermediate audit. Real execution
+remains blocked until a reviewed validator reconstructs $U,h,w,A,$ and $B$
+from hash-bound prompt/decoder probabilities, rewards, lengths, the frozen
+$\lambda$, nuisance predictions, and projected scores; self-declared terms are
+not empirical evidence.
 Before these partitions are formed, every prompt is tied to a pinned source
 revision, export-byte hash, stable upstream identifier, raw-row hash, and
 versioned normalized-content hash. The downstream partitioner assigns every
@@ -477,8 +482,9 @@ law. It must exactly reproduce the target gradient, mixture normalization,
 weight bound, and analytic bias of each injected ratio error before Phase A.
 Phase A then establishes estimator behavior at a frozen language-model policy
 before Phase B makes training claims. The primary hypotheses are:
-\textbf{H1}, exact adaptive-mixture augmentation reduces projected gradient MSE
-relative to on-policy estimation at matched total compute; \textbf{H2}, any
+\textbf{H1}, the selected exact adaptive-mixture estimator lowers
+projected-MSE--cost risk relative to an on-policy control on untouched
+confirmation draws; \textbf{H2}, any
 reduction translates to better held-out reward per generated token under
 one-update-per-batch training; and \textbf{H3}, the expected-response-length constraint
 produces a better reward--length frontier than implicit response-length
@@ -502,7 +508,8 @@ Intervals independently resample candidate replications, $R_1$ trajectories,
 and $R_2$ trajectories, retaining their shared-reference dependence.
 Point estimates are independently recomputed from the hash-bound trajectory
 ledger: candidate stratum means, MSE, mean complete-replication cost, the
-selection argmin, and the one untouched confirmation cell must all reproduce.
+selection argmin, and both selected and on-policy untouched confirmation cells
+must all reproduce.
 Reference-generation cost is reported separately rather than disappearing as a
 shared constant.
 Selection and confirmation use separate reference pairs under their respective
@@ -511,7 +518,7 @@ models are trained on disjoint data. Repeated subsamples compare on-policy
 policy gradient, ordinary
 importance sampling, bounded mixture importance sampling, augmentation with
 several predictor qualities, and adaptive versus uniform $Q_t$. Endpoints are
-bias, variance, MSE, interval coverage, effective sample size (ESS), and
+bias, variance, MSE, interval coverage, residual-weight ESS by source, and
 compute. Fault injection deliberately omits prompt ratios, uses base-model
 rather than decoder probabilities, fits the focal nuisance outcome, clips
 weights, and reuses data that formed the target policy.
@@ -525,8 +532,14 @@ $D_{\rm select}$, and $D_{\rm confirm}$; selection MSE is not described as an
 estimate under the confirmation or full-frame law. For
 $\alpha\in\{.25,.5,.75,1\}$ it fixes
 $(n_P,n_G)\in\{(16,48),(32,32),(48,16),(64,0)\}$ and minimizes projected MSE
-times measured accelerator-seconds at a common 64-trajectory and verifier-call
-budget. Tying mixture mass to allocation fraction is a pilot restriction, not
+times measured accelerator-seconds at common 64-trajectory and verifier-call
+counts. Because the unbiased cross-reference MSE can be negative, selection
+uses $\max(\widehat{\operatorname{MSE}}_\times,0)$ times mean
+complete-replication accelerator-seconds while retaining the raw estimate;
+ties choose lower cost, then larger $\alpha$. The audit freezes $\lambda=0$
+and counts EOS as a response token. Untouched confirmation includes the
+selected cell and the $\alpha=1$ control under $D_{\rm confirm}$.
+Tying mixture mass to allocation fraction is a pilot restriction, not
 a condition for unbiasedness; a confirmatory design must vary them separately.
 Code, second-family, H2, and H3
 confirmatory runs require a later frozen configuration.
@@ -549,7 +562,8 @@ sequences, verifier calls, likelihood passes, nuisance training, policy
 updates, and hyperparameter searches are charged. Each configuration receives
 the same token and verifier-call budget, while total allocated accelerator and
 CPU time is reported as a Pareto cost rather than assumed equal. We use five
-independent development seeds and five frozen confirmatory seeds.
+frozen estimator-pilot seeds. End-to-end development and confirmatory seed
+counts remain planned.
 Source-isolation controls set $\mu_t=\pi_t$ while adapting $Q_t$, and set
 $Q_t=D$ while varying policy staleness. Rollout counts are fixed before each
 batch. A batch is admitted only if its predeclared worst-case token and
@@ -563,16 +577,18 @@ across updates.
 \subsection{Main Results}
 
 \begin{table*}[t]
-\caption{Primary matched-budget results. Higher held-out reward is better;
-lower projected gradient MSE and generated tokens to threshold are better.
+\caption{Planned primary results. Higher held-out reward is better;
+lower projected gradient MSE, MSE--cost risk, and generated tokens to threshold are better.
 Dashes mark measurements that have not yet been run.}
 \label{tab:main}
 \centering
 \begin{small}
 \begin{tabular}{lcccc}
 \toprule
-Method & Gradient MSE & Held-out reward & Tokens to threshold
-& Mean response tokens \\
+Method & \shortstack{Projected\\MSE / risk}
+& \shortstack{Held-out\\reward}
+& \shortstack{Tokens to\\threshold}
+& \shortstack{Mean response\\tokens} \\
 \midrule
 On-policy RLOO & -- & -- & -- & -- \\
 Bounded mixture IS & -- & -- & -- & -- \\
@@ -588,6 +604,8 @@ Every value in \cref{tab:main} will aggregate independent runs with a
 predeclared interval and link to immutable trajectory manifests. The
 repeated-replay row is explicitly not covered by \cref{thm:unbiased}; it tests
 whether a biased engineering variant is nevertheless more useful.
+Estimator-claim eligibility records assumption and artifact checks; it is
+separate from the selected-versus-on-policy H1 estimate, interval, and result.
 
 \subsection{Ablations and Diagnostics}
 
@@ -599,7 +617,7 @@ clipped ratios. After each update, a large fresh on-policy batch estimates the
 resulting approximation error.
 
 Required diagnostics include the numerical $1/\alpha$ bound; mixture
-normalization; joint and source-specific ESS; maximum weight and support
+normalization; residual-weight ESS by source; maximum weight and support
 failures; direct and residual gradient norms and cosine; outcome calibration by
 length, difficulty, and source; fresh versus augmented projected gradients;
 pre/post-update KL; entropy; sign-conditioned update mass; policy-to-behavior
@@ -769,11 +787,17 @@ audit, not model-training evidence; its outputs cannot populate
 \texttt{scripts/aggregate\_rl\_estimator.py} provides a second, artifact-level
 audit. Its generated two-dimensional ledger has hand-computed current, stale,
 and independent reference terms; the same code used for a real ledger must
-recover both selection-cell MSEs, their measured-cost argmin, and the
-confirmation MSE. Tampered MSE, an incomplete source stratum, and an
+recover both selection-cell MSEs, the nonnegative-risk argmin, and selected
+plus on-policy confirmation MSEs. Tampered MSE, an incomplete source stratum, and an
 infrastructure failure are injected and must respectively fail validation or
-block H1. The fixture is marked non-empirical and cannot populate any result
-cell.
+block estimator-claim eligibility. The fixture is marked non-empirical and
+cannot populate any result cell. The script still consumes projected terms
+rather than reconstructing them from raw probabilities and outcomes, and it
+does not independently reproduce the three-way bootstrap; the
+artifact-integrity gate therefore blocks all real execution.
+That gate also requires reviewed source/role projection schemas covering every
+model-visible and protected textual field; the current single canonical
+deduplication projection cannot establish hidden-answer or test independence.
 
 \subsection{Optional Prefix Gate}
 Prefix continuation is excluded from the core experiments. A later extension

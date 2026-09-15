@@ -105,6 +105,7 @@
         "Every theorem-facing trajectory is generated after iteration choices freeze and has use_count one",
         "Every theorem-facing draw reaches a scored outcome; an infrastructure-failed replication is retained but cannot enter a success-conditioned estimator claim",
         "Each successful current, stale, R1, and R2 row declares the exact projected-term semantics and every attempted row retains allocated accelerator-seconds",
+        "Projected terms are intermediate only; real execution remains blocked until U, h, w, A, and B are reconstructed from raw hash-bound trajectory fields",
         "The numerical mixture-weight bound and source-specific ESS are checked",
         "The exploratory alpha-allocation coupling is logged as a design restriction rather than an unbiasedness requirement",
         "Generated-token, verifier-call, and added-scoring counters retain aborted candidates"
@@ -132,10 +133,12 @@
       "checks": [
         "Projected MSE uses the cross-reference product (g_hat - R1)^T(g_hat - R2)",
         "aggregate_rl_estimator.py reconstructs mean(A_current)+(1-alpha)*mean(B_stale), cell cost, the selection argmin, and untouched-confirmation MSE directly from the hash-bound trajectory ledger",
+        "Selection retains negative raw cross-MSE but uses max(raw MSE,0) times cost; untouched confirmation contains the selected cell and alpha=1 control plus their contrast",
         "Reference-generation accelerator cost remains in the summary separately rather than disappearing into a shared constant",
         "Selection targets D_select and confirmation targets the separately normalized D_confirm",
         "The selected alpha is evaluated once on untouched confirmation replications",
-        "Any infrastructure failure blocks H1 aggregation instead of producing a success-conditioned MSE; every seed, parser failure, support failure, and negative result is retained"
+        "Any infrastructure failure blocks estimator-claim eligibility instead of producing a success-conditioned MSE; eligibility is distinct from the H1 estimate and result",
+        "Every seed, parser failure, support failure, and negative result is retained"
       ],
       "costs": [
         "cpu_seconds",

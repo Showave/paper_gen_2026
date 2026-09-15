@@ -224,10 +224,10 @@ universal quality.
 \label{sec:method}
 
 The protocol first collects inexpensive labels from a family-diverse model
-jury on all cells, then a uniformly randomized human pilot. Before each
+jury on all cells, then an IID target-random human pilot from $\pi$. Before each
 subsequent batch, a working model is trained only on prior batches and used to
 compute decision value. Human acquisition mixes this adaptive policy with the
-target item distribution. A sealed, uniformly sampled human audit is never
+target distribution. A sealed IID target-random human audit is never
 used for fitting or acquisition.
 The implementation refits once per predeclared batch. It approximates each
 hypothetical EVI update by one frozen Laplace/Newton step, forms one $p_b$ for
@@ -371,7 +371,7 @@ P_j(Y=0)&=e^{\kappa_{jico}}/D_{jico}.
 \end{align}
 One explicit working predictor is
 \begin{align}
-\eta_{jico}&=\alpha_j+d_j(\beta+b_i+b_{iv}+b_{ic})
+\eta_{jico}&=\alpha_j+d_j(\beta+b_i+b_{iv})
 +\gamma_j^Oo+\gamma_j^L\ell_{ic}\nonumber\\
 &\quad+\gamma_j^Ss_{jic}+u_{j,d(i)},\\
 \kappa_{jico}&=\kappa_j+t_i+t_{iv}+z_{ic}^{\top}\xi_j,
@@ -381,8 +381,9 @@ weighted human-panel offset to zero and weighted log-discrimination to zero,
 center item and variant effects, and require a connected model-judge--cell
 overlap graph with both orders and estimable covariate contrasts. The public
 pilot has one checkpoint per jury family, so it does not estimate a separate
-family-variance component. Human-rater effects are partially pooled under a
-proper prior and do not require every rater to appear in the 200-attempt pilot.
+family-variance component. Human-rater effects are shrinkage-only working
+predictions under a proper prior; the 200-attempt pilot does not support a
+pilot-era rater-heterogeneity claim or require every rater to appear.
 Conditional independence is only a working assumption. The two recorded tie
 subtypes are collapsed to zero before this three-category model and analyzed
 separately.
@@ -437,22 +438,29 @@ $k_x$, define
 \sum_{y\in\{-1,0,1\}}\widehat p_b(y\mid x)
 \widetilde R\{U(Q_b;x,y)\}.
 \end{align}
-Using predeclared temperature $\lambda_E$, define
+At each adaptive batch start, draw a frozen $K=256$ candidate multiset
+$\mathcal C_b$ IID with replacement from $\pi$, before computing EVI. Let
+$n_b(x)$ be its multiplicity. Using predeclared temperature $\lambda_E$, define
 \begin{align}
 g_b(x)&=\lambda_E\operatorname{EVI}_{b}(x)/k_x,\\
-r_b(x)&=\exp\{g_b(x)\}/\sum_{x'}\exp\{g_b(x')\},\\
+r_b(x)&=\frac{n_b(x)\exp\{g_b(x)\}}
+{\sum_{x'}n_b(x')\exp\{g_b(x')\}},\\
 p_b(x)&=\epsilon\pi(x)+(1-\epsilon)r_b(x),
 \qquad \epsilon>0.
 \label{eq:explore}
 \end{align}
+Here $n_b(x)=0$ sets $r_b(x)=0$; duplicates are retained through their
+multiplicity. A domain-separated seed schedule and log-sum-exp implementation
+are frozen. Across 40 adaptive batches this caps computation at 30,720
+hypothetical Newton updates and 125,829,120 posterior-draw evaluations.
 All EVI values are computed before $p_b$, after which $Q_b,p_b,m_b$, and
 $\bar m_b$ are frozen for the complete batch; each draw-level $p_t$ equals
 that $p_b$. This removes any dependence of EVI on its own acquisition
 probability and gives $p_t(x)\ge\epsilon\pi(x)$ and
 $\pi(x)/p_t(x)\le1/\epsilon$. Exact EVI is myopically optimal only under a
-correct posterior, exact update, and no exploration constraint; the implemented
-approximation claims neither finite-horizon optimality nor a general regret
-bound. It scores approximate Bayesian risk
+correct posterior, exact update, equal costs, and argmax acquisition. The
+implemented finite-temperature candidate-mixture policy has no such
+optimality claim, finite-horizon guarantee, or general regret bound. It scores approximate Bayesian risk
 reduction, whereas the terminal action uses a confidence set; their alignment
 is a required simulation diagnostic, not an identity.
 
@@ -613,7 +621,10 @@ sampling, pure uncertainty sampling, and EVI. Within a condition and trial,
 policies share the latent frame and complete potential-outcome stream but use
 policy-keyed randomization. Each acquisition policy is crossed with the same
 valid \cref{eq:estimator}; augmentation is then ablated at fixed policy. Exact
-DGP and policy implementations remain hash-blocked, so this frozen layout is
+DGP and policy implementations remain hash-blocked. Until faithful native
+implementations are frozen, Active Testing, control-variate, and PPAT names
+refer only to score-inspired proposal adaptations, not reproductions of those
+methods. Thus this frozen layout is
 not evidence that simulations ran. Primary
 metrics are bias, RMSE, 95\% coverage, interval width, false decisive actions,
 equivalence decisions, abstention, realized loss, maximum weight, and ESS,
@@ -627,7 +638,10 @@ a 528-root weighted public-benchmark frame. Each source receives mass $1/3$
 and roots are uniform within source. This is neither a product-domain sample
 nor a deployment population. It uses two validated prompt forms per item and
 paired response draws from two fixed open model revisions. Four model-judge families
-score all cells in both orders. A 200-rating uniform human pilot precedes 800
+score all cells in both orders. The roots induce 2,112
+root--prompt--order cells, 8,448 jury calls, and 168,960 human target units
+after crossing the 80-rater panel; human labels sample this frame rather than
+fully crossing it. A 200-rating target-random human pilot precedes 800
 sequential ratings; a separate 200-rating target-random audit sampled from
 \cref{eq:target-mass} remains sealed. All counts and fixed budget $T=1000$
 assignment attempts are set by simulation before the first human outcome; a
@@ -660,28 +674,27 @@ leaderboard rank.}
 Design & $n_H$ & $\widehat\Delta_F$ [95\% CI]
 & Tie & Action \\
 \midrule
-Target random & -- & -- & -- & pending \\
-Static calibration & -- & -- & -- & pending \\
-PPAT-style & -- & -- & -- & pending \\
-EVI & -- & -- & -- & pending \\
+Adaptive EVI & -- & -- & -- & pending \\
 Sealed audit & -- & -- & -- & pending \\
 \bottomrule
 \end{tabular}
 \end{small}
 \end{table}
 
-Efficiency will be claimed only if interval validity is retained in simulation
-and an interval for the adaptive-minus-audit difference lies within a frozen
-equivalence margin using a frozen joint-covariance procedure. Neither is yet
-registered, so the current draft permits no equivalence claim. Jury-only
-rankings are diagnostic and never substitute for \cref{eq:estimand}.
+Simulation will assess efficiency against valid common-cost baselines. The
+sealed audit is only a prospective concordance check; agreement cannot
+establish efficiency or validate either estimator. No separate human
+target-random, static-calibration, or PPAT arm is budgeted, so those rows are
+not reported as if they had been collected. Jury-only rankings are diagnostic
+and never substitute for \cref{eq:estimand}.
 
 \subsection{Robustness and Ablations}
 
 We ablate augmentation, EVI, the exploration floor, tie modeling, root-item
 effects, judge-family effects, and prequential fitting while crossing each
-acquisition policy with a common estimator. Acquisition trained on
-older model pairs is tested on a held-out stronger pair to expose frontier
+acquisition policy with a common estimator. An exploratory extension would
+train acquisition on older model pairs and test a preregistered held-out
+stronger pair to expose frontier
 shift. Additional falsification tests swap AB/BA order, control response length
 and style, hold out prompt families, remove one judge family, change the
 practical margin, and repeat the study on a fresh temporal wave.
@@ -706,7 +719,7 @@ are small.
 
 The method requires exact logging of every adaptive probability and a fixed
 budget or sequentially valid interval. EVI may save no labels and can be worse
-than uniform sampling under model shift. A sealed audit consumes additional
+than target-random sampling under model shift. A sealed audit consumes additional
 human effort. Fresh items reduce exposure but impair longitudinal
 comparability, while black-box contamination cannot be ruled out. Finally, one
 pairwise replacement decision does not establish a general benchmark or model
@@ -721,7 +734,7 @@ draw-level sequential augmentation permit outcome-adaptive human acquisition
 without surrendering design identification under explicit assumptions. The
 formal result does not show that acquisition is efficient or that the working
 model is valid. The decisive next evidence is coverage under misspecified,
-correlated simulations followed by agreement with a sealed uniform human
+correlated simulations followed by prospective concordance with a sealed target-random human
 audit.
 
 % Acknowledgements must not appear in the anonymous review submission.
@@ -803,7 +816,10 @@ The same section fixes the Qwen, SmolLM, Mistral, and Phi jury revisions,
 posterior prior scales, one-step damped Newton approximation, unit annotation
 cost, nonresponse rule, and planned simulation factor levels. The separate
 \texttt{experiments/eval\_simulation\_design.json} replaces an infeasible full
-crossing with a deterministic 189-condition fractional manifest. Its validator
+crossing with a deterministic 189-condition fractional design. All condition
+rows and seeds are stored explicitly in
+\texttt{experiments/eval\_simulation\_conditions.json}, not regenerated
+implicitly at execution. The validator
 reconstructs all 16 sign rows, rejects main--two-factor aliasing, checks every
 factor level against the preregistration, and derives condition seeds from
 canonical condition hashes. Generated fault injections for an aliased
@@ -812,6 +828,11 @@ This is a design audit with \texttt{empirical\_evidence=false}; executable
 DGPs, missingness laws, and acquisition-policy implementations remain
 blockers. These values specify a public pre-pilot; they do not replace a
 deployment-log sampling design.
+The adaptive acquisition contract also samples only a 256-unit target-random
+candidate multiset per batch before scoring EVI, retaining multiplicities in
+$r_b$. This preserves $p_b\ge\epsilon\pi$ while replacing an infeasible
+full-frame EVI pass with a frozen resource ceiling. Exceeding the ceiling
+blocks collection for that batch.
 The prompt-generator and rendered model prompts, variant weights, decoder and
 response-coupling seeds, response artifacts, and executable simulation DGPs
 are still unfrozen. Real response generation or human acquisition is blocked
@@ -822,6 +843,13 @@ misspecified prequential predictions to check the exact one-draw identity,
 positivity and weight bounds, fixed-budget studentization, and the tie
 estimator. It assumes complete response and is only a software audit; it does
 not replace the preregistered condition grid or provide human evidence.
+The shared materialization validator now closes acquisition rows against
+retained, suppressed, and quarantined dispositions. Reviewed multi-field
+overlap schemas and a real/golden validator for root ranks, cells, predictable
+batch probabilities, sequential contributions, missingness bounds, and
+terminal actions are not yet frozen. The artifact-integrity gate therefore
+blocks all real response generation and human acquisition even if source
+reviews later pass.
 
 \subsection{Proof of \cref{prop:unbiased}}
 Conditioning on pre-outcome history,
@@ -858,12 +886,15 @@ operational assignment changes the draw law, the exact target-to-draw ratio is
 retained and the corresponding bounded-weight interval is used.
 Audit membership never removes a unit from adaptive support: only the audit
 seed, assignments, and outcomes are hidden. Assignment seeds are independent,
-but outcomes from shared raters may be correlated and are not treated as
-independent in a future contrast.
+but persistent unobserved shared-rater session effects would violate
+\cref{eq:response-stability} unless included in the predictable history or
+conditioned upon. A clustered shared-rater contrast is therefore an
+assumption-violating sensitivity analysis, not a repair of the primary
+martingale claim.
 Its outcomes are opened only after the adaptive algorithm, model
 hyperparameters, and primary analysis are frozen. An adaptive-minus-audit
-equivalence test remains blocked until its margin and shared-rater covariance
-procedure are frozen.
+equivalence test remains blocked until its margin, dependence model, and
+failure rule are frozen.
 
 \section{Additional Validity Evidence}
 \label{app:additional}

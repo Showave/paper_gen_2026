@@ -79,7 +79,9 @@ def finite_vector(value: Any, dimension: int, name: str) -> list[float]:
         not isinstance(value, list)
         or len(value) != dimension
         or not all(
-            isinstance(component, (int, float)) and math.isfinite(component)
+            isinstance(component, (int, float))
+            and not isinstance(component, bool)
+            and math.isfinite(component)
             for component in value
         )
     ):
@@ -211,6 +213,7 @@ def analyze_rows(
             or source not in {"current", "stale"}
             or not isinstance(failed, bool)
             or not isinstance(cost, (int, float))
+            or isinstance(cost, bool)
             or not math.isfinite(cost)
             or cost < 0
         ):
@@ -273,7 +276,7 @@ def analyze_rows(
         return {
             "aggregation_status": "blocked_infrastructure_failure",
             "empirical_evidence": False,
-            "h1_eligible": False,
+            "estimator_claim_eligible": False,
             "infrastructure_failures": failures,
             "attempts": len(attempt_ids),
         }
@@ -301,8 +304,8 @@ def analyze_rows(
         }
         if law == "select" and present_cells != set(cells):
             fail("selection law must contain every frozen alpha/allocation cell")
-        if law == "confirm" and len(present_cells) != 1:
-            fail("confirmation law must contain exactly one selected cell")
+        if law == "confirm" and not 1 <= len(present_cells) <= 2:
+            fail("confirmation law must contain one or two frozen cells")
         for alpha, allocation_id in sorted(present_cells):
             current_count, stale_count = cells[(alpha, allocation_id)]
             replication_mse: list[float] = []
@@ -339,6 +342,7 @@ def analyze_rows(
                     "projected_mse": point_mse,
                     "accelerator_seconds": point_cost,
                     "mse_times_accelerator_seconds": point_mse * point_cost,
+                    "selection_risk": max(point_mse, 0.0) * point_cost,
                     "replications": replications,
                 }
             )
@@ -346,21 +350,46 @@ def analyze_rows(
     selected = min(
         law_results["select"],
         key=lambda result: (
-            result["mse_times_accelerator_seconds"],
+            result["selection_risk"],
+            result["accelerator_seconds"],
             -result["alpha"],
             result["allocation_id"],
         ),
     )
-    confirmation = law_results["confirm"][0]
-    if (
-        confirmation["alpha"] != selected["alpha"]
-        or confirmation["allocation_id"] != selected["allocation_id"]
-    ):
-        fail("confirmation cell is not the selection MSE-times-cost argmin")
+    on_policy_cells = {
+        key for key in cells if math.isclose(key[0], 1.0)
+    }
+    if len(on_policy_cells) != 1:
+        fail("RL audit must define exactly one alpha=1 control cell")
+    selected_key = (selected["alpha"], selected["allocation_id"])
+    control_key = next(iter(on_policy_cells))
+    expected_confirmation_cells = {selected_key, control_key}
+    observed_confirmation_cells = {
+        (result["alpha"], result["allocation_id"])
+        for result in law_results["confirm"]
+    }
+    if observed_confirmation_cells != expected_confirmation_cells:
+        fail("confirmation must contain the selected and alpha=1 control cells")
+    confirmation_by_key = {
+        (result["alpha"], result["allocation_id"]): result
+        for result in law_results["confirm"]
+    }
+    selected_confirmation = confirmation_by_key[selected_key]
+    control_confirmation = confirmation_by_key[control_key]
+    confirmation_contrast = {
+        "selected_minus_on_policy_projected_mse": (
+            selected_confirmation["projected_mse"]
+            - control_confirmation["projected_mse"]
+        ),
+        "selected_minus_on_policy_selection_risk": (
+            selected_confirmation["selection_risk"]
+            - control_confirmation["selection_risk"]
+        ),
+    }
     return {
         "aggregation_status": "complete",
         "empirical_evidence": True,
-        "h1_eligible": True,
+        "estimator_claim_eligible": True,
         "infrastructure_failures": 0,
         "attempts": len(attempt_ids),
         "reference_accelerator_seconds": reference_accelerator_seconds,
@@ -370,13 +399,15 @@ def analyze_rows(
         "selection_cell_results": law_results["select"],
         "selected_alpha": selected["alpha"],
         "selected_allocation_id": selected["allocation_id"],
-        "confirmation_result": confirmation,
+        "confirmation_results": law_results["confirm"],
+        "confirmation_contrast": confirmation_contrast,
     }
 
 
 def close(observed: Any, expected: Any) -> bool:
     return (
         isinstance(observed, (int, float))
+        and not isinstance(observed, bool)
         and math.isfinite(observed)
         and math.isclose(float(observed), float(expected), rel_tol=1e-12, abs_tol=1e-12)
     )
@@ -392,7 +423,8 @@ def validate_summary(
         not isinstance(summary, dict)
         or summary.get("ledger_sha256") != ledger_sha256
         or summary.get("aggregation_status") != analysis["aggregation_status"]
-        or summary.get("h1_eligible") is not analysis["h1_eligible"]
+        or summary.get("estimator_claim_eligible")
+        is not analysis["estimator_claim_eligible"]
     ):
         fail("RL summary does not bind the analyzed trajectory ledger")
     if analysis["aggregation_status"] == "blocked_infrastructure_failure":
@@ -401,13 +433,14 @@ def validate_summary(
             "cell_results",
             "selected_alpha",
             "selected_allocation_id",
-            "confirmation_result",
+            "confirmation_results",
+            "confirmation_contrast",
         }
         if forbidden.intersection(summary):
             fail("an infrastructure-blocked RL summary reports estimator results")
         return {
             "aggregation_status": analysis["aggregation_status"],
-            "h1_eligible": False,
+            "estimator_claim_eligible": False,
             "infrastructure_failures": analysis["infrastructure_failures"],
         }
 
@@ -465,38 +498,72 @@ def validate_summary(
                 reported.get("mse_times_accelerator_seconds"),
                 expected["mse_times_accelerator_seconds"],
             )
+            or not close(reported.get("selection_risk"), expected["selection_risk"])
             or not isinstance(interval, list)
             or len(interval) != 2
-            or not all(isinstance(value, (int, float)) and math.isfinite(value) for value in interval)
+            or not all(
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and math.isfinite(value)
+                for value in interval
+            )
+            or interval[0] > interval[1]
         ):
             fail("RL summary selection result does not recompute from the ledger")
         seen.add(key)
-    reported_confirmation = summary.get("confirmation_result")
-    expected_confirmation = analysis["confirmation_result"]
-    if not isinstance(reported_confirmation, dict):
-        fail("RL summary must report the untouched confirmation result")
-    for field in (
-        "projected_mse",
-        "accelerator_seconds",
-        "mse_times_accelerator_seconds",
-    ):
-        if not close(reported_confirmation.get(field), expected_confirmation[field]):
-            fail("RL confirmation result does not recompute from the ledger")
+    reported_confirmation = summary.get("confirmation_results")
+    expected_confirmation = analysis["confirmation_results"]
     if (
-        reported_confirmation.get("alpha") != expected_confirmation["alpha"]
-        or reported_confirmation.get("allocation_id")
-        != expected_confirmation["allocation_id"]
-        or not isinstance(
-            reported_confirmation.get("three_way_bootstrap_interval"), list
-        )
-        or len(reported_confirmation["three_way_bootstrap_interval"]) != 2
+        not isinstance(reported_confirmation, list)
+        or len(reported_confirmation) != len(expected_confirmation)
     ):
-        fail("RL confirmation result is incomplete")
+        fail("RL summary must report selected and on-policy confirmation results")
+    expected_confirmation_by_key = {
+        f"{result['alpha']}|{result['allocation_id']}": result
+        for result in expected_confirmation
+    }
+    seen_confirmation: set[str] = set()
+    for reported in reported_confirmation:
+        key = f"{reported.get('alpha')}|{reported.get('allocation_id')}"
+        expected = expected_confirmation_by_key.get(key)
+        interval = reported.get("three_way_bootstrap_interval")
+        if (
+            expected is None
+            or key in seen_confirmation
+            or any(
+                not close(reported.get(field), expected[field])
+                for field in (
+                    "projected_mse",
+                    "accelerator_seconds",
+                    "mse_times_accelerator_seconds",
+                    "selection_risk",
+                )
+            )
+            or not isinstance(interval, list)
+            or len(interval) != 2
+            or not all(
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and math.isfinite(value)
+                for value in interval
+            )
+            or interval[0] > interval[1]
+        ):
+            fail("RL confirmation result does not recompute from the ledger")
+        seen_confirmation.add(key)
+    if seen_confirmation != set(expected_confirmation_by_key):
+        fail("RL summary omits a required confirmation cell")
+    reported_contrast = summary.get("confirmation_contrast")
+    if not isinstance(reported_contrast, dict) or any(
+        not close(reported_contrast.get(field), value)
+        for field, value in analysis["confirmation_contrast"].items()
+    ):
+        fail("RL selected-minus-on-policy confirmation contrast is incorrect")
     return {
         "aggregation_status": "complete",
-        "h1_eligible": True,
+        "estimator_claim_eligible": True,
         "selection_cells_recomputed": len(expected_results),
-        "confirmation_cell_recomputed": True,
+        "confirmation_cells_recomputed": len(expected_confirmation),
         "ledger_sha256": ledger_sha256,
     }
 
@@ -586,35 +653,36 @@ def generated_fixture() -> tuple[list[dict[str, Any]], dict[str, Any]]:
                         vector=vector,
                     )
                 )
-    for replication, (current, stale) in enumerate(
-        (([1.0, 0.0], [0.0, 2.0]), ([0.0, 1.0], [2.0, 0.0]))
-    ):
-        rows.append(
-            make_row(
-                attempt=f"select-half-current-{replication}",
-                law="select",
-                role="candidate",
-                source="current",
-                vector=current,
-                cost=1.0,
-                alpha=0.5,
-                allocation_id="half",
-                replication=replication,
+    for law in ("select", "confirm"):
+        for replication, (current, stale) in enumerate(
+            (([0.1, 0.0], [0.0, 0.2]), ([0.0, 0.1], [0.2, 0.0]))
+        ):
+            rows.append(
+                make_row(
+                    attempt=f"{law}-half-current-{replication}",
+                    law=law,
+                    role="candidate",
+                    source="current",
+                    vector=current,
+                    cost=1.0,
+                    alpha=0.5,
+                    allocation_id="half",
+                    replication=replication,
+                )
             )
-        )
-        rows.append(
-            make_row(
-                attempt=f"select-half-stale-{replication}",
-                law="select",
-                role="candidate",
-                source="stale",
-                vector=stale,
-                cost=1.0,
-                alpha=0.5,
-                allocation_id="half",
-                replication=replication,
+            rows.append(
+                make_row(
+                    attempt=f"{law}-half-stale-{replication}",
+                    law=law,
+                    role="candidate",
+                    source="stale",
+                    vector=stale,
+                    cost=1.0,
+                    alpha=0.5,
+                    allocation_id="half",
+                    replication=replication,
+                )
             )
-        )
     for law in ("select", "confirm"):
         for replication in range(2):
             for index in range(2):
@@ -647,16 +715,19 @@ def generated_summary(analysis: dict[str, Any], ledger_sha256: str, section: dic
         by_cell[f"{result['alpha']}|{result['allocation_id']}"] = result[
             "projected_mse"
         ]
-    confirmation = dict(analysis["confirmation_result"])
-    confirmation["three_way_bootstrap_interval"] = [
-        confirmation["projected_mse"],
-        confirmation["projected_mse"],
-    ]
+    confirmation_results = []
+    for result in analysis["confirmation_results"]:
+        item = dict(result)
+        item["three_way_bootstrap_interval"] = [
+            result["projected_mse"],
+            result["projected_mse"],
+        ]
+        confirmation_results.append(item)
     audit = section["estimator_audit"]
     return {
         "aggregation_status": "complete",
         "empirical_evidence": True,
-        "h1_eligible": True,
+        "estimator_claim_eligible": True,
         "ledger_sha256": ledger_sha256,
         "projected_mse_formula": analysis["projected_mse_formula"],
         "candidate_estimator_formula": analysis["candidate_estimator_formula"],
@@ -667,7 +738,8 @@ def generated_summary(analysis: dict[str, Any], ledger_sha256: str, section: dic
         "reference_accelerator_seconds": analysis[
             "reference_accelerator_seconds"
         ],
-        "confirmation_result": confirmation,
+        "confirmation_results": confirmation_results,
+        "confirmation_contrast": analysis["confirmation_contrast"],
         "bootstrap_replicates": audit["mse_bootstrap_replicates"],
         "bootstrap_seed": audit["mse_bootstrap_seed"],
         "three_way_reference_bootstrap": True,
@@ -678,9 +750,9 @@ def self_test() -> dict[str, Any]:
     rows, section = generated_fixture()
     analysis = analyze_rows(rows, section)
     if (
-        analysis["selected_alpha"] != 1.0
-        or analysis["selected_allocation_id"] != "on-policy"
-        or not close(analysis["selection_cell_results"][0]["projected_mse"], 2.0)
+        analysis["selected_alpha"] != 0.5
+        or analysis["selected_allocation_id"] != "half"
+        or not close(analysis["selection_cell_results"][0]["projected_mse"], 0.02)
         or not close(analysis["selection_cell_results"][1]["projected_mse"], 0.5)
     ):
         fail("generated fixture does not reproduce hand-computed estimator values")
@@ -725,7 +797,7 @@ def self_test() -> dict[str, Any]:
         "candidate_estimator_formula": analysis["candidate_estimator_formula"],
         "projected_mse_formula": analysis["projected_mse_formula"],
         "selection_cells_recomputed": len(analysis["selection_cell_results"]),
-        "confirmation_cell_recomputed": True,
+        "confirmation_cells_recomputed": len(analysis["confirmation_results"]),
         "hand_computed_values_reproduced": True,
         "fault_injections_rejected": 3,
     }

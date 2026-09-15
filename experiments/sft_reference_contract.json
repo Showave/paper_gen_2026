@@ -6,6 +6,12 @@
     {
       "capability_id": "general-instruction",
       "source_key": "smoltalk-sft",
+      "source_configurations": {
+        "smol-magpie-ultra": 0.25,
+        "smol-constraints": 0.25,
+        "smol-rewrite": 0.25,
+        "smol-summarize": 0.25
+      },
       "loss": "response-token-normalized negative log likelihood",
       "score_partition": "score",
       "gate_partition": "gate",
@@ -14,6 +20,9 @@
     {
       "capability_id": "mathematics",
       "source_key": "openr1-math-sft",
+      "source_configurations": {
+        "default": 1.0
+      },
       "loss": "response-token-normalized negative log likelihood",
       "score_partition": "score",
       "gate_partition": "gate",
@@ -22,6 +31,9 @@
     {
       "capability_id": "code",
       "source_key": "commitpackft-sft",
+      "source_configurations": {
+        "python": 1.0
+      },
       "loss": "response-token-normalized negative log likelihood",
       "score_partition": "score",
       "gate_partition": "gate",
@@ -58,33 +70,47 @@
     "unit": "reviewed semantic-near-duplicate cluster",
     "cluster_uid": "sha256(canonical-json({domain, semantic_audit_sha256, sorted_member_record_ids}))",
     "assignment_digest": "sha256(canonical-json({domain, source_key, source_revision, cluster_uid}))",
-    "bucket_formula": "floor(100 * uint256(assignment_digest) / 2^256)",
-    "tie_breaking": "not applicable because each cluster is mapped independently",
+    "ordering": "ascending (assignment_digest, cluster_uid) within source",
+    "apportionment": "Hamilton largest remainder over cluster counts using integer basis-point weights",
+    "remainder_tie_order": [
+      "candidate",
+      "score",
+      "gate",
+      "audit"
+    ],
     "partitions": [
       {
         "name": "candidate",
-        "bucket_start_inclusive": 0,
-        "bucket_end_exclusive": 80
+        "basis_points": 8000
       },
       {
         "name": "score",
-        "bucket_start_inclusive": 80,
-        "bucket_end_exclusive": 85
+        "basis_points": 500
       },
       {
         "name": "gate",
-        "bucket_start_inclusive": 85,
-        "bucket_end_exclusive": 95
+        "basis_points": 1000
       },
       {
         "name": "audit",
-        "bucket_start_inclusive": 95,
-        "bucket_end_exclusive": 100
+        "basis_points": 500
       }
     ],
     "sealed_benchmark_rule": "Registered benchmark roles are never passed through this split.",
     "small_partition_rule": "A source with an empty required partition blocks the pilot; boundaries are never moved after observing content or labels.",
     "cross_source_cluster_rule": "A semantic cluster crossing source or protected-role boundaries is excluded in full before assignment."
+  },
+  "reference_weighting": {
+    "per_example_loss": "mean response-token NLL within one retained row",
+    "score_and_audit_law": "uniform over retained rows in the named capability and partition after configuration-mixture weighting",
+    "gate_law": "uniform retained-row draws with replacement from the named protected capability's gate partition",
+    "candidate_source_mass": {
+      "general-instruction": 0.3333333333333333,
+      "mathematics": 0.3333333333333333,
+      "code": 0.3333333333333333
+    },
+    "candidate_within_source": "uniform without replacement within one candidate-pool draw",
+    "development_models": "The exploratory factorial uses primary_factorial_model_key only. held_out_transfer_model_key is an untouched transfer diagnostic and is not pooled as an extra seed or used to choose the factorial result."
   },
   "gate_semantics": {
     "protected_slice_count_per_setting": 2,
@@ -96,6 +122,6 @@
   "limitations": [
     "The capability labels are operational dataset slices, not exhaustive constructs or safety guarantees.",
     "Hash assignment prevents outcome-dependent split movement but does not establish semantic independence; that depends on the separately reviewed clustering audit.",
-    "The split proportions are digest-mass intervals, not forced exact row-count percentages."
+    "The exact 80/5/10/5 apportionment is over eligible semantic clusters; row proportions can differ when cluster sizes differ."
   ]
 }

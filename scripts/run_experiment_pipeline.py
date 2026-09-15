@@ -35,7 +35,12 @@ from aggregate_rl_estimator import (
 )
 from validate_eval_simulation_design import (
     DesignError as EvalSimulationDesignError,
+    validate_condition_manifest as validate_eval_condition_manifest,
     validate_design as validate_eval_simulation_design,
+)
+from materialize_public_data import (
+    ContractError as MaterializationContractError,
+    verify_output as verify_materialization_chain,
 )
 
 
@@ -208,6 +213,20 @@ def validate_preregistration_section(
         ):
             fail(f"{paper} registry key {key!r} has no declared role for this paper")
 
+    integrity_gate = nested(section, "artifact_integrity_gate")
+    if (
+        not isinstance(integrity_gate, dict)
+        or integrity_gate.get("status") not in {"unfrozen_blocker", "frozen"}
+        or not isinstance(integrity_gate.get("required_before_freezing"), list)
+        or not integrity_gate["required_before_freezing"]
+    ):
+        fail(f"{paper} preregistration needs an explicit artifact-integrity gate")
+    if integrity_gate["status"] == "unfrozen_blocker" and (
+        not isinstance(integrity_gate.get("blocking_gaps"), list)
+        or not integrity_gate["blocking_gaps"]
+    ):
+        fail(f"{paper} unfrozen artifact-integrity gate must list its blockers")
+
     seeds = nested(section, "seeds") if paper != "eval" else None
     if seeds is not None and (
         not isinstance(seeds, list)
@@ -218,6 +237,15 @@ def validate_preregistration_section(
         fail(f"{paper} preregistration needs five unique integer seeds")
 
     if paper == "sft":
+        development_models = nested(section, "development_model_keys")
+        if (
+            not isinstance(development_models, list)
+            or section.get("primary_factorial_model_key") not in development_models
+            or section.get("held_out_transfer_model_key") not in development_models
+            or section["primary_factorial_model_key"]
+            == section["held_out_transfer_model_key"]
+        ):
+            fail("SFT primary factorial and held-out transfer models must be distinct")
         reference = nested(section, "reference_contract")
         if (
             not isinstance(reference, dict)
@@ -393,13 +421,23 @@ def validate_preregistration_section(
             fail("RL cross-reference MSE requires exactly two reference replicas")
         if audit.get("reference_current_policy_trajectories_per_replica", 0) <= 0:
             fail("RL reference replicas must contain positive trajectory counts")
+        if (
+            not isinstance(audit.get("audit_lambda"), (int, float))
+            or isinstance(audit.get("audit_lambda"), bool)
+            or not math.isfinite(audit["audit_lambda"])
+            or not isinstance(audit.get("response_token_cost"), str)
+            or "EOS" not in audit["response_token_cost"]
+            or not isinstance(audit.get("confirmation_required_cells"), str)
+            or "alpha=1" not in audit["confirmation_required_cells"]
+        ):
+            fail("RL audit must freeze lambda, EOS cost, and on-policy confirmation")
     else:
         acquisition = nested(section, "acquisition")
         epsilon = acquisition["exploration_epsilon"]
         if not isinstance(epsilon, (int, float)) or not 0 < epsilon <= 1:
             fail("evaluation exploration epsilon must lie in (0, 1]")
         if acquisition["adaptive_fixed_budget_attempts"] != (
-            acquisition["uniform_pilot_attempts"]
+            acquisition["target_random_pilot_attempts"]
             + acquisition["adaptive_attempts"]
         ):
             fail("evaluation adaptive fixed budget does not reproduce")
@@ -414,6 +452,38 @@ def validate_preregistration_section(
             fail("evaluation per-source root counts must reproduce root_items")
         if counts.get("livebench-coding-eval") != 128:
             fail("evaluation pinned LiveBench coding frame contains 128 roots")
+        expected_cells = (
+            frame["root_items"]
+            * frame["prompt_variants_per_root"]
+            * frame["display_orders"]
+        )
+        expected_human_units = expected_cells * nested(
+            section, "human_protocol.panel_size"
+        )
+        expected_jury_calls = expected_cells * len(section["jury_model_keys"])
+        if (
+            frame.get("root_prompt_order_cells") != expected_cells
+            or frame.get("human_target_units") != expected_human_units
+            or frame.get("model_jury_calls") != expected_jury_calls
+        ):
+            fail("evaluation frame, human-unit, or jury-call count does not reproduce")
+        candidate_size = acquisition.get("evi_candidate_multiset_size")
+        resource_ceiling = acquisition.get("evi_resource_ceiling")
+        adaptive_batches = acquisition["adaptive_attempts"] // acquisition["batch_size"]
+        if (
+            not isinstance(candidate_size, int)
+            or candidate_size <= 0
+            or not isinstance(resource_ceiling, dict)
+            or resource_ceiling.get("adaptive_batches") != adaptive_batches
+            or resource_ceiling.get("hypothetical_newton_updates")
+            != adaptive_batches * candidate_size * 3
+            or resource_ceiling.get("posterior_draw_evaluations")
+            != adaptive_batches
+            * candidate_size
+            * 3
+            * nested(section, "working_posterior.common_monte_carlo_draws")
+        ):
+            fail("evaluation EVI candidate fraction or resource ceiling is inconsistent")
         if nested(section, "working_posterior").get("common_monte_carlo_draws", 0) <= 0:
             fail("evaluation EVI needs positive frozen common Monte Carlo draws")
         screening = nested(section, "simulation.screening_design")
@@ -429,8 +499,20 @@ def validate_preregistration_section(
             ):
                 fail(f"evaluation simulation {path_field} hash does not match")
         try:
+            design = load_json(repo / screening["path"])
             design_summary = validate_eval_simulation_design(
-                load_json(repo / screening["path"]), preregistration
+                design, preregistration
+            )
+            rows_path = Path(str(screening.get("rows_path", "")))
+            if (
+                not rows_path.parts
+                or rows_path.is_absolute()
+                or ".." in rows_path.parts
+                or digest_file(repo / rows_path) != screening.get("rows_sha256")
+            ):
+                fail("evaluation explicit simulation-row hash does not match")
+            rows_summary = validate_eval_condition_manifest(
+                load_json(repo / rows_path), design, preregistration
             )
         except EvalSimulationDesignError as exc:
             fail(f"invalid evaluation simulation design: {exc}")
@@ -439,6 +521,7 @@ def validate_preregistration_section(
             or design_summary["conditions"] != screening.get("conditions")
             or design_summary["main_to_two_factor_aliases"]
             != screening.get("main_to_two_factor_aliases")
+            or rows_summary["conditions"] != screening.get("conditions")
         ):
             fail("evaluation simulation design summary does not reproduce")
 
@@ -488,6 +571,25 @@ def require_execution_ready(
             and len(value) == 64
             and all(character in "0123456789abcdef" for character in value)
         )
+
+    integrity_gate = nested(section, "artifact_integrity_gate")
+    if integrity_gate.get("status") != "frozen":
+        fail(
+            f"real {paper} execution is blocked until the shared materialization "
+            "chain and paper-specific artifact validators are frozen"
+        )
+    integrity_path = Path(str(integrity_gate.get("validator_path", "")))
+    if (
+        not integrity_path.parts
+        or integrity_path.is_absolute()
+        or ".." in integrity_path.parts
+        or not sha256(integrity_gate.get("validator_sha256"))
+        or digest_file(Path(__file__).resolve().parents[1] / integrity_path)
+        != integrity_gate["validator_sha256"]
+        or not isinstance(integrity_gate.get("review_record"), str)
+        or not integrity_gate["review_record"].strip()
+    ):
+        fail(f"real {paper} execution needs a reviewed artifact-integrity validator")
 
     if paper == "rl":
         stale_actor = nested(section, "stale_actor")
@@ -722,7 +824,7 @@ def validate_process_content_lineage(
     section: dict[str, Any],
     ledger: dict[str, Any],
     ledger_sha256: str,
-) -> int:
+) -> dict[str, Any]:
     process_manifests = {
         "sft": work_dir / "process" / "splits_manifest.json",
         "rl": work_dir / "process" / "trajectory_schema.json",
@@ -752,6 +854,7 @@ def validate_process_content_lineage(
         fail(f"{paper} preregistration has invalid content-lineage categories")
 
     source_rows_by_id: dict[str, str] = {}
+    source_metadata_by_id: dict[str, dict[str, str]] = {}
     for role_file in ledger.get("role_files", []):
         if (
             not isinstance(role_file, dict)
@@ -767,9 +870,33 @@ def validate_process_content_lineage(
             fail(f"{paper} retained-role artifact hash or count is stale")
         for row in rows:
             record_id = lineage_record_id(row)
-            if not is_sha256(record_id) or record_id in source_rows_by_id:
+            provenance = row.get("provenance")
+            if (
+                not is_sha256(record_id)
+                or record_id in source_rows_by_id
+                or not isinstance(provenance, dict)
+                or not all(
+                    isinstance(provenance.get(field), str)
+                    and provenance[field]
+                    for field in (
+                        "source_key",
+                        "revision",
+                        "requested_role",
+                        "config",
+                    )
+                )
+            ):
                 fail(f"{paper} retained-role artifact has a duplicate record ID")
             source_rows_by_id[record_id] = canonical_utf8_digest(row)
+            source_metadata_by_id[record_id] = {
+                field: provenance[field]
+                for field in (
+                    "source_key",
+                    "revision",
+                    "requested_role",
+                    "config",
+                )
+            }
     if canonical_digest(sorted(source_rows_by_id)) != ledger.get(
         "retained_record_ids_sha256"
     ):
@@ -860,7 +987,12 @@ def validate_process_content_lineage(
         )
     if excluded_ids.intersection(observed_partition_by_id):
         fail(f"{paper} excluded content appears in a partition artifact")
-    return len(record_ids)
+    return {
+        "records": len(record_ids),
+        "source_metadata_by_id": source_metadata_by_id,
+        "partition_by_id": observed_partition_by_id,
+        "excluded_record_ids": excluded_ids,
+    }
 
 
 def validate_real_stage(
@@ -872,6 +1004,10 @@ def validate_real_stage(
 ) -> dict[str, Any]:
     content_validation: dict[str, Any] = {}
     if stage_name in REQUIRED_STAGES:
+        try:
+            verify_materialization_chain(work_dir)
+        except MaterializationContractError as exc:
+            fail(f"{paper} {stage_name} materialization-chain validation failed: {exc}")
         specification_path = (
             Path(__file__).resolve().parents[1]
             / nested(section, "content_readiness.specification_path")
@@ -931,36 +1067,66 @@ def validate_real_stage(
             "content_readiness_ledger_sha256": digest_file(ledger_path),
         }
         if stage_name != "acquire":
-            content_validation["content_lineage_records"] = (
-                validate_process_content_lineage(
-                    paper,
-                    work_dir,
-                    section,
-                    ledger,
-                    content_validation["content_readiness_ledger_sha256"],
-                )
+            lineage_validation = validate_process_content_lineage(
+                paper,
+                work_dir,
+                section,
+                ledger,
+                content_validation["content_readiness_ledger_sha256"],
             )
+            content_validation["content_lineage_records"] = lineage_validation[
+                "records"
+            ]
+            if paper == "sft":
+                split_manifest = load_json(
+                    work_dir / "process" / "splits_manifest.json"
+                )
+                semantic_binding = (
+                    split_manifest.get("semantic_cluster_artifact")
+                    if isinstance(split_manifest, dict)
+                    else None
+                )
+                if not isinstance(semantic_binding, dict):
+                    fail("SFT split manifest must bind a semantic artifact")
+                semantic_path = confined_work_path(
+                    work_dir, semantic_binding.get("path")
+                )
+                if (
+                    semantic_binding.get("sha256")
+                    != digest_file(semantic_path)
+                    or semantic_binding.get("bytes")
+                    != semantic_path.stat().st_size
+                ):
+                    fail("SFT semantic-cluster artifact hash or size is stale")
+                reference_path = (
+                    Path(__file__).resolve().parents[1]
+                    / nested(section, "reference_contract.specification_path")
+                )
+                try:
+                    reference_summary = validate_sft_split_manifest(
+                        split_manifest,
+                        load_json(reference_path),
+                        current_registry,
+                        retained_records=lineage_validation[
+                            "source_metadata_by_id"
+                        ],
+                        partition_by_id=lineage_validation["partition_by_id"],
+                        excluded_record_ids=lineage_validation[
+                            "excluded_record_ids"
+                        ],
+                        semantic_artifact=load_json(semantic_path),
+                        semantic_artifact_sha256=semantic_binding["sha256"],
+                    )
+                except SFTReferenceContractError as exc:
+                    fail(f"SFT reference/split validation failed: {exc}")
+                content_validation.update(
+                    {
+                        "reference_contract_status": "pass",
+                        "reference_split_clusters": reference_summary["clusters"],
+                        "reference_split_records": reference_summary["records"],
+                    }
+                )
             if stage_name == "process":
-                if paper == "sft":
-                    reference_path = (
-                        Path(__file__).resolve().parents[1]
-                        / nested(section, "reference_contract.specification_path")
-                    )
-                    try:
-                        reference_summary = validate_sft_split_manifest(
-                            load_json(work_dir / "process" / "splits_manifest.json"),
-                            load_json(reference_path),
-                            current_registry,
-                        )
-                    except SFTReferenceContractError as exc:
-                        fail(f"SFT reference/split validation failed: {exc}")
-                    content_validation.update(
-                        {
-                            "reference_contract_status": "pass",
-                            "reference_split_clusters": reference_summary["clusters"],
-                            "reference_split_records": reference_summary["records"],
-                        }
-                    )
                 return content_validation
 
     if paper == "sft" and stage_name == "evaluate":
@@ -1175,6 +1341,7 @@ def validate_real_stage(
                 or not isinstance(failed, bool)
                 or source not in {"current", "stale"}
                 or not isinstance(allocated_cost, (int, float))
+                or isinstance(allocated_cost, bool)
                 or not math.isfinite(allocated_cost)
                 or allocated_cost < 0
             ):
@@ -1226,7 +1393,9 @@ def validate_real_stage(
                 or not isinstance(projected, list)
                 or len(projected) != dimension
                 or not all(
-                    isinstance(value, (int, float)) and math.isfinite(value)
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and math.isfinite(value)
                     for value in projected
                 )
             ):
@@ -1248,38 +1417,49 @@ def validate_real_stage(
                     ("select", alpha, allocation_id, replication, "stale"), 0
                 ) != stale:
                     fail("RL selection candidate allocation is incomplete")
-        if len(confirmation_cells) != 1:
-            fail("RL confirmation ledger must contain exactly one selected cell")
-        selected_alpha, selected_allocation_id = next(iter(confirmation_cells))
-        current, stale = count_by_cell[(selected_alpha, selected_allocation_id)]
-        for replication in range(audit["confirmation_replications"]):
-            if candidate_attempts.get(
-                (
-                    "confirm",
-                    selected_alpha,
-                    selected_allocation_id,
-                    replication,
-                    "current",
-                ),
-                0,
-            ) != current or candidate_attempts.get(
-                (
-                    "confirm",
-                    selected_alpha,
-                    selected_allocation_id,
-                    replication,
-                    "stale",
-                ),
-                0,
-            ) != stale:
-                fail("RL confirmation candidate allocation is incomplete")
+        on_policy_cells = {
+            cell for cell in count_by_cell if math.isclose(cell[0], 1.0)
+        }
+        if (
+            len(on_policy_cells) != 1
+            or not 1 <= len(confirmation_cells) <= 2
+            or not on_policy_cells.issubset(confirmation_cells)
+        ):
+            fail("RL confirmation must include the alpha=1 control and selected cell")
+        for confirmation_alpha, confirmation_allocation_id in confirmation_cells:
+            current, stale = count_by_cell[
+                (confirmation_alpha, confirmation_allocation_id)
+            ]
+            for replication in range(audit["confirmation_replications"]):
+                if candidate_attempts.get(
+                    (
+                        "confirm",
+                        confirmation_alpha,
+                        confirmation_allocation_id,
+                        replication,
+                        "current",
+                    ),
+                    0,
+                ) != current or candidate_attempts.get(
+                    (
+                        "confirm",
+                        confirmation_alpha,
+                        confirmation_allocation_id,
+                        replication,
+                        "stale",
+                    ),
+                    0,
+                ) != stale:
+                    fail("RL confirmation candidate allocation is incomplete")
         return {
             **content_validation,
             "attempts": len(rows),
             "infrastructure_failures": failures,
             "trajectory_ids_disjoint": True,
-            "selected_alpha": selected_alpha,
-            "selected_allocation_id": selected_allocation_id,
+            "confirmation_cells": [
+                {"alpha": alpha, "allocation_id": allocation_id}
+                for alpha, allocation_id in sorted(confirmation_cells)
+            ],
             "selection_replications_per_alpha": audit["selection_replications"],
             "confirmation_replications": audit["confirmation_replications"],
         }
@@ -1290,8 +1470,6 @@ def validate_real_stage(
             "semantic_validation", {}
         )
         failures = train_validation.get("infrastructure_failures")
-        selected_alpha = train_validation.get("selected_alpha")
-        selected_allocation_id = train_validation.get("selected_allocation_id")
         audit = nested(section, "estimator_audit")
         trajectory_ledger_path = work_dir / "train" / "trajectory_ledger.jsonl"
         try:
@@ -1308,6 +1486,8 @@ def validate_real_stage(
             fail(f"RL estimator aggregation failed: {exc}")
         if recomputed["aggregation_status"] == "blocked_infrastructure_failure":
             return {**content_validation, **aggregation_validation}
+        selected_alpha = recomputed["selected_alpha"]
+        selected_allocation_id = recomputed["selected_allocation_id"]
         projection_specification_sha256 = canonical_digest(
             {
                 "dimension": audit["projection_dimension"],
@@ -1338,62 +1518,26 @@ def validate_real_stage(
             or summary.get("selected_allocation_id") != selected_allocation_id
             or set(reported_mse) != expected_cells
             or not all(
-                isinstance(value, (int, float)) and math.isfinite(value)
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and math.isfinite(value)
                 for value in reported_mse.values()
             )
             or not isinstance(cell_results, list)
             or len(cell_results) != len(expected_cells)
         ):
             fail("RL summary does not match the frozen MSE audit")
-        objectives: list[tuple[float, float, str]] = []
-        seen_cells: set[str] = set()
-        for result in cell_results:
-            if not isinstance(result, dict):
-                fail("RL cell result must be an object")
-            cell = f"{result.get('alpha')}|{result.get('allocation_id')}"
-            mse = result.get("projected_mse")
-            accelerator_seconds = result.get("accelerator_seconds")
-            interval = result.get("three_way_bootstrap_interval")
-            if (
-                cell not in expected_cells
-                or cell in seen_cells
-                or mse != reported_mse[cell]
-                or not isinstance(accelerator_seconds, (int, float))
-                or accelerator_seconds <= 0
-                or not isinstance(interval, list)
-                or len(interval) != 2
-                or not all(
-                    isinstance(value, (int, float)) and math.isfinite(value)
-                    for value in interval
-                )
-            ):
-                fail("RL cell result is incomplete or inconsistent")
-            seen_cells.add(cell)
-            objectives.append(
-                (
-                    mse * accelerator_seconds,
-                    -float(result["alpha"]),
-                    str(result["allocation_id"]),
-                )
-            )
-        selected = min(objectives)
-        selected_result = next(
-            result
-            for result in cell_results
-            if float(result["alpha"]) == -selected[1]
-            and str(result["allocation_id"]) == selected[2]
-        )
-        if (
-            selected_result["alpha"] != selected_alpha
-            or selected_result["allocation_id"] != selected_allocation_id
+        if failures is None or summary.get("estimator_claim_eligible") != (
+            failures == 0
         ):
-            fail("RL selected cell is not the frozen MSE-times-cost argmin")
-        if failures is None or summary.get("h1_eligible") != (failures == 0):
-            fail("RL H1 eligibility must be false after any infrastructure failure")
+            fail(
+                "RL estimator-claim eligibility must be false after any "
+                "infrastructure failure"
+            )
         return {
             **content_validation,
             **aggregation_validation,
-            "h1_eligible": failures == 0,
+            "estimator_claim_eligible": failures == 0,
         }
 
     return content_validation or {"declared_checks_require_site_validator": True}

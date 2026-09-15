@@ -62,10 +62,11 @@ make protocol-audits
 ```
 
 The source audit validates the committed pinned-metadata snapshot but leaves
-all manual clearances pending. The provenance audit verifies row-level hashing,
-normalized duplicate removal, cross-role quarantine, and output-manifest
-integrity on a committed synthetic fixture; it also requires a passing
-content-readiness ledger. The content-gate audit separately exercises the
+all manual clearances pending. The provenance audit recomputes row identifiers,
+raw and projected-content hashes, normalized duplicate representatives, and a
+closed acquired-to-retained/suppressed/quarantined disposition chain. Rehashed
+orphan, omission, forged-ID, and wrong-representative fixtures fail; the audit
+also requires a passing content-readiness ledger. The content-gate audit separately exercises the
 named PII and secret detectors and the deterministic character-ngram
 near-duplicate screen. That lexical screen is a blocking heuristic, not a
 certificate of semantic independence or manual clearance. Artifacts above the

@@ -1,0 +1,3600 @@
+{
+  "artifact_type": "evaluation_simulation_condition_manifest",
+  "conditions": [
+    {
+      "block": "fractional-boundary",
+      "condition_id": "a43395e8d872d0dc75ed45de3e8d8f32f16b279bbbf6c4245c5e108173c53b8c",
+      "condition_seed": 11831965472393363341,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 0,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "819cc6b1916ca4b489e7cfd30b3272b8bdd1d3e6043af8e9c9a40a6864839e43",
+      "condition_seed": 9339558194691640293,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 0,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "ac874039c5316d2092e71b134e3b94f1236d50715f2f205d2616388bf0f70026",
+      "condition_seed": 12431975913123660401,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 0,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "63660058e61925404c46047bdc6e844bad37d58d58be3eb546c201880635a676",
+      "condition_seed": 7162412638001596945,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 0,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "137b7934d257e27bd1e550fa6cf93566c13174c28fa4245a6d94d62bec6475dd",
+      "condition_seed": 1403848975963147562,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 0,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "3a6d2a9d0e3ecbff67f8536e57b51fbffd8070051a8afce5c7d7ea730a6aa6a1",
+      "condition_seed": 4210068082455831726,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 0,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "bf13cd6956f3db946596859e8139b811cda389778f35542cfdd647c80bc1f4ee",
+      "condition_seed": 13768574337431925957,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 0,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "c51af8e33233b4a27cd82f4b5b40ba36933a0a0994c0d429e8fcd325752276e8",
+      "condition_seed": 14202938029964794867,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 0,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "6efaedf5028fabb46b4149f71b0902e24e4fecad73f0e245f281f46a376c5271",
+      "condition_seed": 7996965726924309733,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 0,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "01d797b7166673b7b4c420e723a09a3bf025f7c176a72f925b57547ab88224c0",
+      "condition_seed": 132741528121892070,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 1,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "5358e3680232816c4fa2f0e3fbed9d13605cb39218b4ec8709c41318a554a294",
+      "condition_seed": 6005800140977286717,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 1,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "87d92f2182103e7d22560bbf18e3af1f1af7948b1a13ec379d3fb08d9a3f41dc",
+      "condition_seed": 9788907088055079212,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 1,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "e87147eb59e119700870b8efafa96cadfe4c48f19bfc701d0ae0ac2e1f4d114f",
+      "condition_seed": 16749247564366394913,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 1,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "43a635c6daae7087b8ab1324e2e4b9c478268c18f309306b1f20bc00ab996f74",
+      "condition_seed": 4874642773920047062,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 1,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "7fe2029d1b9e8a032028ec303f1f3e0ffce7b09382593f1f7b9fffea43d97462",
+      "condition_seed": 9214930662553625938,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 1,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "1941ef56c73ff2e4c99edd191c73b9c59596bb4015110d9295aeb30cea382046",
+      "condition_seed": 1819998880301604277,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 1,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "5e05d68f38a8e0daaca7d24bddd0979e959454b02cde1797d44ee36961b453c1",
+      "condition_seed": 6775057125198221195,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 1,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "f897fa06c02411d1bca18230547afab27306b29cbe5517675c913eebefd528f3",
+      "condition_seed": 17913060949668380288,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 1,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "ae824e8dbc266b296df879d01421565986f01433c80ce4af8abf5847e954b82d",
+      "condition_seed": 12574699480372593784,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 2,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "f1ab9ae8395090de9f056e9d5ac1ff703221ef4458f24c4d4712d85165f8e4d6",
+      "condition_seed": 17414182706481414031,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 2,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "be40939c504e55948214e32874a603d2c1746aa669dec32d2908433a14b99fb2",
+      "condition_seed": 13709119564620364485,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 2,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "56372b1fdd6c3fdf079ce6bbcec8faf6bdb1124bdfe6b7e17cd388ad944407b2",
+      "condition_seed": 6212481625904615566,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 2,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "22a7b675efd53210f25b3cde53a727cc026703dc4ead8ec2ce2e3ed96f0dc029",
+      "condition_seed": 2497165134562499905,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 2,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "c7762a31b13641a1e968f31ce5ef5016412d17e5a5d8b56901af62b3da0f25e0",
+      "condition_seed": 14372721654129618672,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 2,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "bcd93c253428d6d59032486ad7bde733fbbe4be22e13919f9859cc21d1f733ad",
+      "condition_seed": 13607973879978621316,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 2,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "b1edb991f3ff0149e06985571fce376027f9b3851a8a9e710b7052cb2a9d2f0c",
+      "condition_seed": 12821107748951076376,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 2,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "0f0977be1b3ba869619699ba6b54401840241d241efae79d30fb945253bd8779",
+      "condition_seed": 1083528844964005688,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 2,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "b79354c1e95a5287d6045e73ef6ca8e3dbe1e0057712b2ba7f4adc73149a9f9f",
+      "condition_seed": 13228009720865488342,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 3,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "ba488e29bf4043f3f148f89bfe8e292fd1e8463cbb16a6dc4da464ba865ea5ae",
+      "condition_seed": 13423134999469878434,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 3,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "0fc3610b0567be8d4738a06d3dc82b0e42f19d988070e5a963d7c4202117776f",
+      "condition_seed": 1135858233007935964,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 3,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "d28026d9e83198bf1206b0a4ca72b737dbc82464b4e62803e987c6bd542dd7b0",
+      "condition_seed": 15168166260865382382,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 3,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "ac3c369fd1cd110cbce6237ee0f93ce7134dd71805b757239224a137ada0f21f",
+      "condition_seed": 12410854732490260061,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 3,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "edd3fd14dada1f593695705110a15dfe2eb8535afb827b9de3dcd46420f216b9",
+      "condition_seed": 17137319272135634952,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 3,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "7fdd9e2086fd71b2d1de630347efa01585fd53e75fa97e2e3738a8681402d9dd",
+      "condition_seed": 9213694277211578083,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 3,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "8246ee2ae79609d833d8e29e869a0b199bb8677d5734583ad3f29105cff9daf4",
+      "condition_seed": 9387452340129605257,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 3,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "8e8b770697b00169849a63f70bea6d55dd19383210bc5ecbcb09ad5de2349e1f",
+      "condition_seed": 10271434246819393080,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 3,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "fbf1e2e5b08e06e7b72b3988310df7766cd97c0ff23d61065352b7a432fa4308",
+      "condition_seed": 18154541049443101110,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 4,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "3bd256fd937d2ca311d5a9573b93646d43b3b8a6a3fe56518b7628145f6dc48e",
+      "condition_seed": 4310603441928831986,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 4,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "68792890dd9661c6299d5a3518de1a1c07e6161965896fc3d012d6fa6a844356",
+      "condition_seed": 7528092853840760471,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 4,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "7c9312f47b2c58c3be7bbb60118caf2e0ba4563c653b0c1bbe7f81a066d084ba",
+      "condition_seed": 8976539321526908818,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 4,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "966287a9d80e0c8c0c6420be4d4748fdfebc8ba5258fc0ef290b0cbefe53f848",
+      "condition_seed": 10836372816023888861,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 4,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "a9f65d1896b55da00e78f7b12ea74f6f04385cf33c547f9bf95c492098c29529",
+      "condition_seed": 12247078598342013681,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 4,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "26f44ff9cf8809ed64326788d830f4cec1a2c2f11665424626ddd14d6000cff4",
+      "condition_seed": 2806956401699301052,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 4,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "5dc07c2a83d46798a6a70967d9b94009cfe0c3b9384cbdfc6c0ea0c10c61aafa",
+      "condition_seed": 6755535965098854601,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 4,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "f3bb97687e3a841e6787fb8b106f207cd32cc0e7951e2f72a4bce8e198a74ac9",
+      "condition_seed": 17562797644910766927,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 4,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "bc6b93d66067988492bda719659579fa1efa99c983e65a6a445ffb1d410618e9",
+      "condition_seed": 13577108049384191957,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 5,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "4d3b2db05d09b4b8df289656bebde2ae6977340f31d0fcc6b538b21b23a2fc7b",
+      "condition_seed": 5565091999117876201,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 5,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "bcf441c39aa0391295313cf869b4d22756fff400049758345e3ec0a786ea965a",
+      "condition_seed": 13615579883020457539,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 5,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "2ed483ba545196da77c783b4bc57612cd7872043a0a80cc7037df47453326747",
+      "condition_seed": 3374466856442280331,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 5,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "6103647ac69b2e28c4f1f9b353dd6f3bad0d9efc8175d37450a1b438d1e351b9",
+      "condition_seed": 6990541524951400825,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 5,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "5731a2aaf5902e3071ee7e7489bca8fd3a1acaadded618a5f481ee32ad7744a4",
+      "condition_seed": 6282981808557752673,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 5,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "1be1d1f6daa332d259e1271c2248023f3b0ccb12b7e8623d52ed81d89724348b",
+      "condition_seed": 2009117766000352643,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 5,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "05682d29f6ca9e4898d9e397bcbce8f1f53a11faa1d9a146a770bb6c47289e97",
+      "condition_seed": 389611024267424025,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 5,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "ff28a4ad65749c6678653818c9647f5d96cc40d96eedd84ca80ee10427bb7292",
+      "condition_seed": 18386126542174892855,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 5,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "9ec3abfa125b32598c0f3542c302252728147b4993a4509c427ef8417a20e697",
+      "condition_seed": 11440176570469752072,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 6,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "0d978a3b3a7f84191c8821b4dc9c11239686d1e8d8136a230ab591424c79705e",
+      "condition_seed": 979403431103703880,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 6,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "3baa4d52b3ca993c812930d1406021d6a5319fee26a567d49c77bf9991636c76",
+      "condition_seed": 4299333812267595373,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 6,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "ea8324eb8ec0791009534cc245b6403c9b0ea395f57780a4813c53ed39f98fa1",
+      "condition_seed": 16898390822687594049,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 6,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "3e85dae42eb76e19d46349ceccd378998eede66f5851a7f258e8ba8ad6b67b36",
+      "condition_seed": 4505247676491940168,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 6,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "7d52e346d500db8b093401dabf8465e2638f95dd0a46d2ae8d0e227a5e3f3e07",
+      "condition_seed": 9030530095533749466,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 6,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "2ec3a87fa925c6e16299126bc2bec2526279fdad183286a20b2503af834e1193",
+      "condition_seed": 3369722213139114416,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 6,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "4c265b160170c77af15ab6e0628a8897ee2f507d31b2a32340876eef5968d309",
+      "condition_seed": 5487173348086736939,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 6,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "97f59ccf6416c7256de509fcee5680b1922d7d17f543c13ed36f4551360c6576",
+      "condition_seed": 10949830482377140340,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 6,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "14d5faaa1f9b2487dd20e3334867c1285d808ee9099a5e63bf6b0db6725a89db",
+      "condition_seed": 1501381660583168982,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 7,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "ecc47d1a56324873ca1b312dd3643b0cf66c194f597f71b12a214675b13f00c8",
+      "condition_seed": 17060898839796508450,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 7,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "c2a89705fdf33f804e0c3a86be71f801a170028730da1da59e4ce59139e9681d",
+      "condition_seed": 14026627089410592977,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 7,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "2047e7c95c30091b6950050ad4d3f06ce33251f90d56faf0427ed5ff463f632c",
+      "condition_seed": 2326082583654540874,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 7,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "0491fdc28baeee05c6c6de6d9a74b10388b2c0598f5f847a6f1638b1914855f6",
+      "condition_seed": 329323261524263252,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 7,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "2940ec8e1971770f8dea8e5c95d34901dc744c821970281d8c6ce8a4bd291db6",
+      "condition_seed": 2972635850333149278,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 7,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "3a598cd37487d1a9ded29263fbd5d83c076163b323669933174f4a35eb0a98fe",
+      "condition_seed": 4204546565198872312,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 7,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "05a8ef77b4890eedcc6f9a8a34e1d2a9587df3025afcf9c80a474c8e256d9c77",
+      "condition_seed": 407839064084619708,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 7,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "307cabe659d68d956528c52c4c6eaf6529cf7592f885e3622618ae2964422064",
+      "condition_seed": 3493856415818523332,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.1
+      },
+      "fractional_row": 7,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "b83d35aad3978b898dc4519ef79eb46da04c9775e7eebf2085a16947753aecf4",
+      "condition_seed": 13275826283693221080,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 8,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "a12400358bbb1666507bbe088e5908a7a56a71c1d8840ffda1e28746505f2f58",
+      "condition_seed": 11611405970986023223,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 8,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "9b804c88797d5b8672b36a05b55354e6594dff4d1738c83173895f2e3254695f",
+      "condition_seed": 11205040019926349015,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 8,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "4f87a80f5c0daa3046ecdbfd5a490fc004bba50afcb9300d579f14dbb632f73a",
+      "condition_seed": 5730733833847702881,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 8,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "0795c954635e43cbaf73bf516debfbca8c5a56247bc8a05651a8bc29b63bb334",
+      "condition_seed": 546564292873153690,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 8,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "7e3f60e228f89dc4fceaf457f4dc134fc3f3c1d135c808367a8ec668c8b5d35b",
+      "condition_seed": 9097096297436623509,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 8,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "0e22b4285dc1b6c254b736e3600c2395b3e261d994c645415d76f4aca46f8795",
+      "condition_seed": 1018574550251739539,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 8,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "d2fee64edefd620143798f311a4290aedeb87c79afcb7be38a5993f332e49e0c",
+      "condition_seed": 15203842617520344400,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 8,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "b42bfd1a64afb8eba8a2cdc62f65dd0cc25768d55e6314a996d81d7c28d8268c",
+      "condition_seed": 12982748639413409722,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 8,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "47bb3f8e001696fd7bb80c353bc32775a3750015f03cb04efce0d9cd9496bd72",
+      "condition_seed": 5168794878482921900,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 9,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "8c065d90bfb2340e584b5fd9990b2d260ab2b3dc18238711feff76854d257b95",
+      "condition_seed": 10089854891572960095,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 9,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "33c099fac3c5de007810918f172db3548d94a1451b8941dcc943794e1a4e05f7",
+      "condition_seed": 3729149793621406033,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 9,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "b213156700520633983ead00c2450995aded79e3f1666f75b768f02f83e76827",
+      "condition_seed": 12831623297457301858,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 9,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "4af2be741ef47b255cbb4835fe8c4abbc4cf9cb20d7d6c677fb6ee995b06d17e",
+      "condition_seed": 5400588310311064692,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 9,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "88a7264935a404827b75bae6b25248120fd9aad4644788390a89c32d89b28ff1",
+      "condition_seed": 9846881206541986771,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 9,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "964a3c99508fe53b8e0701ee630837308c6fd16d12b8b4f9a14bc1590c37a5ef",
+      "condition_seed": 10829534882469530218,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 9,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "290e2d7d1b458ca1e3ca4f5adef151cad29fd86854e7af97a0e4ef184be5f569",
+      "condition_seed": 2958352021792891888,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 9,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "820287524a7444f4772a799ea7bcf2f2e8321efe8b516f446f1b87577ac1391d",
+      "condition_seed": 9368198961992035237,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 9,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "762cac83e079380926f568943740d62a21388ced54cd10c24cce7935d429ff07",
+      "condition_seed": 8515370676653823832,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 10,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "e23227354c9c4f3cf12ba1d372a05ed26f75da6a151d5b85ee7e106a1e577cdd",
+      "condition_seed": 16299133110872694893,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 10,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "a77c7c5ee13269ddff5e5c9d8ebb531737641f0ab07885a125c4525325a0b885",
+      "condition_seed": 12068657847197615756,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 10,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "563d363a4b846d5364ced1a37165b8ae1d88a6f894529ca3ed80b96f5b817199",
+      "condition_seed": 6214182684437496322,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 10,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "eaff96e040ecb6b5d80e51f9c01aef4ddf2e3e7d8be13d6249b44e5e53b8f812",
+      "condition_seed": 16933419013695805924,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 10,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "0a93bb952b48f0bb683760aff6f0b828ddc139b5bc484b40a956a7948b770f30",
+      "condition_seed": 762159011981909994,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 10,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "0d8e8e231bb7fa4e2458a16c218b2734aaaff48751a9fc25f19451ca1736755f",
+      "condition_seed": 976874451829544223,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 10,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "9e977b9975009d4091c652234c40b02ef54293ffa423a9abb5f81c1f38df7568",
+      "condition_seed": 11427738476767031825,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 10,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "442e427d1fc1619ce24942187861fbe935062965f5a48fe60b40032811a2381f",
+      "condition_seed": 4912937349874372301,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 10,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "61d48d012b25836cd68ca57a02d335f72f81d2aa8659648af1862e5a2d08b936",
+      "condition_seed": 7049414353583746109,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 11,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "79b9d4de4063ca03de754afda8508fe8fa241fe2714ef8f4a66bcf583e5ab162",
+      "condition_seed": 8771275800178615634,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 11,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "c6878cae0582e750f7ceeb357165a5b91b1b0c0ff78956df03eaf5ac761689a2",
+      "condition_seed": 14305557422419298305,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 11,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "cb0bfff4378f4045bf8e66d49da3fdcc539d927384ab9ec4992fe28ea7693117",
+      "condition_seed": 14631069239210733332,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 11,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "1a231b5b10d651d6fc8b9b38cf7ff7f969c412cd9529dbf8fd83a871a7bcfbca",
+      "condition_seed": 1883379148573245063,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 11,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "463c1d111905ef73768a5bd68c87a71ba6851940c83fc855f0ed443507998457",
+      "condition_seed": 5060952041749626914,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 11,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "bae8a4cf8a24f0e31e4973a3f759d3589142a1efef91b6838ad4c34fa80928af",
+      "condition_seed": 13468195898691903410,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 11,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "ddd32fafdacc0207c7f0369ca597941f0231df701f7a5b122375281c824b5a93",
+      "condition_seed": 15984171933852740950,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 11,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "6e7189fe4b266fedf6b4b6419e50696b242304df0d10c4a818237974bbb04216",
+      "condition_seed": 7958293741425770684,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.0,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 11,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "663e431a435746eedf31127944403e3cfe1ac01c2a964b1ff4251e8367c659ca",
+      "condition_seed": 7367399820372535743,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 12,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "d4ab13111ec3d91dd5586e826debddefdcfa4c037e5b790a1aab2e9e8ad1877e",
+      "condition_seed": 15324363122504922700,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 12,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "f615a3083f0cebf16f5d545f96c96eb75be6512e9fff9a6df9b64fa16e0a20d3",
+      "condition_seed": 17732258363801027744,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 12,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "6b98ea256209483fd963749af7703a0b8bbe7059e9acc6e29e8a988d3cad4407",
+      "condition_seed": 7753204203602503534,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 12,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "4d0b0e199f4c80dc318aaaa33529acd4da290fdb6503ce9d4864557308a0d214",
+      "condition_seed": 5551546470086160269,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 12,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "f216150d2e54132b42ba823e6cc2ccc8ce65e04b30681b9fd4e04e65e822c596",
+      "condition_seed": 17444153353697737850,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 12,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "33f6dce291f11ccb48c2d18027ac56ca50a56c6fab3b6ed0305fb5d4b7106a8d",
+      "condition_seed": 3744423007338279834,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 12,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "64b9843aeda421feb3977e5108cb0555024d8560c1504c8e092ec7075eb8cb71",
+      "condition_seed": 7257977661633826479,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 12,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "da2ad5eed4da41eb8d4a10fec0a4374a594c4dad8d69a49e9fd8b6bc3c9f670f",
+      "condition_seed": 15720612670356451002,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 12,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "2fa514a3ea263d5c0c4876fcd5facf74b16fe7ea9b706e80b561d1121216adcf",
+      "condition_seed": 3433172983716614669,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 13,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "16ec60f05e589f4f9de303a9fc5d7fe8e1f0762e8c171560f6ae3f0ffc454d8e",
+      "condition_seed": 1651801747894251550,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 13,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "5b6b6ef20a37995464d2c3c08ffb9c7704b6f08950809db5024928904e29f575",
+      "condition_seed": 6587480867549230597,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 13,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "b308225518126eb1f0d68cde3b6ef62e6247984b782e4e01fda71d6e94316e83",
+      "condition_seed": 12900598882694709728,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 13,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "2e056e14cfd35482333767a781887a61d750a2d75af87043a25136a5e45940af",
+      "condition_seed": 3316177735877983187,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 13,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "5069acfb44bb860d9023cbb350f6290d38a368b5f169116eff69a3e1e9f791d1",
+      "condition_seed": 5794352590640130396,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 13,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "307c79157581f021e95800162dd66ddb4a71ebe780e05ad29df089d3210fad74",
+      "condition_seed": 3493800542256390000,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 13,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "348a3d1b8dba3e88601529785effb095e10d1d9d67e43d05367526ee4f94aa73",
+      "condition_seed": 3785905627050119641,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 13,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "e1b5a525db4feccde753519ee6b51a63db98151927508463df2aec163f41bafd",
+      "condition_seed": 16264087210394665884,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.0,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 13,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "905b93b3de9a1b71242e16f44f30395b91d15b5e22c0aefa00254514f71104e8",
+      "condition_seed": 10402070164141618208,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 14,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "636b86dc5d00967d3109688968caa85b5b82f75a64cf19064e1541261b448611",
+      "condition_seed": 7163967912347384108,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 14,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "dfbc267689ee2e2b0eb04f21c2086f44fc56536f3aa7e685ac41fc0da1e58489",
+      "condition_seed": 16121803058373820794,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 14,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "516102b12a0c7ed16a6652f1d4b8ae70bc04420b962dfc8e7d6232efa3a96fa5",
+      "condition_seed": 5863971150434914688,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 14,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "2d69738226008d24d828dc285cf92d4c1ebdd0956499834adf0a825a3e7ecbeb",
+      "condition_seed": 3272273608034165365,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 14,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "00dd0a4ace381ce742349c50ca077bfe28255415fd58e09423c5b9d2465c6fc5",
+      "condition_seed": 62217285866861494,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 14,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "8609af4bd0aa9ffd3192a3fe4d37f7c1e5baf6988af7239163edffda064d9c37",
+      "condition_seed": 9658443615355613356,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 14,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "0463715657b4c4dd4bb9bf409f4382274261dd169586b10daeca21eda7b9d9ee",
+      "condition_seed": 316221013823548300,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 14,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "f01bd2ae588f25e210bd7dd26988e0eb0103efeb8d800754c157ba1838764b66",
+      "condition_seed": 17301654038781921971,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.05,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.01,
+        "repeated_rater_standard_deviation": 0.0,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 14,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "a486a92e8f309abddedef3c3e3c4f4f7022b3d48415aab31f4a1c266ae571ff9",
+      "condition_seed": 11855349088292910572,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 15,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "0e9b8be915bef4d63d364f8d1e363ba62ba32661d3da70b804b7a3cfcfa02a77",
+      "condition_seed": 1052588772601715591,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 15,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "27963572a359c0f96841937dd0a8c5fe6e8876ba8bac9b970218f0c57eec4603",
+      "condition_seed": 2852526181412663208,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 15,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "76d9e52e2652d27a7660d5f8d5370c82c2852c7186c040a209a05ea08b290b5d",
+      "condition_seed": 8564128153739558187,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 15,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "cd543b05b21b9c5440893c1d86e3b92315fce9da273212993631364e57ed7567",
+      "condition_seed": 14795515571882963717,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 15,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "b9b8b69b9fb8ff1d99a2dce530bb78f212b85e36988aff42de7a86e740458bce",
+      "condition_seed": 13382647073451233356,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 15,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "1f6ca62cda7364bea8d1e6c34a0d053d66dc6b0f7043214d3fdd772784782c45",
+      "condition_seed": 2264367423298784239,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 15,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "0f39dc090ad9316b07cecde0c72c280da9bd440d29f75b6bc020a549546a354e",
+      "condition_seed": 1097149917368589882,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 15,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "fractional-boundary",
+      "condition_id": "54afd3e164c4dd95cecf158a8495296ce68de9a8926fef7769a5cc69a8613070",
+      "condition_seed": 6102328983901663940,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.6,
+        "judge_family_correlation": 0.6,
+        "nonresponse_rate": 0.3,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.5,
+        "temporal_drift_gamma": 0.05,
+        "tie_prevalence": 0.5
+      },
+      "fractional_row": 15,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "center-boundary",
+      "condition_id": "05d83503fbf6cc395b7cc55ce62c6d8b63fd0043b715d4c9bdb24f547806361d",
+      "condition_seed": 421144854361629544,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "center-boundary",
+      "condition_id": "4d8bed2a28e6a42151cb90059920076cdc003f6bfdf33547f1c2757993725976",
+      "condition_seed": 5587820528672246640,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "center-boundary",
+      "condition_id": "327063ffac5d44a6146c430e9bbebdb0ccf6239c41fd720bbb33e2da1d25c87a",
+      "condition_seed": 3634514849722985463,
+      "effect": -0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "center-boundary",
+      "condition_id": "e6c7d93c5b2e5d449499b8d05d34e0d0ec8f4dbe465d1f03430a7236fa755601",
+      "condition_seed": 16629499001412907541,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "center-boundary",
+      "condition_id": "b706c30693adfd96381dc95c3cef407cac99997cb5aa8f753f46af5b055de286",
+      "condition_seed": 13188442993288172231,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "center-boundary",
+      "condition_id": "5ae1b0b3001d19b103ed8c7485369952f8b84b96168614daac30ce14b6a77320",
+      "condition_seed": 6548709618046908128,
+      "effect": 0.0,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "center-boundary",
+      "condition_id": "517f2ed2983e17b2dc3b0620974582e31bc8dc030be8ecb2996b3d821732e68d",
+      "condition_seed": 5872463922367150307,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "center-boundary",
+      "condition_id": "c1e277fd674ec2554e643555f6323920bd54fcb36cf83ddc63ddd71819a95f9a",
+      "condition_seed": 13970860923096493316,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "center-boundary",
+      "condition_id": "e4435d83115fbb43d8ea7b5e936ec9eebfefcd21a2519e0ee642e4feab16df58",
+      "condition_seed": 16448093083081118738,
+      "effect": 0.05,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "5aef6596b031d0502413663544732d9fe84b577109e40d309610809efd7fe077",
+      "condition_seed": 6552567681138196225,
+      "effect": -0.11324555320336759,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "9d59e55b80a5dccdfba5c864f4e28abd8181866355f4f2c744c7aa1a4f9b0efe",
+      "condition_seed": 11338345720054182812,
+      "effect": -0.11324555320336759,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "535cfc9da3ed9e9c1985842d2ae2d872d414c591b16e636362f094df0dd0db5a",
+      "condition_seed": 6006953757922701773,
+      "effect": -0.11324555320336759,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "e45d761ce9928b7bb89895b7e48c226901d8a213548db4146aa7bc9a4e855153",
+      "condition_seed": 16455438478550836266,
+      "effect": -0.0816227766016838,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "4bc2e9ba2fe80cb0bb759616ff80983351f6d1bbac11fb4b253631a4b5b71ca1",
+      "condition_seed": 5459182684862129121,
+      "effect": -0.0816227766016838,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "461cd24212dccbb97c43401d58343a1f3f9be54b76cad4c8316cc82dbc1a7a87",
+      "condition_seed": 5052144064692970728,
+      "effect": -0.0816227766016838,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "7580d79cc6c0ac335356575a51416a44b3c4a693774a364a0c2550fbf7ae8904",
+      "condition_seed": 8467004367659271010,
+      "effect": -0.0658113883008419,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "635506fd8bad94386b4be3b3b072e483b02ac5067c626c2d435c3d2fbaa43823",
+      "condition_seed": 7157634870555851625,
+      "effect": -0.0658113883008419,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "8c3e3567de389ba36745e0e2431f18b1eb1dd9328874bc36675600312432b307",
+      "condition_seed": 10105573333165356274,
+      "effect": -0.0658113883008419,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "8db2e4b2a06a3cf79fb379210f01feaa87b87a8bcb5239f859eef3b5c7ec3abd",
+      "condition_seed": 10210474761992639398,
+      "effect": -0.03418861169915811,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "8f3a6b07e2d496d60bbe82eff3a6c88702bc5d2eff58768054e0db8dce6fd4a4",
+      "condition_seed": 10320679176467069319,
+      "effect": -0.03418861169915811,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "ba7e0fc5ebd669984765de7ebcde40acc24061225e9e6cbe533577ef6bc72abd",
+      "condition_seed": 13438195679370790601,
+      "effect": -0.03418861169915811,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "5eb3009dd31238488d5ba543992885034dcda7b4846fd7404f19ad1fb300748d",
+      "condition_seed": 6823798537588938521,
+      "effect": -0.01837722339831621,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "a5a33e100906caa7185150c938ca15d1f57bd94a83e58201f0f6c908f62b258e",
+      "condition_seed": 11935451677811107318,
+      "effect": -0.01837722339831621,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "25bc316432fb672c74b84212251c97676877fdd7ab1a1a375d3fe4d7c020d913",
+      "condition_seed": 2719102581836662909,
+      "effect": -0.01837722339831621,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "dfdf2c39ce56796a895e96a27a547bf8dcec8fad3e845113c375abe737727bd1",
+      "condition_seed": 16131661016652437051,
+      "effect": -0.01324555320336758,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "b5076bac0ec728e8c2ee3511463aee96af957e302faceffdebef839bd372d16a",
+      "condition_seed": 13044513234160486329,
+      "effect": -0.01324555320336758,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "f4c751c4a4cffe986af35c7b1e5f3b0bcc33e4881cbb115f7e8d4ee76533d83d",
+      "condition_seed": 17638156371567071689,
+      "effect": -0.01324555320336758,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "32b233f03ddad14db80bf3f310dd3d86a220297a9809fcb7991b3187807bc785",
+      "condition_seed": 3653039354795359772,
+      "effect": 0.01324555320336758,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "52a780582456c089d6d2150381f2b415b42620692b13db0c4e5c9b1e6a8c6590",
+      "condition_seed": 5955870149219545048,
+      "effect": 0.01324555320336758,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "56627f189282e2666d0942cd870478c458bb3e9147eca41f358498585fe87861",
+      "condition_seed": 6224677379965537591,
+      "effect": 0.01324555320336758,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "2a34c14438d1ee0b45fd7f7e148f4316f400b8b81e9157d8c6af9527cdbaa933",
+      "condition_seed": 3041268147258802522,
+      "effect": 0.01837722339831621,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "025519f3d58edc1599578734bb79bcc28e8b783b3c149bb8cd8661ac25aaf71b",
+      "condition_seed": 168069095471543108,
+      "effect": 0.01837722339831621,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "781e45162212fb236dd013cf8e8d291cef5d598b74e2ed29b723d843c77254be",
+      "condition_seed": 8655431496167937138,
+      "effect": 0.01837722339831621,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "80207fe7830a135cda5229249b02c1d5527ec17c304ffa32c107be9ee300d315",
+      "condition_seed": 9232519870447991821,
+      "effect": 0.03418861169915811,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "6a1350fb74f6d9f481e6af4dc72a280ad122f3b56384ee0078cfe5fe263f7857",
+      "condition_seed": 7643542031749707429,
+      "effect": 0.03418861169915811,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "e912c7d5b3734e4bfd3806b036913d6138251af946d2b7fbaeca2b858278016e",
+      "condition_seed": 16794705681477329178,
+      "effect": 0.03418861169915811,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "f20de0b16d9ab7834ac7ba16dabd50d60ffe66b0cdbdbec85425427369f92178",
+      "condition_seed": 17441843983047792850,
+      "effect": 0.0658113883008419,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "2c2d9d3533edc93daca8c07a8a5815a27c960a11a164430d630f0ad94acb1acf",
+      "condition_seed": 3183373363840968300,
+      "effect": 0.0658113883008419,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "c827414c9a22f02b0f87a7e5eaf742ec1fceea15e4da781527cc3a0f151e1757",
+      "condition_seed": 14422568130157043578,
+      "effect": 0.0658113883008419,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "6286349ff311d015149cf62b728bd14aad7c17fa963722de0129d949d685abb6",
+      "condition_seed": 7099419722446438212,
+      "effect": 0.0816227766016838,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "86cc1fc5eadb230228d20256cc67f2e2d7bd94c94825f090b5a834e7206d3beb",
+      "condition_seed": 9713173429751417939,
+      "effect": 0.0816227766016838,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "1e5514c5651e7ae06c555000729d7318063705ff57f0506523200c74ada67a44",
+      "condition_seed": 2185676031000434097,
+      "effect": 0.0816227766016838,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "b8b2d5fb94b1f1da0003a5e83e6419b031c1a40f4edac74d2dc20f8f5e18b664",
+      "condition_seed": 13308935126813662859,
+      "effect": 0.11324555320336759,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "correct_working_model",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "46630444d8451706e81cdcf660c1918d2d290679aa168fa24a1da1cb88ad56dc",
+      "condition_seed": 5071902298146781271,
+      "effect": 0.11324555320336759,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "omitted_interactions",
+      "trials": 2000
+    },
+    {
+      "block": "center-local-alternative",
+      "condition_id": "c48c93aaa1512f9b288faf3575f6d1aa0a929b9a2deba416459e633f50944650",
+      "condition_seed": 14162857290177347786,
+      "effect": 0.11324555320336759,
+      "factors": {
+        "exploration_epsilon": 0.2,
+        "item_correlation": 0.3,
+        "judge_family_correlation": 0.3,
+        "nonresponse_rate": 0.0,
+        "rare_stratum_mass": 0.05,
+        "repeated_rater_standard_deviation": 0.25,
+        "temporal_drift_gamma": 0.0,
+        "tie_prevalence": 0.3
+      },
+      "fractional_row": null,
+      "model_regime": "anticorrelated_predictions",
+      "trials": 2000
+    }
+  ],
+  "design_sha256": "391dd631bf9de72e71de6886d628e9f33e321c165f45c8a66882741d509d89e1",
+  "empirical_evidence": false,
+  "execution_class": "design-audit",
+  "schema_version": 1
+}

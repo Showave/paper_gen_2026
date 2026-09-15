@@ -202,17 +202,18 @@ The SFT capability and split contract is independently auditable:
 
 ```bash
 python3 scripts/validate_sft_reference_contract.py --self-test
-python3 scripts/validate_sft_reference_contract.py \
-  --manifest artifacts/sft-real/process/splits_manifest.json
 ```
 
 `experiments/sft_reference_contract.json` fixes the general-instruction,
 mathematics, and code slices and the target/protected map for both settings.
 The process manifest binds a reviewed semantic-cluster audit and lists every
 cluster's member record IDs. The validator recomputes its domain-separated
-cluster UID, assignment digest, digest-mass bucket, and
-candidate/score/gate/audit partition. It blocks empty required partitions and
-never moves boundaries to force exact counts.
+cluster UID and assignment digest, sorts clusters within source, and applies
+exact 80/5/10/5 largest-remainder cluster apportionment. Real validation runs
+only inside the pipeline because it additionally loads the readiness ledger,
+retained source/configuration/role provenance, content-lineage dispositions,
+partition JSONL, and the hash-bound reviewed semantic-audit artifact. Missing,
+foreign, duplicated, or arbitrarily relabeled records fail closed.
 
 The RL estimator audit has an artifact-level aggregator:
 
@@ -228,8 +229,12 @@ Current candidate rows store projected
 store `target=U*s`. Every attempted row retains allocated accelerator-seconds.
 The aggregator reconstructs the stratified estimate, cross-reference MSE,
 mean complete-replication cost, selection argmin, and untouched-confirmation
-result from the ledger hash. Any infrastructure failure blocks H1 aggregation;
-it cannot yield a success-conditioned MSE.
+results from the ledger hash. It retains negative raw cross-MSE, uses the
+nonnegative MSE--cost transform only for selection, and requires the selected
+plus alpha=1 confirmation cells. These projected terms remain self-declared:
+raw probability/outcome reconstruction and independent bootstrap reproduction
+are unfrozen blockers. Any infrastructure failure disables estimator-claim
+eligibility; it cannot yield a success-conditioned MSE.
 
 The evaluation simulation layout is executable as a design audit:
 
@@ -241,8 +246,20 @@ python3 scripts/validate_eval_simulation_design.py --self-test
 stressors, center boundary checks, and local alternatives across three
 working-model regimes: 189 conditions total. The validator checks balance,
 main-effect orthogonality, absence of main--two-factor aliases, condition
-uniqueness, and deterministic seeds. Executable DGP, missingness, acquisition,
-and resource/restart implementations remain blocked and unfrozen.
+uniqueness, and deterministic seeds against the exact committed rows in
+`experiments/eval_simulation_conditions.json`. Executable DGP, missingness, acquisition,
+and resource/restart implementations remain blocked and unfrozen. Human EVI
+uses a separate 256-unit IID target candidate multiset per batch, preserving
+the exploration floor while capping hypothetical updates.
+
+The shared materialization validator recomputes each provenance record from
+raw materialized rows and requires a bijection into canonical retained,
+suppressed, or quarantined dispositions; rehashed orphan, omission, forged-ID,
+and wrong-canonical-representative fixtures fail. All three real protocols
+still carry an `artifact_integrity_gate` with status `unfrozen_blocker` until
+reviewed multi-field overlap projections and each paper's downstream artifact
+validator are hash-frozen. Declarative stage checks and synthetic-audit
+bypasses do not satisfy this gate.
 
 ## Reproducible design audits
 

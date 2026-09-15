@@ -363,6 +363,29 @@ def validate_design(
     }
 
 
+def validate_condition_manifest(
+    manifest: Any,
+    design: dict[str, Any],
+    preregistration: dict[str, Any],
+) -> dict[str, Any]:
+    expected_conditions = enumerate_conditions(design, preregistration)
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("schema_version") != 1
+        or manifest.get("artifact_type")
+        != "evaluation_simulation_condition_manifest"
+        or manifest.get("execution_class") != "design-audit"
+        or manifest.get("empirical_evidence") is not False
+        or manifest.get("design_sha256") != digest_value(design)
+        or manifest.get("conditions") != expected_conditions
+    ):
+        fail("stored evaluation condition manifest does not reproduce exactly")
+    return {
+        "conditions": len(expected_conditions),
+        "condition_manifest_sha256": digest_value(expected_conditions),
+    }
+
+
 def expect_rejection(
     design: dict[str, Any],
     preregistration: dict[str, Any],
@@ -379,6 +402,15 @@ def self_test(
     design: dict[str, Any], preregistration: dict[str, Any]
 ) -> dict[str, Any]:
     summary = validate_design(design, preregistration)
+    condition_manifest = {
+        "schema_version": 1,
+        "artifact_type": "evaluation_simulation_condition_manifest",
+        "execution_class": "design-audit",
+        "empirical_evidence": False,
+        "design_sha256": digest_value(design),
+        "conditions": enumerate_conditions(design, preregistration),
+    }
+    validate_condition_manifest(condition_manifest, design, preregistration)
 
     aliased = copy.deepcopy(design)
     aliased["fractional_screen"]["generators"]["E"] = ["A", "B"]
@@ -391,7 +423,16 @@ def self_test(
     full_cross = copy.deepcopy(design)
     full_cross["condition_construction"]["full_cartesian_product"] = True
     expect_rejection(full_cross, preregistration, "a full Cartesian crossing")
-    summary["fault_injections_rejected"] = 3
+
+    tampered_rows = copy.deepcopy(condition_manifest)
+    tampered_rows["conditions"][0]["effect"] = 0.123
+    try:
+        validate_condition_manifest(tampered_rows, design, preregistration)
+    except DesignError:
+        pass
+    else:
+        fail("self-test accepted a mutated explicit condition row")
+    summary["fault_injections_rejected"] = 4
     return summary
 
 
@@ -401,6 +442,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--preregistration", type=Path, default=DEFAULT_PREREGISTRATION
     )
+    parser.add_argument("--rows-manifest", type=Path)
     parser.add_argument("--write-manifest", type=Path)
     parser.add_argument("--self-test", action="store_true")
     return parser.parse_args()
@@ -415,6 +457,12 @@ def main() -> None:
         if args.self_test
         else validate_design(design, preregistration)
     )
+    if args.rows_manifest:
+        result.update(
+            validate_condition_manifest(
+                read_json(args.rows_manifest), design, preregistration
+            )
+        )
     if args.write_manifest:
         manifest = {
             "schema_version": 1,

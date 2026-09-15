@@ -189,14 +189,16 @@ L^{\mathrm{tr}}_B(\theta)=
 The global denominator is fixed across microbatches so that, with dropout
 disabled, isolated examples have additive gradients.
 
-Reference distributions are represented by disjoint datasets
+Reference distributions are represented by source-defined dataset slices
 $V_0,V_1,\ldots,V_C$. $V_0$ measures the target behavior; $V_{1:C}$ are
 protected slices. Their differentiable losses are $L_c(\theta)$.
 $V^{\mathrm{score}}$ may be queried repeatedly by the scheduler,
 $V^{\mathrm{gate}}$ supplies fresh post-selection checks, and
-$V^{\mathrm{audit}}$ remains sealed until every hyperparameter and stopping
-rule is frozen. Source- and template-level deduplication is required across
-these resources and the final benchmarks.
+$V^{\mathrm{audit}}$ is intended to remain sealed until every hyperparameter
+and stopping rule is frozen. The repository contract requires source-,
+template-, and reviewed-cluster disjointness, but same-user file execution does
+not enforce sealing; a site-local access-isolation attestation is a real-run
+blocker.
 
 A packing assignment $\pi$ maps examples to physical packs and obeys
 \begin{equation}
@@ -312,11 +314,11 @@ reviewed exact engine whose hash-bound shards cover all unordered pairs can
 lift the lexical blocker; the committed engine attestation is still unfrozen.
 
 Reference sets measure losses rather than benchmark exact match because the
-gate requires differentiability. For each capability, score, gate, audit, and
-benchmark splits are disjoint at the source-template and semantic-cluster
-levels. The scheduling sets are explicitly treated as training resources:
-repeatedly querying $V^{\mathrm{score}}$ can overfit it, which is why no final
-claim uses that set.
+gate requires differentiability. Real execution requires the score, gate,
+audit, and benchmark partitions to pass closed-world source, template, and
+reviewed-cluster disjointness checks. The scheduling sets are explicitly
+treated as training resources: repeatedly querying $V^{\mathrm{score}}$ can
+overfit it, which is why no final claim uses that set.
 
 \paragraph{Frozen operational capability map.}
 The pilot defines three dataset slices: general instruction, mathematics, and
@@ -326,15 +328,20 @@ is the target and general instruction plus mathematics are protected. Every
 slice has its own score, gate, and untouched audit partition with the same loss
 definition. BigCodeBench is only a secondary code diagnostic and never a
 differentiable gate loss. These labels are operational dataset constructs, not
-complete capabilities.
+complete capabilities. The general slice fixes equal mass on the four admitted
+SmolTalk configurations; the mathematics and code slices use the registered
+OpenR1 default and CommitPackFT Python configurations. Within each partition,
+the loss is a uniform row mean of per-row response-token-mean NLL. Candidate
+source mass is one third per slice.
 
-Split assignment is frozen before losses are computed. Each complete reviewed
+The contract requires split assignment before losses are computed. Each complete reviewed
 semantic-near-duplicate cluster is hashed with the source key, pinned source
 revision, semantic-audit hash, and sorted member record identifiers.
-Digest-mass intervals assign clusters to candidate/score/gate/audit with
-bucket widths $0.80/0.05/0.10/0.05$; these are not forced finite-sample
-row proportions. An empty required source partition blocks the pilot; no
-boundary moves after labels or content are inspected. This gives
+Within source, clusters are sorted by assignment hash and apportioned
+$80/5/10/5$ by Hamilton largest remainder with a fixed partition tie order.
+These are exact cluster counts, not row proportions. An empty required source
+partition blocks the pilot; no boundary moves after labels or content are
+inspected. This gives
 reproducible cluster-preserving assignment, not evidence that the reviewed
 clusters capture every semantic overlap.
 
@@ -491,8 +498,10 @@ Only the exploratory H1 mechanism factorial is frozen in the committed pilot;
 H2, H3, and every confirmatory acceptance threshold remain planned rather than
 predeclared.
 The primary statistic is the paired difference in dominated hypervolume over a
-fixed tolerance and budget grid with a fixed reference box. H1 succeeds only
-if its simultaneous 95\% lower bound exceeds zero. H3 compares protected
+fixed tolerance and budget grid with a fixed reference box. A future
+confirmatory replacement preregistration is intended to require a simultaneous
+95\% lower bound above zero; the committed exploratory pilot cannot declare
+H1 success. H3 compares protected
 regression at a planned noninferior target-NLL change so that shrinking all
 updates cannot win trivially.
 
@@ -514,7 +523,9 @@ pre-compute pilot, not the $B_{50M}$ confirmatory design. Its gate uses 512
 with-replacement draws per protected slice and a frozen empirical margin, with
 $\sum_t\tau_{c,t}\le0.2$; it makes no population-coverage claim. A formal use
 of \cref{eq:gate} requires a separately feasible $T_{\max}$ and recomputed
-sample count.
+sample count. Its factorial uses the pinned Qwen 1.5B checkpoint and five
+seeds. The pinned SmolLM checkpoint is an untouched transfer diagnostic, not
+an additional seed or model selected after the factorial.
 
 Let $B_{50M}$ be the measured accelerator cost of random, isolated,
 best-fit-packed SFT on 50 million response tokens. We evaluate total budgets
@@ -548,13 +559,14 @@ L_c^{\mathrm{audit}}(\theta_0)\right],
 end-to-end allocated accelerator-seconds, CPU resource-seconds, wall time, and
 packing throughput. Downstream benchmarks
 are secondary because they are not optimized by the gate. We use five
-development seeds and five confirmatory seeds, report paired differences with
-95\% intervals, and retain every run rather than selecting the best seed.
+exploratory pilot seeds and retain every run rather than selecting the best
+seed. Confirmatory seed count, acceptance thresholds, and model crossing
+remain unfrozen.
 
 \subsection{Main Results}
 
 \begin{table*}[t]
-\caption{Confirmatory matched-budget endpoints. Lower target NLL, protected
+\caption{Planned confirmatory matched-budget endpoints. Lower target NLL, protected
 regression, and cost are better; higher throughput is better. Dashes are
 intentional: no measurements had been run when this draft was written.}
 \label{tab:main}
@@ -631,9 +643,11 @@ The method may spend more compute scoring and gating than it saves in training.
 Its pack heuristic is neither optimal nor approximation-guaranteed. Frozen
 Adam geometry can rank windows incorrectly, while computing individual
 gradients may dominate runtime. Reference losses are incomplete proxies for
-capabilities and can themselves be gamed; repeated score queries make them
-training data. A gate based on finite fresh samples can miss rare regressions,
-and formal simultaneous coverage may be too conservative to be useful.
+capabilities and can themselves be gamed; the three source slices have limited
+construct validity, and repeated score queries make them training data. A gate
+based on finite fresh samples can miss rare regressions, and formal
+simultaneous coverage may be too conservative to be useful. Repository
+manifests do not enforce OS-level audit-file isolation.
 
 The conditional bound is a standard local smoothness consequence, not a safety
 theorem. It applies only to the measured trainable subspace and one actual
@@ -770,11 +784,20 @@ software self-test and no large real artifact currently passes. Neither lexical
 route is evidence of semantic independence or completed manual review.
 The separate \texttt{experiments/sft\_reference\_contract.json} fixes the
 capability map and domain-separated cluster-hash split. The process-stage
-validator reproduces every cluster identifier, assignment digest, bucket, and
-partition from retained record identifiers and the reviewed semantic-audit
-hash. Its generated self-test moves one cluster to a wrong partition,
-duplicates one cluster, and stales the contract binding; all three must be
-rejected. The self-test contains identifiers only and is not empirical
+validator loads the hash-bound semantic-audit artifact, requires every retained
+candidate record exactly once, checks source/configuration/role provenance,
+reproduces hash-sorted cluster ranks and largest-remainder assignments, and
+requires exact equality with partition JSONL. Its generated self-test rejects
+a wrong partition, duplicate cluster, stale contract, omitted retained
+cluster, and generated identifiers relabeled as real; 19/20/21-cluster
+boundary allocations are also fixed. The self-test contains identifiers only
+and is not empirical evidence.
+The shared acquisition-to-retention validator now recomputes row identifiers,
+raw and projected-content hashes, canonical duplicate representatives, and
+every retained/suppressed/quarantined disposition from acquisition bytes.
+Real execution nevertheless remains blocked on reviewed multi-field overlap
+schemas, train-ledger-to-endpoint aggregation, and a site-local sealed-resource
+access attestation. Declarative stage checks do not count as execution
 evidence.
 With \texttt{--execute --synthetic-audit --commands
 experiments/synthetic\_commands.json}, a
