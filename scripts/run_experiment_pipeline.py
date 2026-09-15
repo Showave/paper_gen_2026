@@ -23,6 +23,20 @@ from run_content_gates import (
     GateError as ContentGateError,
     verify_readiness_ledger,
 )
+from validate_sft_reference_contract import (
+    ContractError as SFTReferenceContractError,
+    validate_contract as validate_sft_reference_contract,
+    validate_manifest as validate_sft_split_manifest,
+)
+from aggregate_rl_estimator import (
+    AggregationError as RLEstimatorAggregationError,
+    analyze_rows as analyze_rl_estimator_rows,
+    validate_summary as validate_rl_estimator_summary,
+)
+from validate_eval_simulation_design import (
+    DesignError as EvalSimulationDesignError,
+    validate_design as validate_eval_simulation_design,
+)
 
 
 REQUIRED_STAGES = ("acquire", "process", "build", "train", "evaluate")
@@ -204,6 +218,30 @@ def validate_preregistration_section(
         fail(f"{paper} preregistration needs five unique integer seeds")
 
     if paper == "sft":
+        reference = nested(section, "reference_contract")
+        if (
+            not isinstance(reference, dict)
+            or reference.get("required_status") != "pass"
+            or reference.get("required_manifest_artifact")
+            != "process/splits_manifest.json"
+        ):
+            fail("SFT preregistration must bind the reference/split contract")
+        for kind in ("specification", "validator"):
+            declared_path = Path(str(reference.get(f"{kind}_path", "")))
+            if (
+                not declared_path.parts
+                or declared_path.is_absolute()
+                or ".." in declared_path.parts
+                or digest_file(repo / declared_path)
+                != reference.get(f"{kind}_sha256")
+            ):
+                fail(f"SFT reference-contract {kind} hash does not match")
+        try:
+            validate_sft_reference_contract(
+                load_json(repo / reference["specification_path"]), registry
+            )
+        except SFTReferenceContractError as exc:
+            fail(f"invalid SFT reference contract: {exc}")
         window = nested(section, "optimizer_window")
         if window["physical_packs_per_update"] != window["microbatches_per_update"]:
             fail("SFT packs and microbatches per update must match")
@@ -254,6 +292,24 @@ def validate_preregistration_section(
             fail("SFT total gate draws do not reproduce")
     elif paper == "rl":
         audit = nested(section, "estimator_audit")
+        artifact_contract = audit.get("artifact_contract")
+        if not isinstance(artifact_contract, dict):
+            fail("RL estimator audit must bind its ledger aggregator")
+        aggregator_path = Path(str(artifact_contract.get("aggregator_path", "")))
+        if (
+            not aggregator_path.parts
+            or aggregator_path.is_absolute()
+            or ".." in aggregator_path.parts
+            or digest_file(repo / aggregator_path)
+            != artifact_contract.get("aggregator_sha256")
+            or artifact_contract.get("current_candidate_term")
+            != "A=(h-b)s+alpha*w*(U-h)s"
+            or artifact_contract.get("stale_candidate_term") != "B=w*(U-h)s"
+            or artifact_contract.get("reference_term") != "target=U*s"
+            or artifact_contract.get("candidate_estimate")
+            != "mean(A_current)+(1-alpha)*mean(B_stale)"
+        ):
+            fail("RL estimator artifact contract or aggregator hash does not match")
         alphas = audit["alpha_grid"]
         if not isinstance(alphas, list) or not alphas or not all(
             isinstance(alpha, (int, float)) and 0 < alpha <= 1 for alpha in alphas
@@ -360,6 +416,31 @@ def validate_preregistration_section(
             fail("evaluation pinned LiveBench coding frame contains 128 roots")
         if nested(section, "working_posterior").get("common_monte_carlo_draws", 0) <= 0:
             fail("evaluation EVI needs positive frozen common Monte Carlo draws")
+        screening = nested(section, "simulation.screening_design")
+        for kind in ("", "validator_"):
+            path_field = f"{kind}path"
+            hash_field = f"{kind}sha256"
+            declared_path = Path(str(screening.get(path_field, "")))
+            if (
+                not declared_path.parts
+                or declared_path.is_absolute()
+                or ".." in declared_path.parts
+                or digest_file(repo / declared_path) != screening.get(hash_field)
+            ):
+                fail(f"evaluation simulation {path_field} hash does not match")
+        try:
+            design_summary = validate_eval_simulation_design(
+                load_json(repo / screening["path"]), preregistration
+            )
+        except EvalSimulationDesignError as exc:
+            fail(f"invalid evaluation simulation design: {exc}")
+        if (
+            design_summary["fractional_rows"] != screening.get("fractional_rows")
+            or design_summary["conditions"] != screening.get("conditions")
+            or design_summary["main_to_two_factor_aliases"]
+            != screening.get("main_to_two_factor_aliases")
+        ):
+            fail("evaluation simulation design summary does not reproduce")
 
 
 def require_manual_source_clearance(
@@ -860,6 +941,26 @@ def validate_real_stage(
                 )
             )
             if stage_name == "process":
+                if paper == "sft":
+                    reference_path = (
+                        Path(__file__).resolve().parents[1]
+                        / nested(section, "reference_contract.specification_path")
+                    )
+                    try:
+                        reference_summary = validate_sft_split_manifest(
+                            load_json(work_dir / "process" / "splits_manifest.json"),
+                            load_json(reference_path),
+                            current_registry,
+                        )
+                    except SFTReferenceContractError as exc:
+                        fail(f"SFT reference/split validation failed: {exc}")
+                    content_validation.update(
+                        {
+                            "reference_contract_status": "pass",
+                            "reference_split_clusters": reference_summary["clusters"],
+                            "reference_split_records": reference_summary["records"],
+                        }
+                    )
                 return content_validation
 
     if paper == "sft" and stage_name == "evaluate":
@@ -1065,6 +1166,7 @@ def validate_real_stage(
             role = row.get("estimator_role")
             failed = row.get("infrastructure_failure")
             source = row.get("source_component")
+            allocated_cost = row.get("allocated_accelerator_seconds")
             if (
                 not isinstance(attempt_id, str)
                 or attempt_id in attempt_ids
@@ -1072,6 +1174,9 @@ def validate_real_stage(
                 or role not in {"candidate", "r1", "r2"}
                 or not isinstance(failed, bool)
                 or source not in {"current", "stale"}
+                or not isinstance(allocated_cost, (int, float))
+                or not math.isfinite(allocated_cost)
+                or allocated_cost < 0
             ):
                 fail("RL trajectory ledger has an invalid or duplicate attempt")
             attempt_ids.add(attempt_id)
@@ -1103,11 +1208,21 @@ def validate_real_stage(
                 continue
             trajectory_id = row.get("trajectory_id")
             projected = row.get("projected_gradient")
+            expected_term = (
+                "target=U*s"
+                if role in {"r1", "r2"}
+                else (
+                    "A=(h-b)s+alpha*w*(U-h)s"
+                    if source == "current"
+                    else "B=w*(U-h)s"
+                )
+            )
             if (
                 not isinstance(trajectory_id, str)
                 or trajectory_id in trajectory_ids
                 or row.get("use_count") != 1
                 or row.get("scored_outcome") is not True
+                or row.get("projected_term_semantics") != expected_term
                 or not isinstance(projected, list)
                 or len(projected) != dimension
                 or not all(
@@ -1178,6 +1293,21 @@ def validate_real_stage(
         selected_alpha = train_validation.get("selected_alpha")
         selected_allocation_id = train_validation.get("selected_allocation_id")
         audit = nested(section, "estimator_audit")
+        trajectory_ledger_path = work_dir / "train" / "trajectory_ledger.jsonl"
+        try:
+            recomputed = analyze_rl_estimator_rows(
+                load_jsonl(trajectory_ledger_path), section
+            )
+            aggregation_validation = validate_rl_estimator_summary(
+                summary,
+                recomputed,
+                digest_file(trajectory_ledger_path),
+                section,
+            )
+        except RLEstimatorAggregationError as exc:
+            fail(f"RL estimator aggregation failed: {exc}")
+        if recomputed["aggregation_status"] == "blocked_infrastructure_failure":
+            return {**content_validation, **aggregation_validation}
         projection_specification_sha256 = canonical_digest(
             {
                 "dimension": audit["projection_dimension"],
@@ -1260,7 +1390,11 @@ def validate_real_stage(
             fail("RL selected cell is not the frozen MSE-times-cost argmin")
         if failures is None or summary.get("h1_eligible") != (failures == 0):
             fail("RL H1 eligibility must be false after any infrastructure failure")
-        return {**content_validation, "h1_eligible": failures == 0}
+        return {
+            **content_validation,
+            **aggregation_validation,
+            "h1_eligible": failures == 0,
+        }
 
     return content_validation or {"declared_checks_require_site_validator": True}
 

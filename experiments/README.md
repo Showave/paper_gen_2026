@@ -196,6 +196,54 @@ difference-in-differences, and forms simultaneous max-$t$ intervals by
 resampling complete seed blocks. Fixture endpoints cannot be consumed in
 `real` mode.
 
+## Paper-specific design contracts
+
+The SFT capability and split contract is independently auditable:
+
+```bash
+python3 scripts/validate_sft_reference_contract.py --self-test
+python3 scripts/validate_sft_reference_contract.py \
+  --manifest artifacts/sft-real/process/splits_manifest.json
+```
+
+`experiments/sft_reference_contract.json` fixes the general-instruction,
+mathematics, and code slices and the target/protected map for both settings.
+The process manifest binds a reviewed semantic-cluster audit and lists every
+cluster's member record IDs. The validator recomputes its domain-separated
+cluster UID, assignment digest, digest-mass bucket, and
+candidate/score/gate/audit partition. It blocks empty required partitions and
+never moves boundaries to force exact counts.
+
+The RL estimator audit has an artifact-level aggregator:
+
+```bash
+python3 scripts/aggregate_rl_estimator.py --self-test
+python3 scripts/aggregate_rl_estimator.py \
+  --ledger artifacts/rl-real/train/trajectory_ledger.jsonl \
+  --summary artifacts/rl-real/evaluate/summary.json
+```
+
+Current candidate rows store projected
+`A=(h-b)s+alpha*w*(U-h)s`, stale rows store `B=w*(U-h)s`, and reference rows
+store `target=U*s`. Every attempted row retains allocated accelerator-seconds.
+The aggregator reconstructs the stratified estimate, cross-reference MSE,
+mean complete-replication cost, selection argmin, and untouched-confirmation
+result from the ledger hash. Any infrastructure failure blocks H1 aggregation;
+it cannot yield a success-conditioned MSE.
+
+The evaluation simulation layout is executable as a design audit:
+
+```bash
+python3 scripts/validate_eval_simulation_design.py --self-test
+```
+
+`experiments/eval_simulation_design.json` defines a 16-row fraction for eight
+stressors, center boundary checks, and local alternatives across three
+working-model regimes: 189 conditions total. The validator checks balance,
+main-effect orthogonality, absence of main--two-factor aliases, condition
+uniqueness, and deterministic seeds. Executable DGP, missingness, acquisition,
+and resource/restart implementations remain blocked and unfrozen.
+
 ## Reproducible design audits
 
 The repository includes deterministic, standard-library-only commands that

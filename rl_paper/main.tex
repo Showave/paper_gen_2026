@@ -312,6 +312,13 @@ MSE times measured unit cost, then freezes it for confirmation. Nuisance fitting
 $\alpha$ selection, and confirmation use three disjoint prompt partitions; the
 projection seed, dimension, reference sample, and confirmation replications
 are frozen before selection.
+At the artifact boundary, each successful current row stores projected $A$,
+each stale row stores projected $B$, and each reference row stores projected
+$U_\lambda s$. The aggregator must reconstruct
+$\overline A+(1-\alpha)\overline B$; a generic field called ``gradient'' is
+insufficient. Every attempted row also retains allocated accelerator-seconds,
+including failed and reference draws. Any infrastructure failure blocks H1
+aggregation rather than allowing a success-conditioned MSE.
 Before these partitions are formed, every prompt is tied to a pinned source
 revision, export-byte hash, stable upstream identifier, raw-row hash, and
 versioned normalized-content hash. The downstream partitioner assigns every
@@ -493,6 +500,11 @@ MSE by
 Its expectation is projected MSE although one realization may be negative.
 Intervals independently resample candidate replications, $R_1$ trajectories,
 and $R_2$ trajectories, retaining their shared-reference dependence.
+Point estimates are independently recomputed from the hash-bound trajectory
+ledger: candidate stratum means, MSE, mean complete-replication cost, the
+selection argmin, and the one untouched confirmation cell must all reproduce.
+Reference-generation cost is reported separately rather than disappearing as a
+shared constant.
 Selection and confirmation use separate reference pairs under their respective
 laws. Nuisance and proposal
 models are trained on disjoint data. Repeated subsamples compare on-policy
@@ -754,6 +766,14 @@ for omitted-prompt-ratio and weight-clipping errors. Gate 0 fails closed if any
 identity differs by more than $10^{-12}$. This is an equation and software
 audit, not model-training evidence; its outputs cannot populate
 \cref{tab:main}.
+\texttt{scripts/aggregate\_rl\_estimator.py} provides a second, artifact-level
+audit. Its generated two-dimensional ledger has hand-computed current, stale,
+and independent reference terms; the same code used for a real ledger must
+recover both selection-cell MSEs, their measured-cost argmin, and the
+confirmation MSE. Tampered MSE, an incomplete source stratum, and an
+infrastructure failure are injected and must respectively fail validation or
+block H1. The fixture is marked non-empirical and cannot populate any result
+cell.
 
 \subsection{Optional Prefix Gate}
 Prefix continuation is excluded from the core experiments. A later extension

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "frozen_at_utc": "2026-09-08T00:00:19Z",
+  "frozen_at_utc": "2026-09-15T00:02:57Z",
   "evidence_status": "Preregistered pilot configuration only; no experiment or human study has been run.",
   "source_registry": "experiments/public_source_registry.json",
   "sft": {
@@ -32,6 +32,15 @@
         "preregistered-quality-filter"
       ],
       "interpretation": "A passing deterministic lexical and pattern-based preflight is required but does not establish semantic independence, privacy clearance, or manual approval."
+    },
+    "reference_contract": {
+      "specification_path": "experiments/sft_reference_contract.json",
+      "specification_sha256": "5187f81717a281d913900380f3b97ebfc648079a4ab2d6e351f4f80ada52c4b7",
+      "validator_path": "scripts/validate_sft_reference_contract.py",
+      "validator_sha256": "2a5da171f32dc6fa5ca7a6d10b6aecbb0ff91c22ce5df0f5c76b88b2f5a82bc9",
+      "required_manifest_artifact": "process/splits_manifest.json",
+      "required_status": "pass",
+      "interpretation": "The map fixes one target and two protected operational capability slices per setting. Cluster-hash assignment prevents outcome-dependent split movement but does not establish construct validity or semantic independence."
     },
     "development_model_keys": [
       "qwen25-instruct-1p5b",
@@ -87,7 +96,7 @@
       "code_target": "commitpackft-sft",
       "general_protected": "smoltalk-sft",
       "sealed_code_benchmark": "bigcodebench-eval",
-      "split_rule": "Within each candidate source, sort SHA-256(source revision || stable row id): first 80% candidate, next 5% score, next 10% gate, final 5% audit. Sealed benchmarks never enter this split.",
+      "split_rule": "Use experiments/sft_reference_contract.json: hash each complete reviewed semantic-near-duplicate cluster with a domain-separated canonical tuple of source key, source revision, semantic-audit hash, and sorted member record IDs; assign digest-mass buckets [0,80), [80,85), [85,95), and [95,100) to candidate, score, gate, and audit. Empty required partitions block rather than moving a boundary. Sealed benchmarks never enter this split.",
       "clipping_timing": "Compute response-token-average NLL per example, then clip for gate use only.",
       "source_coverage_floor": 0.1
     },
@@ -295,7 +304,19 @@
       "mse_bootstrap_seed": 2026090392,
       "selection_rule": "At a fixed 64-trajectory and verifier-call budget, minimize projected MSE times measured accelerator-seconds; ties choose larger alpha.",
       "allocation_restriction_mode": "alpha_equals_sampling_fraction",
-      "allocation_restriction": "For this exploratory grid only, alpha equals n_current/(n_current+n_stale). This is not required for unbiasedness; confirmation must cross mixture mass with source allocation."
+      "allocation_restriction": "For this exploratory grid only, alpha equals n_current/(n_current+n_stale). This is not required for unbiasedness; confirmation must cross mixture mass with source allocation.",
+      "artifact_contract": {
+        "aggregator_path": "scripts/aggregate_rl_estimator.py",
+        "aggregator_sha256": "b9d3f13f0a3ee69696b0c95a927b0fd2dbc6696d8d9b54647717c6ad183b2019",
+        "current_candidate_term": "A=(h-b)s+alpha*w*(U-h)s",
+        "stale_candidate_term": "B=w*(U-h)s",
+        "reference_term": "target=U*s",
+        "candidate_estimate": "mean(A_current)+(1-alpha)*mean(B_stale)",
+        "cost_unit": "allocated accelerator-seconds recorded on every attempted trajectory; candidate-cell cost is the mean complete replication sum and reference cost is retained separately",
+        "failure_rule": "Any infrastructure failure blocks estimator aggregation and H1 eligibility; no success-conditioned MSE or selected alpha is reported.",
+        "summary_binding": "evaluate/summary.json records the exact train/trajectory_ledger.jsonl SHA-256; point MSE, cell cost, selection argmin, and untouched confirmation are recomputed from that ledger.",
+        "fixture_status": "The generated self-test uses hand-computed two-dimensional vectors, reports empirical_evidence=false, and cannot populate paper result cells."
+      }
     },
     "proposal": {
       "support_floor_epsilon": 0.2,
@@ -567,8 +588,18 @@
       ]
     },
     "simulation": {
-      "execution_status": "unfrozen_blocker",
-      "required_before_execution": "Executable DGP equations, factor crossing or fractional design, missingness laws, common-random-number schedule, and faithful Active Testing/CVE/PPAT/Neyman/EVI implementations must be hashed in a replacement preregistration.",
+      "execution_status": "unfrozen_dgp_blocker",
+      "required_before_execution": "The fractional screening layout is frozen, but executable DGP equations, missingness laws, resource/restart plan, and faithful Active Testing/CVE/PPAT/Neyman/EVI implementations must be hashed in a replacement preregistration.",
+      "screening_design": {
+        "path": "experiments/eval_simulation_design.json",
+        "sha256": "1352a484cc90ef0ccf08b6bfbbe7079f1d8909b0dbb70032f51d4d2d057dd0fc",
+        "validator_path": "scripts/validate_eval_simulation_design.py",
+        "validator_sha256": "d14f1e6a6a0407795fe7d3171e096ba88e690a9c360f2a39706c62c566a3415c",
+        "fractional_rows": 16,
+        "conditions": 189,
+        "main_to_two_factor_aliases": 0,
+        "interpretation": "The 16-row fraction is crossed with decision-boundary effects and three working-model regimes, with center-point local alternatives. It replaces the infeasible full Cartesian crossing; aliased two-factor interactions require targeted follow-up."
+      },
       "trials_per_condition": 2000,
       "seed": 2026090321,
       "coverage_boundary_values": [

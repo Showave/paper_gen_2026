@@ -595,15 +595,26 @@ as independent root items.
 \label{sec:results}
 
 Simulation precedes human collection. We vary $\Delta_F$ at
-$\{-\delta,0,\delta\}$ and local alternatives
-$\delta\pm c/\sqrt T$, tie prevalence, item correlation, judge-family
-correlation, repeated-rater effects, order/length/family effects, outcome-model
-misspecification, rare strata, small propensities, nonresponse, and temporal
-shift. For each condition, 2,000 Monte Carlo trials compare target-random
-human sampling, static independent calibration, Active Testing, control-variate
+$\{-\delta,0,\delta\}$ and local alternatives around both decision boundaries.
+A full Cartesian crossing of all stressors is neither computationally credible
+nor the registered design. Instead, a frozen 16-run two-level fraction varies
+tie prevalence, item and judge-family correlation, repeated-rater variation,
+nonresponse, rare-stratum mass, exploration, and temporal drift. Its eight
+main-effect columns are balanced and orthogonal, with no main effect aliased
+with a two-factor interaction; two-factor interactions remain aliased. We
+cross those rows with three boundary effects and three working-model regimes,
+then add center-condition boundary and local-alternative blocks, for 189
+conditions total.
+
+For each condition, 2,000 Monte Carlo trials compare target-random human
+sampling, static independent calibration, Active Testing, control-variate
 evaluation, PPAT-style residual acquisition, variance-optimal residual
-sampling, pure uncertainty sampling, and EVI. Each acquisition policy is crossed with the same valid
-\cref{eq:estimator}; augmentation is then ablated at fixed policy. Primary
+sampling, pure uncertainty sampling, and EVI. Within a condition and trial,
+policies share the latent frame and complete potential-outcome stream but use
+policy-keyed randomization. Each acquisition policy is crossed with the same
+valid \cref{eq:estimator}; augmentation is then ablated at fixed policy. Exact
+DGP and policy implementations remain hash-blocked, so this frozen layout is
+not evidence that simulations ran. Primary
 metrics are bias, RMSE, 95\% coverage, interval width, false decisive actions,
 equivalence decisions, abstention, realized loss, maximum weight, and ESS,
 with Monte Carlo uncertainty. The simulation separately reports whether
@@ -790,8 +801,17 @@ large real frame can yet pass this route. An exact lexical pass still cannot
 establish semantic independence or approve a pending source review.
 The same section fixes the Qwen, SmolLM, Mistral, and Phi jury revisions,
 posterior prior scales, one-step damped Newton approximation, unit annotation
-cost, nonresponse rule, and planned simulation factor levels. These values specify a
-public pre-pilot; they do not replace a deployment-log sampling design.
+cost, nonresponse rule, and planned simulation factor levels. The separate
+\texttt{experiments/eval\_simulation\_design.json} replaces an infeasible full
+crossing with a deterministic 189-condition fractional manifest. Its validator
+reconstructs all 16 sign rows, rejects main--two-factor aliasing, checks every
+factor level against the preregistration, and derives condition seeds from
+canonical condition hashes. Generated fault injections for an aliased
+generator, stale condition count, and Cartesian-crossing flag must all fail.
+This is a design audit with \texttt{empirical\_evidence=false}; executable
+DGPs, missingness laws, and acquisition-policy implementations remain
+blockers. These values specify a public pre-pilot; they do not replace a
+deployment-log sampling design.
 The prompt-generator and rendered model prompts, variant weights, decoder and
 response-coupling seeds, response artifacts, and executable simulation DGPs
 are still unfrozen. Real response generation or human acquisition is blocked

@@ -57,7 +57,7 @@ make source-audit
 make provenance-audit
 make content-gates-audit
 make external-overlap-audit
-make sft-factorial-audit
+make design-audits
 make protocol-audits
 ```
 
@@ -76,7 +76,11 @@ contract fixture's engine binding, pair-space coverage, shard hashes, and
 failure handling, then independently rejects omitted qualifying pairs with a
 disk-backed exact shared-5-gram join. The factorial audit exercises the
 registered hypervolume, paired difference-in-differences, missing-run, and
-simultaneous max-$t$ aggregation rules without using empirical endpoints.
+simultaneous max-$t$ aggregation rules without using empirical endpoints. The
+remaining design audits reproduce the SFT capability/cluster split contract,
+the RL estimator and cost aggregation from a generated trajectory ledger, and
+the evaluation paper's 189-condition fractional simulation layout. All use
+generated identifiers or vectors and set `empirical_evidence` to false.
 The ignored protocol artifacts are
 synthetic software checks, not paper results. See `experiments/README.md` for
 the five-stage execution contract and the boundary between these audits and

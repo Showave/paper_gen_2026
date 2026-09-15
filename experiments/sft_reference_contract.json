@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "artifact_type": "sft_reference_and_split_contract",
+  "evidence_status": "Preregistered design and software-audit contract only; no model experiment has been run.",
+  "capabilities": [
+    {
+      "capability_id": "general-instruction",
+      "source_key": "smoltalk-sft",
+      "loss": "response-token-normalized negative log likelihood",
+      "score_partition": "score",
+      "gate_partition": "gate",
+      "audit_partition": "audit"
+    },
+    {
+      "capability_id": "mathematics",
+      "source_key": "openr1-math-sft",
+      "loss": "response-token-normalized negative log likelihood",
+      "score_partition": "score",
+      "gate_partition": "gate",
+      "audit_partition": "audit"
+    },
+    {
+      "capability_id": "code",
+      "source_key": "commitpackft-sft",
+      "loss": "response-token-normalized negative log likelihood",
+      "score_partition": "score",
+      "gate_partition": "gate",
+      "audit_partition": "audit"
+    }
+  ],
+  "target_settings": [
+    {
+      "setting_id": "math",
+      "target_capability": "mathematics",
+      "protected_capabilities": [
+        "general-instruction",
+        "code"
+      ],
+      "secondary_benchmark": {
+        "source_key": "bigcodebench-eval",
+        "interpretation": "protected code diagnostic only; never a differentiable gate loss"
+      }
+    },
+    {
+      "setting_id": "code",
+      "target_capability": "code",
+      "protected_capabilities": [
+        "general-instruction",
+        "mathematics"
+      ],
+      "secondary_benchmark": {
+        "source_key": "bigcodebench-eval",
+        "interpretation": "target code diagnostic only; never a differentiable gate loss"
+      }
+    }
+  ],
+  "split_assignment": {
+    "unit": "reviewed semantic-near-duplicate cluster",
+    "cluster_uid": "sha256(canonical-json({domain, semantic_audit_sha256, sorted_member_record_ids}))",
+    "assignment_digest": "sha256(canonical-json({domain, source_key, source_revision, cluster_uid}))",
+    "bucket_formula": "floor(100 * uint256(assignment_digest) / 2^256)",
+    "tie_breaking": "not applicable because each cluster is mapped independently",
+    "partitions": [
+      {
+        "name": "candidate",
+        "bucket_start_inclusive": 0,
+        "bucket_end_exclusive": 80
+      },
+      {
+        "name": "score",
+        "bucket_start_inclusive": 80,
+        "bucket_end_exclusive": 85
+      },
+      {
+        "name": "gate",
+        "bucket_start_inclusive": 85,
+        "bucket_end_exclusive": 95
+      },
+      {
+        "name": "audit",
+        "bucket_start_inclusive": 95,
+        "bucket_end_exclusive": 100
+      }
+    ],
+    "sealed_benchmark_rule": "Registered benchmark roles are never passed through this split.",
+    "small_partition_rule": "A source with an empty required partition blocks the pilot; boundaries are never moved after observing content or labels.",
+    "cross_source_cluster_rule": "A semantic cluster crossing source or protected-role boundaries is excluded in full before assignment."
+  },
+  "gate_semantics": {
+    "protected_slice_count_per_setting": 2,
+    "score_use": "All target and protected planning losses use only their score partitions.",
+    "gate_use": "The post-selection gate uses one fresh with-replacement block from each protected capability's gate partition.",
+    "audit_use": "Target and protected endpoint losses use each capability's untouched audit partition.",
+    "clipping": "Gate example-average NLL is clipped to the preregistered bound only after the capability and partition are selected; audit NLL is not clipped."
+  },
+  "limitations": [
+    "The capability labels are operational dataset slices, not exhaustive constructs or safety guarantees.",
+    "Hash assignment prevents outcome-dependent split movement but does not establish semantic independence; that depends on the separately reviewed clustering audit.",
+    "The split proportions are digest-mass intervals, not forced exact row-count percentages."
+  ]
+}

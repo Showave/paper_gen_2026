@@ -318,6 +318,26 @@ levels. The scheduling sets are explicitly treated as training resources:
 repeatedly querying $V^{\mathrm{score}}$ can overfit it, which is why no final
 claim uses that set.
 
+\paragraph{Frozen operational capability map.}
+The pilot defines three dataset slices: general instruction, mathematics, and
+code. In the mathematics setting, mathematics is the target and general
+instruction plus code are the two protected slices; in the code setting, code
+is the target and general instruction plus mathematics are protected. Every
+slice has its own score, gate, and untouched audit partition with the same loss
+definition. BigCodeBench is only a secondary code diagnostic and never a
+differentiable gate loss. These labels are operational dataset constructs, not
+complete capabilities.
+
+Split assignment is frozen before losses are computed. Each complete reviewed
+semantic-near-duplicate cluster is hashed with the source key, pinned source
+revision, semantic-audit hash, and sorted member record identifiers.
+Digest-mass intervals assign clusters to candidate/score/gate/audit with
+bucket widths $0.80/0.05/0.10/0.05$; these are not forced finite-sample
+row proportions. An empty required source partition blocks the pilot; no
+boundary moves after labels or content are inspected. This gives
+reproducible cluster-preserving assignment, not evidence that the reviewed
+clusters capture every semantic overlap.
+
 \subsection{Implementation}
 
 For each proposed plan, \cref{eq:sketch-score} yields an estimated score. We
@@ -748,6 +768,14 @@ depends on reproducing the complete qualifying-pair set. The committed engine
 hashes remain null blockers, so this contract is executable only as a generated
 software self-test and no large real artifact currently passes. Neither lexical
 route is evidence of semantic independence or completed manual review.
+The separate \texttt{experiments/sft\_reference\_contract.json} fixes the
+capability map and domain-separated cluster-hash split. The process-stage
+validator reproduces every cluster identifier, assignment digest, bucket, and
+partition from retained record identifiers and the reviewed semantic-audit
+hash. Its generated self-test moves one cluster to a wrong partition,
+duplicates one cluster, and stales the contract binding; all three must be
+rejected. The self-test contains identifiers only and is not empirical
+evidence.
 With \texttt{--execute --synthetic-audit --commands
 experiments/synthetic\_commands.json}, a
 CPU-only audit exactly enumerates packings for two length-10 packs under a
