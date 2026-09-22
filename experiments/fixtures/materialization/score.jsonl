@@ -1,2 +1,2 @@
-{"dedup_text":"solve   X + 1 = 2.","id":"score-001","license":"Apache-2.0","messages":[{"content":"solve   X + 1 = 2.","role":"user"},{"content":"x = 1","role":"assistant"}]}
-{"dedup_text":"Write a concise summary.","id":"score-002","license":"Apache-2.0","messages":[{"content":"Write a concise summary.","role":"user"},{"content":"The proposal reduces duplicated work.","role":"assistant"}]}
+{"dedup_text":"solve   X + 1 = 2.","id":"score-001","license":"Apache-2.0","messages":[{"content":"solve   X + 1 = 2.","role":"user"},{"content":"x = 1","role":"assistant"}],"prompt_text":"solve   X + 1 = 2.","response_text":"x = 1"}
+{"dedup_text":"Write a concise summary.","id":"score-002","license":"Apache-2.0","messages":[{"content":"Write a concise summary.","role":"user"},{"content":"The proposal reduces duplicated work.","role":"assistant"}],"prompt_text":"Write a concise summary.","response_text":"The proposal reduces duplicated work."}

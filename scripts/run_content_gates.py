@@ -3,8 +3,11 @@
 
 The gate consumes the hash-verified output of ``materialize_public_data.py``.
 It never prints matched text.  Findings contain only detector names, roles,
-record identifiers, and similarity scores.  The lexical screen is deliberately
-described as heuristic; it cannot certify semantic independence.
+record identifiers, canonical slots, and similarity scores.  Every reviewed
+content slot remains a separate lexical comparison segment, so unlike field
+classes are checked without dilution from record-level concatenation.  The
+lexical screen is deliberately described as heuristic; it cannot certify
+semantic independence.
 """
 
 from __future__ import annotations
@@ -27,6 +30,13 @@ from validate_external_overlap_audit import (
     expected_binding as external_audit_binding,
     validate_contract as validate_external_audit_contract,
     validate_external_overlap_bundle,
+)
+from validate_overlap_projection_contract import (
+    DEFAULT_CONTRACT as DEFAULT_OVERLAP_PROJECTION_CONTRACT,
+    DEFAULT_PREREGISTRATION as DEFAULT_PILOT_PREREGISTRATION,
+    DEFAULT_REGISTRY as DEFAULT_PUBLIC_SOURCE_REGISTRY,
+    ProjectionContractError,
+    validate_attestation as validate_overlap_projection_attestation,
 )
 
 
@@ -216,6 +226,20 @@ def validate_specification(value: Any, path: Path) -> dict[str, Any]:
         "character_5gram_jaccard"
     ):
         fail(f"{path}: unsupported similarity method")
+    if (
+        similarity.get("comparison_unit") != "canonical_field_segment"
+        or similarity.get("record_candidate_signature")
+        != (
+            "union of per-segment character 5-grams; exhaustive mode evaluates "
+            "every cross-record segment pair"
+        )
+        or similarity.get("pair_identity")
+        != (
+            "sha256(canonical-json({left_record_id,left_slot,right_record_id,"
+            "right_slot}))"
+        )
+    ):
+        fail(f"{path}: multi-field similarity unit or identity is not frozen")
     if similarity.get("minimum_normalized_characters", 0) < 5:
         fail(f"{path}: minimum text length must be at least five")
     for field in (
@@ -333,7 +357,7 @@ def validate_specification(value: Any, path: Path) -> dict[str, Any]:
 class ScanRow:
     record_id: str
     role: str
-    similarity_text: str
+    similarity_segments: tuple[tuple[str, str, str], ...]
     sensitive_text: str
 
 
@@ -375,6 +399,9 @@ def load_materialized_rows(
         or content.get("schema_version") != 1
         or content.get("artifact_type") != "normalized_deduplication_manifest"
         or acquisition.get("paper") != content.get("paper")
+        or not isinstance(acquisition.get("synthetic_fixture"), bool)
+        or acquisition.get("synthetic_fixture")
+        is not content.get("synthetic_fixture")
     ):
         fail("materialization manifests are missing or inconsistent")
     provenance_path = confined_path(
@@ -409,6 +436,9 @@ def load_materialized_rows(
         if digest_file(artifact_path) != content.get(hash_field):
             fail(f"processing artifact hash mismatch: {artifact_path}")
 
+    overlap_contract = read_json(DEFAULT_OVERLAP_PROJECTION_CONTRACT)
+    source_registry = read_json(DEFAULT_PUBLIC_SOURCE_REGISTRY)
+    pilot_preregistration = read_json(DEFAULT_PILOT_PREREGISTRATION)
     projections: dict[tuple[str, str, str, str], list[dict[str, str]]] = {}
     for input_file in acquisition.get("inputs", []):
         if not isinstance(input_file, dict):
@@ -428,10 +458,40 @@ def load_materialized_rows(
             )
         ):
             fail("acquisition manifest does not retain the content projection")
+        try:
+            attestation = input_file.get("overlap_projection_attestation")
+            validate_overlap_projection_attestation(
+                attestation,
+                projection,
+                overlap_contract,
+                source_registry,
+                pilot_preregistration,
+            )
+            expected_execution_class = (
+                "synthetic-audit"
+                if acquisition.get("synthetic_fixture") is True
+                else "real"
+            )
+            if attestation.get("execution_class") != expected_execution_class:
+                fail(
+                    "acquisition projection attestation execution class "
+                    "does not match the materialization"
+                )
+            if attestation.get("exporter") != input_file.get("exporter"):
+                fail("acquisition projection attestation binds another exporter")
+        except ProjectionContractError as exc:
+            fail(f"acquisition overlap projection does not verify: {exc}")
+        field_class_by_slot = {
+            field["slot"]: field["field_class"]
+            for field in attestation["fields"]
+        }
         key = tuple(input_file[field] for field in key_fields)
         if key in projections:
             fail(f"duplicate acquisition projection for {key}")
-        projections[key] = projection
+        projections[key] = [
+            {**item, "field_class": field_class_by_slot[item["slot"]]}
+            for item in projection
+        ]
 
     rows: list[ScanRow] = []
     record_ids: set[str] = set()
@@ -507,8 +567,13 @@ def load_materialized_rows(
                 ScanRow(
                     record_id=record_id,
                     role=role_file["role"],
-                    similarity_text="\n".join(
-                        selected[slot] for slot in sorted(selected)
+                    similarity_segments=tuple(
+                        (
+                            item["slot"],
+                            item["field_class"],
+                            selected[item["slot"]],
+                        )
+                        for item in sorted(projection, key=lambda item: item["slot"])
                     ),
                     sensitive_text="\n".join(textual_leaves(raw_row)),
                 )
@@ -641,15 +706,39 @@ def near_duplicate_findings(
     similarity = specification["similarity"]
     minimum = similarity["minimum_normalized_characters"]
     too_short = [
-        {"record_id": row.record_id, "role": row.role}
+        {
+            "record_id": row.record_id,
+            "role": row.role,
+            "slot": slot,
+            "field_class": field_class,
+        }
         for row in rows
-        if len(normalize_text(row.similarity_text)) < minimum
+        for slot, field_class, text in row.similarity_segments
+        if len(normalize_text(text)) < minimum
+    ]
+    segment_ngrams = [
+        {
+            slot: (
+                field_class,
+                (
+                    character_ngrams(text)
+                    if len(normalize_text(text)) >= minimum
+                    else frozenset()
+                ),
+            )
+            for slot, field_class, text in row.similarity_segments
+        }
+        for row in rows
     ]
     ngrams = [
-        character_ngrams(row.similarity_text)
-        if len(normalize_text(row.similarity_text)) >= minimum
-        else frozenset()
-        for row in rows
+        (
+            frozenset().union(
+                *(field_ngrams for _, field_ngrams in by_slot.values())
+            )
+            if by_slot
+            else frozenset()
+        )
+        for by_slot in segment_ngrams
     ]
     pairs, method, pair_count = candidate_pairs(
         ngrams, similarity["candidate_generation"]
@@ -662,44 +751,99 @@ def near_duplicate_findings(
         right = rows[right_index]
         if not ngrams[left_index] or not ngrams[right_index]:
             continue
-        if left.role == right.role:
-            finding_type = "within_role_near_duplicate"
-            threshold = similarity["within_role_threshold"]
-        elif (
-            left.role in training
-            and right.role in protected
-            or right.role in training
-            and left.role in protected
-        ):
-            finding_type = "training_protected_near_duplicate"
-            threshold = similarity["training_protected_threshold"]
-        else:
-            finding_type = "cross_role_near_duplicate"
-            threshold = similarity["cross_role_threshold"]
-        length_upper_bound = min(
-            len(ngrams[left_index]), len(ngrams[right_index])
-        ) / max(len(ngrams[left_index]), len(ngrams[right_index]))
-        if length_upper_bound < threshold:
-            continue
-        similarity_value = jaccard(ngrams[left_index], ngrams[right_index])
-        if similarity_value < threshold:
-            continue
-        ordered = sorted(
-            ((left.record_id, left.role), (right.record_id, right.role))
-        )
-        findings.append(
-            {
-                "finding_type": finding_type,
-                "pair_id": digest_value([ordered[0][0], ordered[1][0]]),
-                "left_record_id": ordered[0][0],
-                "left_role": ordered[0][1],
-                "right_record_id": ordered[1][0],
-                "right_role": ordered[1][1],
-                "character_5gram_jaccard": round(similarity_value, 12),
-                "threshold": threshold,
-            }
-        )
-    return findings, too_short, method, pair_count
+        for left_slot, (
+            left_field_class,
+            left_ngrams,
+        ) in segment_ngrams[left_index].items():
+            for right_slot, (
+                right_field_class,
+                right_ngrams,
+            ) in segment_ngrams[right_index].items():
+                if not left_ngrams or not right_ngrams:
+                    continue
+                field_classes = {left_field_class, right_field_class}
+                if (
+                    any(name.startswith("protected-") for name in field_classes)
+                    and any(
+                        not name.startswith("protected-")
+                        for name in field_classes
+                    )
+                ):
+                    finding_type = "training_protected_near_duplicate"
+                    threshold = similarity["training_protected_threshold"]
+                elif left.role == right.role:
+                    finding_type = "within_role_near_duplicate"
+                    threshold = similarity["within_role_threshold"]
+                elif (
+                    left.role in training
+                    and right.role in protected
+                    or right.role in training
+                    and left.role in protected
+                ):
+                    finding_type = "training_protected_near_duplicate"
+                    threshold = similarity["training_protected_threshold"]
+                else:
+                    finding_type = "cross_role_near_duplicate"
+                    threshold = similarity["cross_role_threshold"]
+                length_upper_bound = min(
+                    len(left_ngrams), len(right_ngrams)
+                ) / max(len(left_ngrams), len(right_ngrams))
+                if length_upper_bound < threshold:
+                    continue
+                similarity_value = jaccard(left_ngrams, right_ngrams)
+                if similarity_value < threshold:
+                    continue
+                ordered = sorted(
+                    (
+                        (left.record_id, left.role, left_slot),
+                        (right.record_id, right.role, right_slot),
+                    )
+                )
+                findings.append(
+                    {
+                        "finding_type": finding_type,
+                        "pair_id": digest_value(
+                            {
+                                "left_record_id": ordered[0][0],
+                                "left_slot": ordered[0][2],
+                                "right_record_id": ordered[1][0],
+                                "right_slot": ordered[1][2],
+                            }
+                        ),
+                        "left_record_id": ordered[0][0],
+                        "left_role": ordered[0][1],
+                        "left_slot": ordered[0][2],
+                        "left_field_class": (
+                            left_field_class
+                            if ordered[0][0] == left.record_id
+                            else right_field_class
+                        ),
+                        "right_record_id": ordered[1][0],
+                        "right_role": ordered[1][1],
+                        "right_slot": ordered[1][2],
+                        "right_field_class": (
+                            right_field_class
+                            if ordered[1][0] == right.record_id
+                            else left_field_class
+                        ),
+                        "character_5gram_jaccard": round(similarity_value, 12),
+                        "threshold": threshold,
+                    }
+                )
+    return (
+        sorted(
+            findings,
+            key=lambda finding: (
+                finding["left_record_id"],
+                finding["left_slot"],
+                finding["right_record_id"],
+                finding["right_slot"],
+            ),
+        ),
+        too_short,
+        method,
+        pair_count,
+    )
 
 
 def ledger_status(blocking_failures: list[dict[str, Any]]) -> str:
@@ -738,16 +882,26 @@ def build_ledger(
             "exhaustive_max_rows"
         ]:
             fail("external overlap bundle is forbidden for an exhaustive artifact")
+        if any(len(row.similarity_segments) != 1 for row in rows):
+            fail(
+                "external overlap contract v1 is record-level and cannot clear "
+                "a multi-field artifact; freeze a segment-pair engine first"
+            )
         minimum = specification["similarity"]["minimum_normalized_characters"]
         too_short = [
-            {"record_id": row.record_id, "role": row.role}
+            {
+                "record_id": row.record_id,
+                "role": row.role,
+                "slot": row.similarity_segments[0][0],
+                "field_class": row.similarity_segments[0][1],
+            }
             for row in rows
-            if len(normalize_text(row.similarity_text)) < minimum
+            if len(normalize_text(row.similarity_segments[0][2])) < minimum
         ]
         ngrams_by_record_id = {
             row.record_id: (
-                character_ngrams(row.similarity_text)
-                if len(normalize_text(row.similarity_text)) >= minimum
+                character_ngrams(row.similarity_segments[0][2])
+                if len(normalize_text(row.similarity_segments[0][2])) >= minimum
                 else frozenset()
             )
             for row in rows
@@ -934,9 +1088,18 @@ def run_self_test() -> None:
         read_json(DEFAULT_SPECIFICATION), DEFAULT_SPECIFICATION
     )
     def fixture(
-        record_id: str, role: str, text: str, sensitive_text: str | None = None
+        record_id: str,
+        role: str,
+        text: str,
+        sensitive_text: str | None = None,
+        slot: str = "dedup-text",
     ) -> ScanRow:
-        return ScanRow(record_id, role, text, sensitive_text or text)
+        return ScanRow(
+            record_id,
+            role,
+            ((slot, "model-input", text),),
+            sensitive_text or text,
+        )
 
     prefix = "This deliberately generated fixture sentence checks the scanner"
     rows = [
@@ -1012,10 +1175,97 @@ def run_self_test() -> None:
         or duplicates[0]["finding_type"] != "within_role_near_duplicate"
     ):
         fail("self-test did not detect the generated lexical near-duplicate")
+    cross_field_text = (
+        "A generated protected answer explains a deliberately copied derivation."
+    )
+    cross_field_rows = [
+        ScanRow(
+            "multi-training",
+            "candidate-math",
+            (
+                (
+                    "model-input",
+                    "model-input",
+                    "A distinct generated training prompt.",
+                ),
+                ("training-target", "training-target", cross_field_text),
+            ),
+            "generated training row",
+        ),
+        ScanRow(
+            "multi-protected",
+            "sealed-code-benchmark",
+            (
+                ("protected-input", "protected-input", cross_field_text),
+                (
+                    "protected-target",
+                    "protected-target",
+                    "A distinct generated protected target.",
+                ),
+            ),
+            "generated protected row",
+        ),
+    ]
+    cross_field_findings = near_duplicate_findings(
+        cross_field_rows, specification
+    )[0]
+    if (
+        len(cross_field_findings) != 1
+        or cross_field_findings[0]["finding_type"]
+        != "training_protected_near_duplicate"
+        or {
+            cross_field_findings[0]["left_slot"],
+            cross_field_findings[0]["right_slot"],
+        }
+        != {"training-target", "protected-input"}
+    ):
+        fail("self-test missed a cross-class multi-field overlap")
+    same_role_base = "generated protected overlap alpha beta gamma delta epsilon"
+    same_role_findings = near_duplicate_findings(
+        [
+            ScanRow(
+                "same-role-input",
+                "prompt-train",
+                (("model-input", "model-input", same_role_base),),
+                same_role_base,
+            ),
+            ScanRow(
+                "same-role-target",
+                "prompt-train",
+                (
+                    (
+                        "protected-target",
+                        "protected-target",
+                        same_role_base + " extended suffix",
+                    ),
+                ),
+                same_role_base + " extended suffix",
+            ),
+        ],
+        specification,
+    )[0]
+    if (
+        len(same_role_findings) != 1
+        or same_role_findings[0]["finding_type"]
+        != "training_protected_near_duplicate"
+        or not (
+            specification["similarity"]["training_protected_threshold"]
+            <= same_role_findings[0]["character_5gram_jaccard"]
+            < specification["similarity"]["within_role_threshold"]
+        )
+    ):
+        fail("self-test did not apply field classes before the role threshold")
     _, short_rows, _, _ = near_duplicate_findings(
         [fixture("short", "candidate-general", "tiny")], specification
     )
-    if short_rows != [{"record_id": "short", "role": "candidate-general"}]:
+    if short_rows != [
+        {
+            "record_id": "short",
+            "role": "candidate-general",
+            "slot": "dedup-text",
+            "field_class": "model-input",
+        }
+    ]:
         fail("self-test did not block text below the similarity minimum")
     approximate_rows = [
         fixture(
@@ -1060,7 +1310,7 @@ def run_self_test() -> None:
     ):
         fail("self-test rejected clean generated fixtures")
     print(
-        "validated PII and secret detectors, lexical near-duplicate screening, "
+        "validated PII and secret detectors, field-segment lexical overlap, "
         "and clean-fixture acceptance"
     )
 

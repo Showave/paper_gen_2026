@@ -5,6 +5,9 @@
   "normalization": "unicode-nfkc-casefold-whitespace-v1",
   "similarity": {
     "method": "character_5gram_jaccard",
+    "comparison_unit": "canonical_field_segment",
+    "record_candidate_signature": "union of per-segment character 5-grams; exhaustive mode evaluates every cross-record segment pair",
+    "pair_identity": "sha256(canonical-json({left_record_id,left_slot,right_record_id,right_slot}))",
     "minimum_normalized_characters": 5,
     "within_role_threshold": 0.85,
     "cross_role_threshold": 0.8,
@@ -66,6 +69,7 @@
   "limitations": [
     "Character n-gram similarity is a deterministic lexical heuristic, not a semantic-independence certificate.",
     "MinHash LSH candidate generation above the exhaustive limit can miss qualifying pairs, so it is inconclusive unless a frozen reviewed exact engine supplies a hash-bound, gap-free audit of all n*(n-1)/2 pairs.",
+    "The current external exact-engine contract is record-pair v1 and cannot clear a multi-field artifact; a reviewed segment-pair sharding contract is required before large real exports can pass.",
     "The detectors do not cover multilingual paraphrase, images, audio, or legal and human-subjects review.",
     "A passing ledger cannot approve a pending manual review in the public-source registry."
   ]

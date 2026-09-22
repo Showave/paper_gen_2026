@@ -38,6 +38,10 @@ from validate_eval_simulation_design import (
     validate_condition_manifest as validate_eval_condition_manifest,
     validate_design as validate_eval_simulation_design,
 )
+from validate_overlap_projection_contract import (
+    ProjectionContractError,
+    validate_contract as validate_overlap_projection_contract,
+)
 from materialize_public_data import (
     ContractError as MaterializationContractError,
     verify_output as verify_materialization_chain,
@@ -213,6 +217,35 @@ def validate_preregistration_section(
         ):
             fail(f"{paper} registry key {key!r} has no declared role for this paper")
 
+    overlap_projection = nested(section, "overlap_projection_contract")
+    if (
+        not isinstance(overlap_projection, dict)
+        or overlap_projection.get("required_status") != "reviewed_pass"
+        or overlap_projection.get("current_status")
+        not in {"unfrozen_review_blocker", "reviewed_pass"}
+    ):
+        fail(f"{paper} preregistration needs a fail-closed overlap projection")
+    for kind in ("specification", "validator"):
+        declared_path = Path(str(overlap_projection.get(f"{kind}_path", "")))
+        if (
+            not declared_path.parts
+            or declared_path.is_absolute()
+            or ".." in declared_path.parts
+            or digest_file(repo / declared_path)
+            != overlap_projection.get(f"{kind}_sha256")
+        ):
+            fail(f"{paper} overlap-projection {kind} hash does not match")
+    try:
+        overlap_summary = validate_overlap_projection_contract(
+            load_json(repo / overlap_projection["specification_path"]),
+            registry,
+            preregistration,
+        )
+    except ProjectionContractError as exc:
+        fail(f"invalid overlap-projection contract: {exc}")
+    if overlap_summary["execution_status"] != overlap_projection["current_status"]:
+        fail(f"{paper} overlap-projection status differs from its contract")
+
     integrity_gate = nested(section, "artifact_integrity_gate")
     if (
         not isinstance(integrity_gate, dict)
@@ -336,6 +369,15 @@ def validate_preregistration_section(
             or artifact_contract.get("reference_term") != "target=U*s"
             or artifact_contract.get("candidate_estimate")
             != "mean(A_current)+(1-alpha)*mean(B_stale)"
+            or not isinstance(artifact_contract.get("three_way_bootstrap"), str)
+            or "candidate replications" not in artifact_contract["three_way_bootstrap"]
+            or "R1 trajectories" not in artifact_contract["three_way_bootstrap"]
+            or "R2 trajectories" not in artifact_contract["three_way_bootstrap"]
+            or not isinstance(artifact_contract.get("bootstrap_seed_schedule"), str)
+            or "nearest-rank 0.025 and 0.975"
+            not in artifact_contract["bootstrap_seed_schedule"]
+            or "NumPy 2.5.3 PCG64"
+            not in artifact_contract["bootstrap_seed_schedule"]
         ):
             fail("RL estimator artifact contract or aggregator hash does not match")
         alphas = audit["alpha_grid"]
@@ -421,6 +463,17 @@ def validate_preregistration_section(
             fail("RL cross-reference MSE requires exactly two reference replicas")
         if audit.get("reference_current_policy_trajectories_per_replica", 0) <= 0:
             fail("RL reference replicas must contain positive trajectory counts")
+        if (
+            audit.get("mse_bootstrap_rng") != "numpy.random.PCG64"
+            or audit.get("mse_bootstrap_numpy_version") != "2.5.3"
+            or not isinstance(audit.get("mse_bootstrap_chunk_size"), int)
+            or audit["mse_bootstrap_chunk_size"] <= 0
+            or audit["mse_bootstrap_chunk_size"]
+            > audit["mse_bootstrap_replicates"]
+            or not isinstance(audit.get("bootstrap_resource_bound"), str)
+            or not audit["bootstrap_resource_bound"].strip()
+        ):
+            fail("RL bootstrap engine or resource bound is not frozen")
         if (
             not isinstance(audit.get("audit_lambda"), (int, float))
             or isinstance(audit.get("audit_lambda"), bool)
@@ -590,6 +643,13 @@ def require_execution_ready(
         or not integrity_gate["review_record"].strip()
     ):
         fail(f"real {paper} execution needs a reviewed artifact-integrity validator")
+
+    overlap_projection = nested(section, "overlap_projection_contract")
+    if overlap_projection.get("current_status") != "reviewed_pass":
+        fail(
+            f"real {paper} execution needs reviewed source-specific multi-field "
+            "overlap projections"
+        )
 
     if paper == "rl":
         stale_actor = nested(section, "stale_actor")
@@ -1481,6 +1541,7 @@ def validate_real_stage(
                 recomputed,
                 digest_file(trajectory_ledger_path),
                 section,
+                execution_class="real",
             )
         except RLEstimatorAggregationError as exc:
             fail(f"RL estimator aggregation failed: {exc}")

@@ -43,6 +43,7 @@
         "Deterministic allowed-vocabulary rule with no top-k, top-p, repetition, minimum-length, or forced-token processor",
         "Parser, timeout, sandbox-error, EOS, and truncation reward rules",
         "Frozen experiments/content_gates.json, its hash-bound ledger, and a reviewed hidden-evaluator semantic-overlap audit",
+        "Frozen experiments/overlap_projection_contract.json plus reviewed prompt and protected-answer field inventories",
         "For more than 4096 retained rows, a frozen reviewed exact engine and hash-bound external-overlap shards covering every unordered pair"
       ],
       "artifacts": [
@@ -50,8 +51,9 @@
       ],
       "checks": [
         "Every retained duplicate cluster is assigned wholly to nuisance-fit, alpha-selection, or confirmation",
-        "Any external lexical audit attests exactly n*(n-1)/2 gap-free pair ordinals, while a disk-backed exact shared-5-gram join independently reproduces every qualifying pair",
+        "The record-pair external audit remains blocking for a multi-field export; a reviewed successor must cover the full cross-record segment-pair space and independently reproduce every qualifying segment pair",
         "The trajectory schema embeds the passing content-readiness ledger hash and accounts for every scanned record with an included partition or explicit exclusion reason",
+        "Prompt and protected verifier/reference fields reproduce from a reviewed multi-field projection attestation; generated or null inventories cannot clear real execution",
         "Sampler frequencies agree with scored masses in finite-vocabulary conformance tests",
         "Current and stale sampler/scorer pairs agree on normalized masses, EOS-at-limit, and truncation semantics",
         "Prompt and sequence mixture masses normalize in high precision",
@@ -125,6 +127,7 @@
       "inputs": [
         "train/trajectory_ledger.jsonl",
         "Frozen projection, confirmation replications, independent R1/R2 reference pairs, and seed pairing",
+        "Pinned NumPy 2.5.3 PCG64 bootstrap engine, chunk size 32, and nearest-rank interval rule",
         "Omitted-prompt-ratio and clipped-weight fault injections"
       ],
       "artifacts": [
@@ -133,6 +136,8 @@
       "checks": [
         "Projected MSE uses the cross-reference product (g_hat - R1)^T(g_hat - R2)",
         "aggregate_rl_estimator.py reconstructs mean(A_current)+(1-alpha)*mean(B_stale), cell cost, the selection argmin, and untouched-confirmation MSE directly from the hash-bound trajectory ledger",
+        "The same aggregator independently resamples candidate replications, R1 trajectories, and R2 trajectories and exactly reproduces each reported percentile interval from the frozen seed schedule",
+        "Chunked exact multinomial sufficient statistics reproduce the full 64-coordinate, 250-replication, 2048-reference-row, 2000-bootstrap selection-law fixture without materializing resampled trajectory tensors",
         "Selection retains negative raw cross-MSE but uses max(raw MSE,0) times cost; untouched confirmation contains the selected cell and alpha=1 control plus their contrast",
         "Reference-generation accelerator cost remains in the summary separately rather than disappearing into a shared constant",
         "Selection targets D_select and confirmation targets the separately normalized D_confirm",

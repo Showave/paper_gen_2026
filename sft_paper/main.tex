@@ -121,6 +121,11 @@ distillation amortizes expensive influence computations through landmarks
 \cite{nikdan2025influence}. Large-pool studies caution that expensive selectors
 can underperform simple representation-similarity selection
 \cite{ivison2025largescale}.
+A controlled ICML study separates representation from subset optimization and
+finds that gradient representations are the most consistently predictive, but
+that selector differences shrink as budget grows \cite{nayak2026critical}.
+We therefore retain zero-shot and simple greedy baselines and test
+cost--packer interactions at every budget rather than only the smallest one.
 SPICE is especially close: it combines Fisher information with a penalty for
 gradient conflict \cite{chang2026spice}. Our target-gradient proxy is not
 presented as new. The distinction under study is joint physical-pack
@@ -310,8 +315,9 @@ then blocks named PII/secret patterns and retained character-5-gram
 near-duplicates. This deterministic lexical screen is not a semantic or privacy
 certificate: reviewed multilingual, paraphrase, benchmark-leakage, and privacy
 audits remain separate blocking checks. Above the exhaustive limit, only a
-reviewed exact engine whose hash-bound shards cover all unordered pairs can
-lift the lexical blocker; the committed engine attestation is still unfrozen.
+reviewed exact engine whose hash-bound shards cover all cross-record field
+segments can lift the lexical blocker. The committed engine is unfrozen and
+indexes record pairs only, so it cannot clear a real multi-field export.
 
 Reference sets measure losses rather than benchmark exact match because the
 gate requires differentiability. Real execution requires the score, gate,
@@ -782,6 +788,19 @@ depends on reproducing the complete qualifying-pair set. The committed engine
 hashes remain null blockers, so this contract is executable only as a generated
 software self-test and no large real artifact currently passes. Neither lexical
 route is evidence of semantic independence or completed manual review.
+Moreover, this external contract indexes record pairs, not canonical field
+segments. It cannot clear a multi-field export even after its engine fields are
+filled; a reviewed successor must cover the complete cross-record segment-pair
+space.
+\texttt{experiments/overlap\_projection\_contract.json} now enumerates every
+pilot source/role and requires separate model-input, training-target,
+protected-input, and protected-target slots as applicable. Its validator binds
+an inventory to the source revision, exporter implementation, canonical field
+paths, and review record, and rejects missing classes, duplicate slots,
+substituted paths, stale revisions, and generated attestations relabeled as
+real. The generated two-field fixture is only a schema audit. All eight real
+field inventories and review records remain null, so concatenating one
+convenient text field cannot clear the overlap gate.
 The separate \texttt{experiments/sft\_reference\_contract.json} fixes the
 capability map and domain-separated cluster-hash split. The process-stage
 validator loads the hash-bound semantic-audit artifact, requires every retained
@@ -795,10 +814,10 @@ and is not empirical evidence.
 The shared acquisition-to-retention validator now recomputes row identifiers,
 raw and projected-content hashes, canonical duplicate representatives, and
 every retained/suppressed/quarantined disposition from acquisition bytes.
-Real execution nevertheless remains blocked on reviewed multi-field overlap
-schemas, train-ledger-to-endpoint aggregation, and a site-local sealed-resource
-access attestation. Declarative stage checks do not count as execution
-evidence.
+Real execution nevertheless remains blocked on reviewed source-specific
+multi-field inventories, train-ledger-to-endpoint aggregation, and a
+site-local sealed-resource access attestation. Declarative stage checks do not
+count as execution evidence.
 With \texttt{--execute --synthetic-audit --commands
 experiments/synthetic\_commands.json}, a
 CPU-only audit exactly enumerates packings for two length-10 packs under a

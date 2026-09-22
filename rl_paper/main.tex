@@ -154,8 +154,13 @@ comparators than naive reuse. Their empirical utility does not imply the
 conditional unbiasedness claimed for our newly sampled, single-use design.
 Asynchronous RLHF separates generation from learning on lagged policies
 \cite{noukhovitch2025async}; it motivates the stale-actor systems layout but
-does not provide our conditional estimator identity. Statistically, the design
-is a restricted stratified multiple-importance sampler with augmentation.
+does not provide our conditional estimator identity. VCPO instead diagnoses
+ESS collapse under asynchronous policy lag and adapts the learning rate while
+using an off-policy variance-reducing baseline \cite{huang2026vcpo}. It is a
+strong stability/throughput comparator, but changing the transformed optimizer
+step is distinct from auditing an unbiased raw estimator at one frozen policy.
+Statistically, the design is a restricted stratified multiple-importance
+sampler with augmentation.
 Classical work optimizes mixture allocation and control variates jointly
 \cite{he2014optimal}; our pilot deliberately studies a small fixed grid rather
 than claiming a new general MIS principle or optimal allocation.
@@ -334,8 +339,9 @@ from normalized-hash inequality. A hash-bound preflight rejects named
 PII/secret patterns and retained character-5-gram near-duplicates, but this
 lexical heuristic does not replace reviewed multilingual, paraphrase, or
 hidden-evaluator leakage analysis. Above the exhaustive limit, only a reviewed
-exact engine whose hash-bound shards cover every unordered pair can lift the
-lexical blocker; the committed engine attestation is still unfrozen.
+exact engine whose hash-bound shards cover every cross-record field segment
+can lift the lexical blocker. The committed engine is unfrozen and indexes
+record pairs only, so it cannot clear a real multi-field export.
 
 $h_t^R,h_t^C,b_t$, and $q_t$ are trained only from data available before iteration
 $t$, then frozen. The sums below range over the complete finite prompt
@@ -776,6 +782,16 @@ depends on reproducing the complete qualifying-pair set. Its committed engine
 hashes are null blockers, so only the generated contract self-test can
 currently pass. Even an exhaustive lexical pass neither clears a source nor
 establishes semantic independence from a hidden evaluator.
+The external contract indexes record pairs rather than canonical field
+segments, so it cannot clear a multi-field export even after its engine fields
+are filled; a reviewed successor must cover every cross-record segment pair.
+\texttt{experiments/overlap\_projection\_contract.json} now enumerates every
+pilot source/role and requires separate model-input, training-target,
+protected-input, and protected-target slots where applicable. Its validator
+binds each inventory to a source revision, exporter implementation, canonical
+field paths, and review record; generated attestations cannot be relabeled as
+real. The schema audit covers the DAPO prompt and protected-answer classes,
+but the actual field inventory and review record remain null blockers.
 The companion \texttt{synthetic\_commands.json} fixes a four-cell trajectory
 law, $\alpha=1/2$, 32 draws per source, 2,000 replications, and seed 20260902.
 It enumerates the target and estimator expectations to machine precision,
@@ -788,16 +804,21 @@ audit, not model-training evidence; its outputs cannot populate
 audit. Its generated two-dimensional ledger has hand-computed current, stale,
 and independent reference terms; the same code used for a real ledger must
 recover both selection-cell MSEs, the nonnegative-risk argmin, and selected
-plus on-policy confirmation MSEs. Tampered MSE, an incomplete source stratum, and an
-infrastructure failure are injected and must respectively fail validation or
-block estimator-claim eligibility. The fixture is marked non-empirical and
-cannot populate any result cell. The script still consumes projected terms
-rather than reconstructing them from raw probabilities and outcomes, and it
-does not independently reproduce the three-way bootstrap; the
-artifact-integrity gate therefore blocks all real execution.
-That gate also requires reviewed source/role projection schemas covering every
-model-visible and protected textual field; the current single canonical
-deduplication projection cannot establish hidden-answer or test independence.
+plus on-policy confirmation MSEs. It independently resamples complete
+candidate replications, $R_1$ trajectories, and $R_2$ trajectories within each
+target law, derives a domain-separated stream from the frozen seed, and
+requires exact nearest-rank 2.5/97.5 percentile bounds. The pilot refreezes a
+feasible shape of 64 projected coordinates, 250 candidate replications per
+cell, 2,048 trajectories per reference sample, and 2,000 bootstrap draws.
+NumPy~2.5.3 PCG64 emits exact multinomial weights in chunks of 32; projected
+means and squared norms avoid materializing resampled trajectory tensors, and
+the self-test executes the full selection-law shape. Tampered MSE or intervals
+and incomplete source strata must fail; infrastructure failure must block
+estimator-claim eligibility. The fixture is marked non-empirical and cannot
+populate any result cell. The script still consumes projected terms
+rather than reconstructing $U,h,w,A,$ and $B$ from raw probabilities and
+outcomes; that raw-field gap, the unreviewed field inventory, and three pending
+fault injections keep the artifact-integrity gate closed.
 
 \subsection{Optional Prefix Gate}
 Prefix continuation is excluded from the core experiments. A later extension

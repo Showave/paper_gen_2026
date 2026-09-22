@@ -4,8 +4,10 @@
 Successful candidate rows store the projected per-trajectory term before its
 stratum mean: ``A=(h-b)s+alpha*w*(U-h)s`` for current rows and
 ``B=w*(U-h)s`` for stale rows.  This script reconstructs
-``mean(A)+(1-alpha)*mean(B)`` and the cross-reference MSE.  Its generated
-self-test is equation and artifact validation, not empirical evidence.
+``mean(A)+(1-alpha)*mean(B)``, the cross-reference MSE, and the registered
+three-way bootstrap by independently resampling candidate replications and
+both reference-trajectory samples.  Its generated self-test is equation and
+artifact validation, not empirical evidence.
 """
 
 from __future__ import annotations
@@ -19,6 +21,11 @@ import statistics
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
+
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover - exercised by deployment preflight
+    np = None
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -112,6 +119,118 @@ def cross_mse(
     )
 
 
+def nearest_rank_quantile(values: list[float], probability: float) -> float:
+    if not values or not 0 <= probability <= 1:
+        fail("bootstrap quantile requires nonempty values and a probability")
+    ordered = sorted(values)
+    index = math.ceil(probability * len(ordered)) - 1
+    return ordered[max(0, min(index, len(ordered) - 1))]
+
+
+def bootstrap_seed(base_seed: int, law: str) -> int:
+    payload = f"rl-three-way-bootstrap-v1|{base_seed}|{law}".encode()
+    return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big")
+
+
+def three_way_bootstrap_intervals(
+    *,
+    law: str,
+    candidate_estimates: dict[tuple[float, str], list[list[float]]],
+    reference_one: list[list[float]],
+    reference_two: list[list[float]],
+    replicates: int,
+    seed: int,
+    dimension: int,
+    chunk_size: int,
+    numpy_version: str,
+    rng_name: str,
+) -> dict[tuple[float, str], list[float]]:
+    """Chunked exact multinomial resampling of all three empirical sources."""
+    if (
+        np is None
+        or np.__version__ != numpy_version
+        or rng_name != "numpy.random.PCG64"
+        or not isinstance(replicates, int)
+        or replicates <= 0
+        or not isinstance(seed, int)
+        or isinstance(seed, bool)
+        or not isinstance(chunk_size, int)
+        or chunk_size <= 0
+        or not reference_one
+        or not reference_two
+        or any(not estimates for estimates in candidate_estimates.values())
+    ):
+        fail("three-way bootstrap inputs are incomplete")
+    ordered_cells = sorted(candidate_estimates)
+    r1 = np.asarray(reference_one, dtype=np.float64)
+    r2 = np.asarray(reference_two, dtype=np.float64)
+    candidate_arrays = {
+        cell: np.asarray(candidate_estimates[cell], dtype=np.float64)
+        for cell in ordered_cells
+    }
+    if (
+        r1.shape != (len(reference_one), dimension)
+        or r2.shape != (len(reference_two), dimension)
+        or any(
+            values.shape != (len(candidate_estimates[cell]), dimension)
+            for cell, values in candidate_arrays.items()
+        )
+    ):
+        fail("three-way bootstrap arrays do not match the projection dimension")
+
+    def uniform_probabilities(count: int) -> Any:
+        probabilities = np.full(count, 1.0 / count, dtype=np.float64)
+        probabilities[-1] = 1.0 - float(probabilities[:-1].sum())
+        return probabilities
+
+    r1_probabilities = uniform_probabilities(len(r1))
+    r2_probabilities = uniform_probabilities(len(r2))
+    candidate_probabilities = {
+        cell: uniform_probabilities(len(values))
+        for cell, values in candidate_arrays.items()
+    }
+    candidate_norms = {
+        cell: np.einsum("ij,ij->i", values, values)
+        for cell, values in candidate_arrays.items()
+    }
+    draws = np.empty((replicates, len(ordered_cells)), dtype=np.float64)
+    rng = np.random.Generator(np.random.PCG64(bootstrap_seed(seed, law)))
+    for start in range(0, replicates, chunk_size):
+        stop = min(start + chunk_size, replicates)
+        count = stop - start
+        r1_weights = rng.multinomial(
+            len(r1), r1_probabilities, size=count
+        )
+        r2_weights = rng.multinomial(
+            len(r2), r2_probabilities, size=count
+        )
+        r1_mean = r1_weights @ r1 / len(r1)
+        r2_mean = r2_weights @ r2 / len(r2)
+        reference_cross = np.einsum("ij,ij->i", r1_mean, r2_mean)
+        for column, cell in enumerate(ordered_cells):
+            values = candidate_arrays[cell]
+            weights = rng.multinomial(
+                len(values), candidate_probabilities[cell], size=count
+            )
+            candidate_mean = weights @ values / len(values)
+            candidate_norm_mean = (
+                weights @ candidate_norms[cell] / len(values)
+            )
+            draws[start:stop, column] = (
+                candidate_norm_mean
+                - np.einsum("ij,ij->i", candidate_mean, r1_mean)
+                - np.einsum("ij,ij->i", candidate_mean, r2_mean)
+                + reference_cross
+            )
+    return {
+        cell: [
+            nearest_rank_quantile(draws[:, column].tolist(), 0.025),
+            nearest_rank_quantile(draws[:, column].tolist(), 0.975),
+        ]
+        for column, cell in enumerate(ordered_cells)
+    }
+
+
 def audit_configuration(section: dict[str, Any]) -> dict[str, Any]:
     audit = section.get("estimator_audit")
     if not isinstance(audit, dict):
@@ -122,9 +241,26 @@ def audit_configuration(section: dict[str, Any]) -> dict[str, Any]:
         "selection_replications",
         "confirmation_replications",
         "reference_current_policy_trajectories_per_replica",
+        "mse_bootstrap_replicates",
+        "mse_bootstrap_seed",
+        "mse_bootstrap_chunk_size",
+        "mse_bootstrap_numpy_version",
+        "mse_bootstrap_rng",
     )
     if any(field not in audit for field in required):
         fail("RL estimator_audit is incomplete")
+    if (
+        not isinstance(audit["mse_bootstrap_replicates"], int)
+        or audit["mse_bootstrap_replicates"] <= 0
+        or not isinstance(audit["mse_bootstrap_seed"], int)
+        or isinstance(audit["mse_bootstrap_seed"], bool)
+        or not isinstance(audit["mse_bootstrap_chunk_size"], int)
+        or audit["mse_bootstrap_chunk_size"] <= 0
+        or not isinstance(audit["mse_bootstrap_numpy_version"], str)
+        or not audit["mse_bootstrap_numpy_version"]
+        or audit["mse_bootstrap_rng"] != "numpy.random.PCG64"
+    ):
+        fail("RL bootstrap replicate count or seed is invalid")
     return audit
 
 
@@ -187,9 +323,11 @@ def analyze_rows(
     if not isinstance(dimension, int) or dimension <= 0:
         fail("RL projection dimension must be positive")
     cells = expected_cells(audit)
-    references: dict[tuple[str, str], list[list[float]]] = defaultdict(list)
+    references: dict[tuple[str, str], list[tuple[str, list[float]]]] = defaultdict(
+        list
+    )
     candidates: dict[
-        tuple[str, float, str, int, str], list[list[float]]
+        tuple[str, float, str, int, str], list[tuple[str, list[float]]]
     ] = defaultdict(list)
     candidate_costs: dict[tuple[str, float, str, int], float] = defaultdict(float)
     attempt_ids: set[str] = set()
@@ -241,7 +379,7 @@ def analyze_rows(
                 or row.get("projected_term_semantics") != "target=U*s"
             ):
                 fail("reference rows must store current-policy target terms")
-            references[(law, role)].append(vector)
+            references[(law, role)].append((trajectory_id, vector))
             reference_accelerator_seconds += float(cost)
             continue
 
@@ -269,7 +407,9 @@ def analyze_rows(
         )
         if replication >= expected_replications:
             fail("candidate replication is outside the frozen range")
-        candidates[(law, key[0], key[1], replication, source)].append(vector)
+        candidates[(law, key[0], key[1], replication, source)].append(
+            (trajectory_id, vector)
+        )
         candidate_costs[(law, key[0], key[1], replication)] += float(cost)
 
     if failures:
@@ -282,12 +422,20 @@ def analyze_rows(
         }
 
     reference_count = audit["reference_current_policy_trajectories_per_replica"]
+    reference_vectors: dict[tuple[str, str], list[list[float]]] = {}
     reference_means: dict[tuple[str, str], list[float]] = {}
     for law in ("select", "confirm"):
         for role in ("r1", "r2"):
-            vectors = references.get((law, role), [])
-            if len(vectors) != reference_count:
+            identified_vectors = references.get((law, role), [])
+            if len(identified_vectors) != reference_count:
                 fail(f"{law} {role} reference count does not reproduce")
+            vectors = [
+                vector
+                for _, vector in sorted(
+                    identified_vectors, key=lambda item: item[0]
+                )
+            ]
+            reference_vectors[(law, role)] = vectors
             reference_means[(law, role)] = vector_mean(vectors, dimension)
 
     law_results: dict[str, list[dict[str, Any]]] = {"select": [], "confirm": []}
@@ -306,20 +454,38 @@ def analyze_rows(
             fail("selection law must contain every frozen alpha/allocation cell")
         if law == "confirm" and not 1 <= len(present_cells) <= 2:
             fail("confirmation law must contain one or two frozen cells")
+        estimates_by_cell: dict[tuple[float, str], list[list[float]]] = {}
         for alpha, allocation_id in sorted(present_cells):
             current_count, stale_count = cells[(alpha, allocation_id)]
             replication_mse: list[float] = []
             replication_cost: list[float] = []
+            replication_estimates: list[list[float]] = []
             for replication in range(replications):
-                current = candidates.get(
+                identified_current = candidates.get(
                     (law, alpha, allocation_id, replication, "current"), []
                 )
-                stale = candidates.get(
+                identified_stale = candidates.get(
                     (law, alpha, allocation_id, replication, "stale"), []
                 )
-                if len(current) != current_count or len(stale) != stale_count:
+                if (
+                    len(identified_current) != current_count
+                    or len(identified_stale) != stale_count
+                ):
                     fail("candidate stratum counts do not reproduce")
+                current = [
+                    vector
+                    for _, vector in sorted(
+                        identified_current, key=lambda item: item[0]
+                    )
+                ]
+                stale = [
+                    vector
+                    for _, vector in sorted(
+                        identified_stale, key=lambda item: item[0]
+                    )
+                ]
                 estimate = candidate_estimate(current, stale, alpha, dimension)
+                replication_estimates.append(estimate)
                 replication_mse.append(
                     cross_mse(
                         estimate,
@@ -333,6 +499,7 @@ def analyze_rows(
                 if cost <= 0:
                     fail("candidate replication must have positive measured cost")
                 replication_cost.append(cost)
+            estimates_by_cell[(alpha, allocation_id)] = replication_estimates
             point_mse = statistics.fmean(replication_mse)
             point_cost = statistics.fmean(replication_cost)
             law_results[law].append(
@@ -346,6 +513,22 @@ def analyze_rows(
                     "replications": replications,
                 }
             )
+        intervals = three_way_bootstrap_intervals(
+            law=law,
+            candidate_estimates=estimates_by_cell,
+            reference_one=reference_vectors[(law, "r1")],
+            reference_two=reference_vectors[(law, "r2")],
+            replicates=audit["mse_bootstrap_replicates"],
+            seed=audit["mse_bootstrap_seed"],
+            dimension=dimension,
+            chunk_size=audit["mse_bootstrap_chunk_size"],
+            numpy_version=audit["mse_bootstrap_numpy_version"],
+            rng_name=audit["mse_bootstrap_rng"],
+        )
+        for result in law_results[law]:
+            result["three_way_bootstrap_interval"] = intervals[
+                (result["alpha"], result["allocation_id"])
+            ]
 
     selected = min(
         law_results["select"],
@@ -396,6 +579,19 @@ def analyze_rows(
         "projection_dimension": dimension,
         "projected_mse_formula": "(g_hat-R1)^T(g_hat-R2)",
         "candidate_estimator_formula": "mean(A_current)+(1-alpha)*mean(B_stale)",
+        "three_way_bootstrap_rule": (
+            "independently resample candidate replications, R1 trajectories, "
+            "and R2 trajectories within target law"
+        ),
+        "bootstrap_seed_schedule": (
+            "first 64 bits of sha256("
+            "'rl-three-way-bootstrap-v1'|base_seed|target_law)"
+        ),
+        "bootstrap_engine": (
+            f"numpy-{audit['mse_bootstrap_numpy_version']}:"
+            f"{audit['mse_bootstrap_rng']}"
+        ),
+        "bootstrap_chunk_size": audit["mse_bootstrap_chunk_size"],
         "selection_cell_results": law_results["select"],
         "selected_alpha": selected["alpha"],
         "selected_allocation_id": selected["allocation_id"],
@@ -418,9 +614,14 @@ def validate_summary(
     analysis: dict[str, Any],
     ledger_sha256: str,
     section: dict[str, Any],
+    *,
+    execution_class: str,
 ) -> dict[str, Any]:
     if (
         not isinstance(summary, dict)
+        or execution_class not in {"real", "synthetic-audit"}
+        or summary.get("execution_class") != execution_class
+        or summary.get("empirical_evidence") is not (execution_class == "real")
         or summary.get("ledger_sha256") != ledger_sha256
         or summary.get("aggregation_status") != analysis["aggregation_status"]
         or summary.get("estimator_claim_eligible")
@@ -446,10 +647,16 @@ def validate_summary(
 
     audit = audit_configuration(section)
     if (
-        summary.get("empirical_evidence") is not True
-        or summary.get("projected_mse_formula") != analysis["projected_mse_formula"]
+        summary.get("projected_mse_formula") != analysis["projected_mse_formula"]
         or summary.get("candidate_estimator_formula")
         != analysis["candidate_estimator_formula"]
+        or summary.get("three_way_bootstrap_rule")
+        != analysis["three_way_bootstrap_rule"]
+        or summary.get("bootstrap_seed_schedule")
+        != analysis["bootstrap_seed_schedule"]
+        or summary.get("bootstrap_engine") != analysis["bootstrap_engine"]
+        or summary.get("bootstrap_chunk_size")
+        != analysis["bootstrap_chunk_size"]
         or summary.get("selected_alpha") != analysis["selected_alpha"]
         or summary.get("selected_allocation_id")
         != analysis["selected_allocation_id"]
@@ -502,10 +709,10 @@ def validate_summary(
             or not isinstance(interval, list)
             or len(interval) != 2
             or not all(
-                isinstance(value, (int, float))
-                and not isinstance(value, bool)
-                and math.isfinite(value)
-                for value in interval
+                close(observed, expected_value)
+                for observed, expected_value in zip(
+                    interval, expected["three_way_bootstrap_interval"]
+                )
             )
             or interval[0] > interval[1]
         ):
@@ -542,10 +749,10 @@ def validate_summary(
             or not isinstance(interval, list)
             or len(interval) != 2
             or not all(
-                isinstance(value, (int, float))
-                and not isinstance(value, bool)
-                and math.isfinite(value)
-                for value in interval
+                close(observed, expected_value)
+                for observed, expected_value in zip(
+                    interval, expected["three_way_bootstrap_interval"]
+                )
             )
             or interval[0] > interval[1]
         ):
@@ -635,6 +842,9 @@ def generated_fixture() -> tuple[list[dict[str, Any]], dict[str, Any]]:
             "reference_current_policy_trajectories_per_replica": 2,
             "mse_bootstrap_replicates": 17,
             "mse_bootstrap_seed": 2026091501,
+            "mse_bootstrap_chunk_size": 4,
+            "mse_bootstrap_numpy_version": "2.5.3",
+            "mse_bootstrap_rng": "numpy.random.PCG64",
         }
     }
     rows: list[dict[str, Any]] = []
@@ -707,10 +917,6 @@ def generated_summary(analysis: dict[str, Any], ledger_sha256: str, section: dic
     by_cell = {}
     for result in analysis["selection_cell_results"]:
         item = dict(result)
-        item["three_way_bootstrap_interval"] = [
-            result["projected_mse"],
-            result["projected_mse"],
-        ]
         results.append(item)
         by_cell[f"{result['alpha']}|{result['allocation_id']}"] = result[
             "projected_mse"
@@ -718,19 +924,20 @@ def generated_summary(analysis: dict[str, Any], ledger_sha256: str, section: dic
     confirmation_results = []
     for result in analysis["confirmation_results"]:
         item = dict(result)
-        item["three_way_bootstrap_interval"] = [
-            result["projected_mse"],
-            result["projected_mse"],
-        ]
         confirmation_results.append(item)
     audit = section["estimator_audit"]
     return {
+        "execution_class": "synthetic-audit",
         "aggregation_status": "complete",
-        "empirical_evidence": True,
+        "empirical_evidence": False,
         "estimator_claim_eligible": True,
         "ledger_sha256": ledger_sha256,
         "projected_mse_formula": analysis["projected_mse_formula"],
         "candidate_estimator_formula": analysis["candidate_estimator_formula"],
+        "three_way_bootstrap_rule": analysis["three_way_bootstrap_rule"],
+        "bootstrap_seed_schedule": analysis["bootstrap_seed_schedule"],
+        "bootstrap_engine": analysis["bootstrap_engine"],
+        "bootstrap_chunk_size": analysis["bootstrap_chunk_size"],
         "projected_mse_by_cell": by_cell,
         "cell_results": results,
         "selected_alpha": analysis["selected_alpha"],
@@ -758,16 +965,43 @@ def self_test() -> dict[str, Any]:
         fail("generated fixture does not reproduce hand-computed estimator values")
     ledger_sha256 = hashlib.sha256(b"generated-ledger-v1").hexdigest()
     summary = generated_summary(analysis, ledger_sha256, section)
-    validate_summary(summary, analysis, ledger_sha256, section)
+    validate_summary(
+        summary,
+        analysis,
+        ledger_sha256,
+        section,
+        execution_class="synthetic-audit",
+    )
 
     tampered = copy.deepcopy(summary)
     tampered["cell_results"][0]["projected_mse"] += 0.25
     try:
-        validate_summary(tampered, analysis, ledger_sha256, section)
+        validate_summary(
+            tampered,
+            analysis,
+            ledger_sha256,
+            section,
+            execution_class="synthetic-audit",
+        )
     except AggregationError:
         pass
     else:
         fail("self-test accepted a tampered MSE")
+
+    tampered_interval = copy.deepcopy(summary)
+    tampered_interval["cell_results"][0]["three_way_bootstrap_interval"][0] -= 0.25
+    try:
+        validate_summary(
+            tampered_interval,
+            analysis,
+            ledger_sha256,
+            section,
+            execution_class="synthetic-audit",
+        )
+    except AggregationError:
+        pass
+    else:
+        fail("self-test accepted a fabricated three-way bootstrap interval")
 
     incomplete = copy.deepcopy(rows)
     incomplete.pop(
@@ -791,6 +1025,42 @@ def self_test() -> dict[str, Any]:
     blocked = analyze_rows(failed, section)
     if blocked["aggregation_status"] != "blocked_infrastructure_failure":
         fail("self-test did not block an infrastructure failure")
+
+    production_section = read_json(DEFAULT_PREREGISTRATION)["rl"]
+    production_audit = audit_configuration(production_section)
+    production_dimension = production_audit["projection_dimension"]
+    zero_reference = [
+        [0.0] * production_dimension
+        for _ in range(
+            production_audit[
+                "reference_current_policy_trajectories_per_replica"
+            ]
+        )
+    ]
+    zero_candidates = {
+        (float(cell["alpha"]), cell["allocation_id"]): [
+            [0.0] * production_dimension
+            for _ in range(production_audit["selection_replications"])
+        ]
+        for cell in production_audit["stratum_counts_by_alpha"]
+    }
+    production_intervals = three_way_bootstrap_intervals(
+        law="select",
+        candidate_estimates=zero_candidates,
+        reference_one=zero_reference,
+        reference_two=zero_reference,
+        replicates=production_audit["mse_bootstrap_replicates"],
+        seed=production_audit["mse_bootstrap_seed"],
+        dimension=production_dimension,
+        chunk_size=production_audit["mse_bootstrap_chunk_size"],
+        numpy_version=production_audit["mse_bootstrap_numpy_version"],
+        rng_name=production_audit["mse_bootstrap_rng"],
+    )
+    if (
+        set(production_intervals) != set(zero_candidates)
+        or any(interval != [0.0, 0.0] for interval in production_intervals.values())
+    ):
+        fail("production-shape vectorized bootstrap fixture did not reproduce")
     return {
         "execution_class": "synthetic-audit",
         "empirical_evidence": False,
@@ -798,8 +1068,26 @@ def self_test() -> dict[str, Any]:
         "projected_mse_formula": analysis["projected_mse_formula"],
         "selection_cells_recomputed": len(analysis["selection_cell_results"]),
         "confirmation_cells_recomputed": len(analysis["confirmation_results"]),
+        "bootstrap_replicates_recomputed": section["estimator_audit"][
+            "mse_bootstrap_replicates"
+        ],
+        "production_shape": {
+            "projection_dimension": production_dimension,
+            "candidate_replications": production_audit[
+                "selection_replications"
+            ],
+            "reference_trajectories_per_replica": production_audit[
+                "reference_current_policy_trajectories_per_replica"
+            ],
+            "bootstrap_replicates": production_audit[
+                "mse_bootstrap_replicates"
+            ],
+            "chunk_size": production_audit["mse_bootstrap_chunk_size"],
+            "selection_cells": len(zero_candidates),
+        },
+        "production_shape_vectorized_bootstrap_validated": True,
         "hand_computed_values_reproduced": True,
-        "fault_injections_rejected": 3,
+        "fault_injections_rejected": 4,
     }
 
 
@@ -831,7 +1119,11 @@ def main() -> None:
             fail("preregistration has no RL section")
         analysis = analyze_rows(read_jsonl(args.ledger), section)
         result = validate_summary(
-            read_json(args.summary), analysis, digest_file(args.ledger), section
+            read_json(args.summary),
+            analysis,
+            digest_file(args.ledger),
+            section,
+            execution_class="real",
         )
     print(json.dumps(result, indent=2, sort_keys=True))
 

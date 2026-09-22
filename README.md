@@ -53,10 +53,12 @@ eval_paper/main.pdf
 Run the CPU-only equation and protocol audits with:
 
 ```bash
+python3 -m pip install -r requirements.txt
 make source-audit
 make provenance-audit
 make content-gates-audit
 make external-overlap-audit
+make overlap-projection-audit
 make design-audits
 make protocol-audits
 ```
@@ -66,21 +68,26 @@ all manual clearances pending. The provenance audit recomputes row identifiers,
 raw and projected-content hashes, normalized duplicate representatives, and a
 closed acquired-to-retained/suppressed/quarantined disposition chain. Rehashed
 orphan, omission, forged-ID, and wrong-representative fixtures fail; the audit
-also requires a passing content-readiness ledger. The content-gate audit separately exercises the
-named PII and secret detectors and the deterministic character-ngram
-near-duplicate screen. That lexical screen is a blocking heuristic, not a
-certificate of semantic independence or manual clearance. Artifacts above the
-exhaustive comparison limit remain inconclusive unless a reviewed exact engine
-provides hash-bound shards covering all unordered pairs; that engine is still
-an explicitly unfrozen blocker. The external-overlap audit checks the generated
-contract fixture's engine binding, pair-space coverage, shard hashes, and
+also requires a passing content-readiness ledger. The content-gate audit
+separately exercises the named PII and secret detectors and deterministic
+field-segment character-ngram comparisons, including unlike field classes.
+That lexical screen is a blocking heuristic, not a certificate of semantic
+independence or manual clearance. Artifacts above the exhaustive comparison
+limit remain inconclusive. The existing external engine contract covers record
+pairs only; multi-field exports require a reviewed segment-pair successor
+before hash-bound shards can clear the blocker. The external-overlap audit
+checks the generated record-pair contract fixture's engine binding, pair-space
+coverage, shard hashes, and
 failure handling, then independently rejects omitted qualifying pairs with a
 disk-backed exact shared-5-gram join. The factorial audit exercises the
 registered hypervolume, paired difference-in-differences, missing-run, and
 simultaneous max-$t$ aggregation rules without using empirical endpoints. The
-remaining design audits reproduce the SFT capability/cluster split contract,
-the RL estimator and cost aggregation from a generated trajectory ledger, and
-the evaluation paper's 189-condition fractional simulation layout. All use
+overlap-projection audit checks exact source/role coverage and generated
+multi-field inventory attestations; its eight real source inventories remain
+explicitly unreviewed blockers. The remaining design audits reproduce the SFT
+capability/cluster split contract, the RL estimator, cost aggregation, and
+three-way reference bootstrap from a generated trajectory ledger, and the
+evaluation paper's 189-condition fractional simulation layout. All use
 generated identifiers or vectors and set `empirical_evidence` to false.
 The ignored protocol artifacts are
 synthetic software checks, not paper results. See `experiments/README.md` for

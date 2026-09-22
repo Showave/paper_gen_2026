@@ -32,6 +32,11 @@ from run_content_gates import (
     audit_materialization as audit_content_readiness,
     verify_readiness_ledger,
 )
+from validate_overlap_projection_contract import (
+    DEFAULT_CONTRACT as DEFAULT_OVERLAP_PROJECTION_CONTRACT,
+    ProjectionContractError,
+    validate_attestation as validate_overlap_projection_attestation,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,11 +48,6 @@ DEFAULT_FIXTURE = (
 REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 SPACE_RE = re.compile(r"\s+")
 ROLE_RE = re.compile(r"^[a-z][a-z0-9-]*$")
-CANONICAL_CONTENT_SLOTS = {
-    "sft": ("dedup-text",),
-    "rl": ("dedup-text",),
-    "eval": ("dedup-text",),
-}
 NORMALIZATION = {
     "name": "unicode-nfkc-casefold-whitespace-v1",
     "unicode": "NFKC",
@@ -310,6 +310,32 @@ def require_content_gate_specification(section: dict[str, Any]) -> None:
         )
 
 
+def require_overlap_projection_contract(section: dict[str, Any]) -> dict[str, Any]:
+    binding = section.get("overlap_projection_contract")
+    if (
+        not isinstance(binding, dict)
+        or binding.get("specification_path")
+        != "experiments/overlap_projection_contract.json"
+        or binding.get("validator_path")
+        != "scripts/validate_overlap_projection_contract.py"
+        or binding.get("required_status") != "reviewed_pass"
+        or not isinstance(binding.get("specification_sha256"), str)
+        or not isinstance(binding.get("validator_sha256"), str)
+        or digest_file(DEFAULT_OVERLAP_PROJECTION_CONTRACT)
+        != binding["specification_sha256"]
+        or digest_file(ROOT / "scripts" / "validate_overlap_projection_contract.py")
+        != binding["validator_sha256"]
+    ):
+        fail(
+            "preregistration does not bind the current overlap-projection "
+            "contract and validator"
+        )
+    contract = read_json(DEFAULT_OVERLAP_PROJECTION_CONTRACT)
+    if contract.get("execution_status") != binding.get("current_status"):
+        fail("overlap-projection contract status differs from preregistration")
+    return contract
+
+
 def require_clearance(
     referenced: set[str], entries: dict[str, dict[str, Any]]
 ) -> None:
@@ -344,6 +370,9 @@ def validate_input_spec(
     paper: str,
     section: dict[str, Any],
     entries: dict[str, dict[str, Any]],
+    registry: dict[str, Any],
+    preregistration: dict[str, Any],
+    overlap_projection_contract: dict[str, Any],
     synthetic_fixture: bool,
 ) -> list[dict[str, Any]]:
     if not isinstance(value, dict) or value.get("schema_version") != 1:
@@ -408,18 +437,14 @@ def validate_input_spec(
         slots = [item["slot"] for item in projection]
         if len(slots) != len(set(slots)):
             fail(f"{key}: content_projection slots must be unique")
-        expected_slots = set(CANONICAL_CONTENT_SLOTS[paper])
-        if set(slots) != expected_slots:
-            fail(
-                f"{key}: content_projection slots must be exactly "
-                f"{sorted(expected_slots)} for {paper}"
-            )
         exporter = declaration.get("exporter")
         if not isinstance(exporter, dict) or not all(
             isinstance(exporter.get(field), str) and exporter[field].strip()
-            for field in ("name", "version")
+            for field in ("name", "version", "implementation_sha256")
         ):
-            fail(f"{key}: exporter must name a tool and version")
+            fail(f"{key}: exporter must name a tool, version, and implementation hash")
+        if not re.fullmatch(r"^[0-9a-f]{64}$", exporter["implementation_sha256"]):
+            fail(f"{key}: exporter implementation hash must be a SHA-256")
         license_fields = declaration.get("license_fields")
         if not isinstance(license_fields, list) or not license_fields or not all(
             isinstance(item, str) and item for item in license_fields
@@ -435,6 +460,27 @@ def validate_input_spec(
                 f"{key}: role {declaration['role']!r} is not among the "
                 f"registered {paper} roles {sorted(allowed_roles)}"
             )
+        try:
+            attestation = declaration.get("overlap_projection_attestation")
+            validate_overlap_projection_attestation(
+                attestation,
+                projection,
+                overlap_projection_contract,
+                registry,
+                preregistration,
+            )
+            expected_execution_class = (
+                "synthetic-audit" if synthetic_fixture else "real"
+            )
+            if attestation.get("execution_class") != expected_execution_class:
+                fail(
+                    f"{key}: projection attestation execution class does not "
+                    "match the materialization"
+                )
+            if attestation.get("exporter") != exporter:
+                fail(f"{key}: projection attestation binds a different exporter")
+        except ProjectionContractError as exc:
+            fail(f"{key}: invalid overlap projection attestation: {exc}")
         export_key = (
             key,
             declaration["config"],
@@ -586,6 +632,7 @@ def materialize(
         preregistration, paper, preregistration_path
     )
     require_content_gate_specification(section)
+    overlap_projection_contract = require_overlap_projection_contract(section)
     if not referenced.issubset(entries):
         fail("preregistration references an unregistered source or model")
     if synthetic_fixture:
@@ -601,6 +648,9 @@ def materialize(
         paper,
         section,
         entries,
+        registry,
+        preregistration,
+        overlap_projection_contract,
         synthetic_fixture,
     )
 
@@ -685,6 +735,9 @@ def materialize(
                     "exporter": declaration["exporter"],
                     "row_id_fields": declaration["row_id_fields"],
                     "content_projection": declaration["content_projection"],
+                    "overlap_projection_attestation": declaration[
+                        "overlap_projection_attestation"
+                    ],
                     "license_fields": declaration.get("license_fields", []),
                     "input_sha256": declaration["sha256"],
                     "input_rows": len(rows),
@@ -888,6 +941,15 @@ def verify_output(
     for manifest, path in ((acquisition, acquisition_path), (process, process_path)):
         if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
             fail(f"{path}: expected schema_version 1")
+    if (
+        not isinstance(acquisition.get("synthetic_fixture"), bool)
+        or acquisition.get("synthetic_fixture")
+        is not process.get("synthetic_fixture")
+    ):
+        fail("materialization execution classes are missing or inconsistent")
+    registry = read_json(DEFAULT_REGISTRY)
+    preregistration = read_json(DEFAULT_PREREGISTRATION)
+    overlap_projection_contract = read_json(DEFAULT_OVERLAP_PROJECTION_CONTRACT)
 
     provenance_path = confined_output_path(
         output, acquisition["row_provenance_path"]
@@ -907,9 +969,12 @@ def verify_output(
             "config",
             "split",
             "role",
+            "exporter",
             "row_id_fields",
             "content_projection",
+            "overlap_projection_attestation",
             "license_fields",
+            "input_sha256",
             "materialized_path",
             "materialized_sha256",
             "input_rows",
@@ -918,6 +983,8 @@ def verify_output(
             input_file
         ):
             fail("acquisition input declaration is incomplete")
+        if not re.fullmatch(r"^[0-9a-f]{64}$", str(input_file["input_sha256"])):
+            fail("acquisition input declaration has an invalid export-byte hash")
         path = confined_output_path(output, input_file["materialized_path"])
         if digest_file(path) != input_file["materialized_sha256"]:
             fail(f"materialized acquisition file hash mismatch: {path}")
@@ -933,6 +1000,36 @@ def verify_output(
             "content_projection": input_file["content_projection"],
             "license_fields": input_file["license_fields"],
         }
+        try:
+            validate_overlap_projection_attestation(
+                input_file["overlap_projection_attestation"],
+                input_file["content_projection"],
+                overlap_projection_contract,
+                registry,
+                preregistration,
+            )
+            expected_execution_class = (
+                "synthetic-audit"
+                if acquisition.get("synthetic_fixture") is True
+                else "real"
+            )
+            if (
+                input_file["overlap_projection_attestation"].get(
+                    "execution_class"
+                )
+                != expected_execution_class
+            ):
+                fail(
+                    "materialized projection attestation execution class "
+                    "does not match the acquisition"
+                )
+            if (
+                input_file["overlap_projection_attestation"].get("exporter")
+                != input_file.get("exporter")
+            ):
+                fail("materialized projection attestation binds another exporter")
+        except ProjectionContractError as exc:
+            fail(f"materialized overlap projection does not verify: {exc}")
         entry = {
             "repo_id": input_file["repo_id"],
             "revision": input_file["revision"],
@@ -1144,12 +1241,26 @@ def run_self_test() -> None:
             process["retained_row_count"] += 1
             write_json(process_path, process)
 
+        def relabel_materialization_real(case: Path) -> None:
+            acquisition_path = case / "acquire" / "data_manifest.json"
+            process_path = case / "process" / "content_manifest.json"
+            acquisition = read_json(acquisition_path)
+            process = read_json(process_path)
+            acquisition["synthetic_fixture"] = False
+            process["synthetic_fixture"] = False
+            write_json(acquisition_path, acquisition)
+            write_json(process_path, process)
+
         expect_chain_rejection("forged-record-id", forge_provenance)
         expect_chain_rejection("undisposed-acquired-row", omit_disposition)
         expect_chain_rejection(
             "wrong-canonical-representative", forge_canonical_representative
         )
         expect_chain_rejection("orphan-retained-row", insert_orphan_retained)
+        expect_chain_rejection(
+            "synthetic-attestation-in-real-materialization",
+            relabel_materialization_real,
+        )
 
         readiness_path = output / "process" / "content_readiness_ledger.json"
         readiness = read_json(readiness_path)

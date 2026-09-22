@@ -9,7 +9,7 @@ STYLE_FILES := \
 	template/preamble.tex
 BUILD := scripts/latex_build.sh
 
-.PHONY: all clean check-deps source-audit provenance-audit content-gates-audit external-overlap-audit sft-reference-audit sft-factorial-audit rl-estimator-audit eval-simulation-design-audit design-audits protocol-audits
+.PHONY: all clean check-deps source-audit provenance-audit content-gates-audit external-overlap-audit overlap-projection-audit sft-reference-audit sft-factorial-audit rl-estimator-audit eval-simulation-design-audit design-audits protocol-audits
 
 all: $(PDFS)
 
@@ -36,6 +36,9 @@ content-gates-audit:
 external-overlap-audit:
 	python3 scripts/validate_external_overlap_audit.py --self-test
 
+overlap-projection-audit:
+	python3 scripts/validate_overlap_projection_contract.py --self-test
+
 sft-reference-audit:
 	python3 scripts/validate_sft_reference_contract.py --self-test
 
@@ -48,7 +51,7 @@ rl-estimator-audit:
 eval-simulation-design-audit:
 	python3 scripts/validate_eval_simulation_design.py --self-test
 
-design-audits: sft-reference-audit sft-factorial-audit rl-estimator-audit eval-simulation-design-audit
+design-audits: overlap-projection-audit sft-reference-audit sft-factorial-audit rl-estimator-audit eval-simulation-design-audit
 
 protocol-audits:
 	@for paper in $(PAPERS); do \

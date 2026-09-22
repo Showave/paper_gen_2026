@@ -67,11 +67,13 @@ linking the site-local review record in the resulting acquisition artifact.
 
 After clearance, a site-local exporter must write JSONL at the registry's exact
 revision and provide an input specification containing the export byte hash,
-exporter name/version, an admitted configuration, the recorded upstream split,
-stable-ID fields, per-row license strings, and an exact role already admitted
-by the registry. Every source-specific schema must project one nonempty text
-field to the paper-wide canonical `dedup-text` slot; this shared projection is
-what makes normalized hashes comparable across sources. The repository adapter
+exporter implementation hash and version, an admitted configuration, the
+recorded upstream split, stable-ID fields, per-row license strings, and an
+exact role already admitted by the registry. Every source-specific schema must
+project all reviewed model-visible and protected text into distinct canonical
+slots and attach a contract-bound field-inventory attestation. The ordered
+slot/value aggregate is the record deduplication unit; lexical overlap is
+checked separately for every cross-record slot pair. The repository adapter
 never fetches an arbitrary URL:
 
 ```bash
@@ -94,13 +96,14 @@ role-specific JSONL; the five-stage acquisition artifact must embed those
 manifest and role-file hashes. Input bytes are hashed and parsed from the same
 read, and verification covers both acquisition and processed files.
 Before publishing a materialization, the adapter now runs the frozen
-`experiments/content_gates.json` contract. It uses canonical projected text for
-lexical comparison and scans every retained raw dictionary key and string value
-for named PII and secret patterns. It records no matched spans and rejects
-retained character-5-gram near-duplicates within or across roles.
-Small artifacts use exhaustive pair comparison; larger ones use deterministic
-one-permutation MinHash LSH candidate generation followed by exact Jaccard
-scoring. The emitted `process/content_readiness_ledger.json` binds the gate
+`experiments/content_gates.json` contract. It compares each canonical field
+segment against unlike as well as like field classes and scans every retained
+raw dictionary key and string value for named PII and secret patterns. It
+records no matched spans and rejects retained character-5-gram near-duplicates
+within or across roles. Small artifacts use exhaustive record pairs followed
+by every segment pair; larger ones use deterministic one-permutation MinHash
+LSH candidate generation followed by exact segment Jaccard scoring. The
+emitted `process/content_readiness_ledger.json` binds the gate
 specification and implementation to the acquisition, content, and retained-file
 hashes. Because LSH is not recall-complete, any artifact above the exhaustive
 limit is recorded as `inconclusive`.
@@ -126,12 +129,14 @@ Thus shard coverage is retained as an engine-governance attestation, while
 readiness depends on the independently reproduced qualifying-pair set. It
 records no matched text.
 
-The committed engine fields are intentionally null and
-`execution_status` is `unfrozen_blocker`, so no large artifact can currently
-pass through this route. After independent engine review and replacement
-preregistration, rerun the gate; only a zero-finding, fully covered exact bundle
-can replace the approximate blocker. Re-run the scanner or verify an existing
-passing ledger with:
+That external contract is record-pair v1. It cannot clear an attested
+multi-field materialization because its pair identity omits canonical slots;
+the gate rejects such a bundle before reading its shards. A reviewed successor
+must shard the complete cross-record segment-pair space and independently
+reproduce every qualifying segment pair. The committed engine fields are also
+null and `execution_status` is `unfrozen_blocker`, so no large real artifact
+can currently pass. Re-run the scanner or verify an existing passing ledger
+with:
 
 ```bash
 python3 scripts/run_content_gates.py \
@@ -164,6 +169,25 @@ privacy, legal, or human-subjects clearance. The detector families do not cover
 multilingual paraphrase, images, or audio. Reviewed site-local semantic and
 privacy audits therefore remain mandatory; a passing exhaustive ledger cannot
 change a registry review from `pending` to `approved`.
+
+The companion multi-field projection contract is independently auditable:
+
+```bash
+make overlap-projection-audit
+```
+
+`experiments/overlap_projection_contract.json` enumerates every dataset
+source/role used by the three pilots and the minimum model-input,
+training-target, protected-input, and protected-target field classes that a
+reviewed exporter must preserve. A field inventory binds canonical slots to
+exact source paths, exporter code, source revision, and a review record.
+Downstream lexical comparison retains each slot as a separate comparison unit
+so, for example, a training response is checked against a protected prompt
+rather than hidden by record-level concatenation. The committed synthetic
+materialization exercises this path with model-input and training-target
+slots. The eight real inventories are intentionally null and
+`unfrozen_site_schema`; generated attestations and mutation tests do not clear
+real materialization.
 
 The only clearance bypass is a committed, generated fixture:
 
@@ -231,10 +255,19 @@ The aggregator reconstructs the stratified estimate, cross-reference MSE,
 mean complete-replication cost, selection argmin, and untouched-confirmation
 results from the ledger hash. It retains negative raw cross-MSE, uses the
 nonnegative MSE--cost transform only for selection, and requires the selected
-plus alpha=1 confirmation cells. These projected terms remain self-declared:
-raw probability/outcome reconstruction and independent bootstrap reproduction
-are unfrozen blockers. Any infrastructure failure disables estimator-claim
-eligibility; it cannot yield a success-conditioned MSE.
+plus alpha=1 confirmation cells. It now also independently resamples candidate
+replications, R1 trajectories, and R2 trajectories and requires exact
+reproduction of each reported percentile interval under the domain-separated
+seed schedule. The frozen exploratory shape uses 64 projected coordinates,
+250 candidate replications per cell, 2,048 trajectories per reference sample,
+and 2,000 bootstrap draws. NumPy 2.5.3 PCG64 generates exact multinomial
+weights in chunks of 32; projected means and squared norms are sufficient, so
+the implementation never materializes resampled trajectory tensors. The
+self-test executes this full selection-law shape in addition to the
+hand-computed fixture. The projected terms remain self-declared: raw
+probability/outcome reconstruction is still an unfrozen blocker. Any
+infrastructure failure disables estimator-claim eligibility; it cannot yield a
+success-conditioned MSE.
 
 The evaluation simulation layout is executable as a design audit:
 
@@ -256,10 +289,11 @@ The shared materialization validator recomputes each provenance record from
 raw materialized rows and requires a bijection into canonical retained,
 suppressed, or quarantined dispositions; rehashed orphan, omission, forged-ID,
 and wrong-canonical-representative fixtures fail. All three real protocols
-still carry an `artifact_integrity_gate` with status `unfrozen_blocker` until
-reviewed multi-field overlap projections and each paper's downstream artifact
-validator are hash-frozen. Declarative stage checks and synthetic-audit
-bypasses do not satisfy this gate.
+still carry an `artifact_integrity_gate` with status `unfrozen_blocker`. The
+multi-field contract now makes the required source/role inventories
+machine-checkable, but every real inventory and review record remains null;
+paper-specific downstream validators must also be hash-frozen. Declarative
+stage checks and synthetic-audit bypasses do not satisfy this gate.
 
 ## Reproducible design audits
 

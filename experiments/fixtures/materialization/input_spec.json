@@ -9,21 +9,59 @@
       "config": "smol-constraints",
       "split": "train",
       "path": "candidate.jsonl",
-      "sha256": "4c4de1e3c59478594702bc4fba3b7051a5e77da22b9c9c362efa132253d12ebd",
+      "sha256": "f0d398c9f57413df62c6f215fed93ec5b60572a386b8efcd9f390cd65c0311dc",
       "role": "candidate-general",
       "exporter": {
         "name": "committed-synthetic-fixture",
-        "version": "1"
+        "version": "2",
+        "implementation_sha256": "422f52d6f65a3ea9f23bd12473c89fb81bb311af338f14c26f94999146b8364a"
       },
       "row_id_fields": [
         "id"
       ],
       "content_projection": [
         {
-          "slot": "dedup-text",
-          "field": "dedup_text"
+          "slot": "model-input",
+          "field": "prompt_text"
+        },
+        {
+          "slot": "training-target",
+          "field": "response_text"
         }
       ],
+      "overlap_projection_attestation": {
+        "schema_version": 1,
+        "artifact_type": "multi_field_overlap_projection_attestation",
+        "execution_class": "synthetic-audit",
+        "empirical_evidence": false,
+        "contract_sha256": "6fe77f7d4cea247cad328c665ac965bc115645f6dc37e9f08a289dcbde9d6545",
+        "paper": "sft",
+        "source_key": "smoltalk-sft",
+        "source_revision": "5feaf2fd3ffca7c237fc38d1861bc30365d48ffa",
+        "role": "candidate-general",
+        "projection_status": "generated_pass",
+        "review_record": null,
+        "exporter": {
+          "name": "committed-synthetic-fixture",
+          "version": "2",
+          "implementation_sha256": "422f52d6f65a3ea9f23bd12473c89fb81bb311af338f14c26f94999146b8364a"
+        },
+        "fields": [
+          {
+            "slot": "model-input",
+            "field_class": "model-input",
+            "field_path": "prompt_text",
+            "structured_flattening": "generated scalar UTF-8 fixture"
+          },
+          {
+            "slot": "training-target",
+            "field_class": "training-target",
+            "field_path": "response_text",
+            "structured_flattening": "generated scalar UTF-8 fixture"
+          }
+        ],
+        "field_inventory_sha256": "c6ae0e82467de822cb74e41df2510c6b6a615f25006f8cfcab0964a7f89768d5"
+      },
       "license_fields": [
         "license"
       ]
@@ -33,21 +71,59 @@
       "config": "default",
       "split": "train",
       "path": "score.jsonl",
-      "sha256": "e86751d7b9d243ba4101afc53ad7b33b0daa090db50b8a50564f2d106e2d397a",
+      "sha256": "4626121a95eb29928da714330ad8aa5395e2e2a2af2665e6c510072110a317bd",
       "role": "candidate-math",
       "exporter": {
         "name": "committed-synthetic-fixture",
-        "version": "1"
+        "version": "2",
+        "implementation_sha256": "422f52d6f65a3ea9f23bd12473c89fb81bb311af338f14c26f94999146b8364a"
       },
       "row_id_fields": [
         "id"
       ],
       "content_projection": [
         {
-          "slot": "dedup-text",
-          "field": "dedup_text"
+          "slot": "model-input",
+          "field": "prompt_text"
+        },
+        {
+          "slot": "training-target",
+          "field": "response_text"
         }
       ],
+      "overlap_projection_attestation": {
+        "schema_version": 1,
+        "artifact_type": "multi_field_overlap_projection_attestation",
+        "execution_class": "synthetic-audit",
+        "empirical_evidence": false,
+        "contract_sha256": "6fe77f7d4cea247cad328c665ac965bc115645f6dc37e9f08a289dcbde9d6545",
+        "paper": "sft",
+        "source_key": "openr1-math-sft",
+        "source_revision": "e4e141ec9dea9f8326f4d347be56105859b2bd68",
+        "role": "candidate-math",
+        "projection_status": "generated_pass",
+        "review_record": null,
+        "exporter": {
+          "name": "committed-synthetic-fixture",
+          "version": "2",
+          "implementation_sha256": "422f52d6f65a3ea9f23bd12473c89fb81bb311af338f14c26f94999146b8364a"
+        },
+        "fields": [
+          {
+            "slot": "model-input",
+            "field_class": "model-input",
+            "field_path": "prompt_text",
+            "structured_flattening": "generated scalar UTF-8 fixture"
+          },
+          {
+            "slot": "training-target",
+            "field_class": "training-target",
+            "field_path": "response_text",
+            "structured_flattening": "generated scalar UTF-8 fixture"
+          }
+        ],
+        "field_inventory_sha256": "fe8ddb78863131b373a8e8c99ab0aa7aca189a2d3d058fa54a92aa9b2907525d"
+      },
       "license_fields": [
         "license"
       ]

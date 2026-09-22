@@ -42,6 +42,7 @@
         "acquire/data_manifest.json",
         "Tokenizer hash and response-only masking policy",
         "Frozen experiments/content_gates.json and its hash-bound content-readiness ledger",
+        "Frozen experiments/overlap_projection_contract.json plus one reviewed source/revision/role field inventory per SFT dataset",
         "Frozen experiments/sft_reference_contract.json and reviewed semantic-cluster audit hash",
         "For more than 4096 retained rows, a frozen reviewed exact engine and hash-bound external-overlap shards covering every unordered pair",
         "Reviewed site-local semantic-cluster audit configuration"
@@ -51,8 +52,9 @@
       ],
       "checks": [
         "Candidate, score, gate, audit, and benchmark clusters are disjoint",
-        "Any external lexical audit attests exactly n*(n-1)/2 gap-free pair ordinals, while a disk-backed exact shared-5-gram join independently reproduces every qualifying pair",
+        "The record-pair external audit remains blocking for a multi-field export; a reviewed successor must cover the full cross-record segment-pair space and independently reproduce every qualifying segment pair",
         "The downstream split manifest embeds the passing content-readiness ledger hash and accounts for every scanned record with an included partition or explicit exclusion reason",
+        "Every model-input, training-target, protected-input, and protected-target slot reproduces from a reviewed multi-field projection attestation; generated or null inventories cannot clear real execution",
         "validate_sft_reference_contract.py loads the semantic-audit artifact, closes every cluster against retained source/configuration/role provenance, and reproduces hash-sorted largest-remainder candidate/score/gate/audit assignments exactly",
         "Included semantic-cluster members equal the partition JSONL union, excluded semantic clusters equal content-lineage exclusions, and no retained candidate record is orphaned",
         "Each target setting has one target and exactly two protected capability slices; all required per-source partitions are nonempty",

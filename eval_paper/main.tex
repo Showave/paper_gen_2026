@@ -150,6 +150,10 @@ reduce static contamination through generated or refreshed tasks
 \cite{zhu2024dyval,white2025livebench}; contamination tests can detect some
 forms of memorized ordering \cite{oren2024contamination}. Freshness, however,
 changes the evaluation distribution and complicates longitudinal claims.
+ATLAS uses item-response information to adaptively estimate a scalar model
+ability from static benchmark items \cite{li2026atlas}. It is a relevant
+efficiency comparator, but its calibrated-item-bank target differs from our
+crossed human pairwise mean and four-action replacement decision.
 Finally, non-transitive judge preferences can make a scalar rank
 baseline-dependent \cite{xu2025nontransitivity}. We therefore target one
 prespecified pairwise replacement decision, not a universal leaderboard.
@@ -257,8 +261,9 @@ preflight additionally rejects named PII/secret patterns and retained
 character-5-gram near-duplicates; it is a lexical heuristic, not a substitute
 for reviewed multilingual, paraphrase, privacy, or benchmark-leakage audits.
 Above the exhaustive limit, only a reviewed exact engine whose hash-bound
-shards cover every unordered pair can lift the lexical blocker; the committed
-engine attestation is still unfrozen.
+shards cover every cross-record field segment can lift the lexical blocker.
+The committed engine is unfrozen and indexes record pairs only, so it cannot
+clear a real multi-field frame.
 
 Each prompt variant is validated as meaning-preserving by a separate process;
 the target weights over variants are fixed, not chosen after seeing which model
@@ -812,6 +817,16 @@ attestation, whereas readiness depends on reproducing the complete
 qualifying-pair set. The committed engine fields remain null blockers, so no
 large real frame can yet pass this route. An exact lexical pass still cannot
 establish semantic independence or approve a pending source review.
+The external contract indexes record pairs rather than canonical field
+segments, so it cannot clear a multi-field frame even after its engine fields
+are filled; a reviewed successor must cover every cross-record segment pair.
+\texttt{experiments/overlap\_projection\_contract.json} separately requires a
+source/revision/role inventory for every model-visible or protected field,
+including prompts, references, tests, and rubrics. Its validator binds
+canonical slots to exporter code and a review record, and rejects omitted
+field classes, duplicate slots, substituted paths, stale revisions, and a
+generated attestation relabeled as real. The generated fixture is a schema
+test only; all LiveBench field inventories remain null blockers.
 The same section fixes the Qwen, SmolLM, Mistral, and Phi jury revisions,
 posterior prior scales, one-step damped Newton approximation, unit annotation
 cost, nonresponse rule, and planned simulation factor levels. The separate
@@ -844,12 +859,12 @@ positivity and weight bounds, fixed-budget studentization, and the tie
 estimator. It assumes complete response and is only a software audit; it does
 not replace the preregistered condition grid or provide human evidence.
 The shared materialization validator now closes acquisition rows against
-retained, suppressed, and quarantined dispositions. Reviewed multi-field
-overlap schemas and a real/golden validator for root ranks, cells, predictable
-batch probabilities, sequential contributions, missingness bounds, and
-terminal actions are not yet frozen. The artifact-integrity gate therefore
-blocks all real response generation and human acquisition even if source
-reviews later pass.
+retained, suppressed, and quarantined dispositions. The multi-field schema is
+machine-checkable, but reviewed source inventories and a real/golden validator
+for root ranks, cells, predictable batch probabilities, sequential
+contributions, missingness bounds, and terminal actions are not yet frozen.
+The artifact-integrity gate therefore blocks all real response generation and
+human acquisition even if source reviews later pass.
 
 \subsection{Proof of \cref{prop:unbiased}}
 Conditioning on pre-outcome history,
