@@ -863,9 +863,15 @@ def main() -> None:
         rows, inputs = load_materialized_rows(
             args.materialization.resolve(), gate
         )
+        if any(len(row.similarity_segments) != 1 for row in rows):
+            fail(
+                "record-pair external audit v1 cannot validate a multi-field "
+                "materialization; use a reviewed segment-pair successor"
+            )
         roles = {row.record_id: row.role for row in rows}
         ngrams = {
-            row.record_id: character_ngrams(row.similarity_text) for row in rows
+            row.record_id: character_ngrams(row.similarity_segments[0][2])
+            for row in rows
         }
         binding = expected_binding(
             paper=inputs["paper"],

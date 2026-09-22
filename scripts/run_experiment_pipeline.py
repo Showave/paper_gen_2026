@@ -13,8 +13,10 @@ import hashlib
 import json
 import math
 import os
+import stat
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -63,6 +65,48 @@ def load_json(path: Path) -> Any:
         fail(f"file not found: {path}")
     except json.JSONDecodeError as exc:
         fail(f"invalid JSON in {path}: {exc}")
+
+
+def load_jsonl_with_sha256(
+    path: Path, expected_sha256: str | None = None
+) -> tuple[list[dict[str, Any]], str]:
+    try:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError:
+        fail(f"file not found: {path}")
+    except OSError as exc:
+        fail(f"could not open regular JSONL file {path}: {exc}")
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            fail(f"JSONL input must be a regular file: {path}")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
+            payload = handle.read()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    observed = hashlib.sha256(payload).hexdigest()
+    if expected_sha256 is not None and observed != expected_sha256:
+        fail(f"JSONL artifact hash mismatch: {path}")
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        fail(f"invalid UTF-8 JSONL in {path}: {exc}")
+    rows: list[dict[str, Any]] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            fail(f"{path}:{line_number}: blank JSONL rows are forbidden")
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            fail(f"{path}:{line_number}: invalid JSON: {exc}")
+        if not isinstance(row, dict):
+            fail(f"{path}:{line_number}: expected an object")
+        rows.append(row)
+    if not rows:
+        fail(f"JSONL artifact is empty: {path}")
+    return rows, observed
 
 
 def canonical_digest(value: Any) -> str:
@@ -252,6 +296,11 @@ def validate_preregistration_section(
         or integrity_gate.get("status") not in {"unfrozen_blocker", "frozen"}
         or not isinstance(integrity_gate.get("required_before_freezing"), list)
         or not integrity_gate["required_before_freezing"]
+        or integrity_gate.get("validator_interface")
+        != "paper-artifact-integrity-cli-v1"
+        or not isinstance(integrity_gate.get("validator_timeout_seconds"), int)
+        or integrity_gate["validator_timeout_seconds"] <= 0
+        or not isinstance(integrity_gate.get("validator_dependencies"), list)
     ):
         fail(f"{paper} preregistration needs an explicit artifact-integrity gate")
     if integrity_gate["status"] == "unfrozen_blocker" and (
@@ -370,9 +419,12 @@ def validate_preregistration_section(
             or artifact_contract.get("candidate_estimate")
             != "mean(A_current)+(1-alpha)*mean(B_stale)"
             or not isinstance(artifact_contract.get("three_way_bootstrap"), str)
-            or "candidate replications" not in artifact_contract["three_way_bootstrap"]
+            or "candidate replication IDs"
+            not in artifact_contract["three_way_bootstrap"]
             or "R1 trajectories" not in artifact_contract["three_way_bootstrap"]
             or "R2 trajectories" not in artifact_contract["three_way_bootstrap"]
+            or "selected-minus-control"
+            not in artifact_contract["three_way_bootstrap"]
             or not isinstance(artifact_contract.get("bootstrap_seed_schedule"), str)
             or "nearest-rank 0.025 and 0.975"
             not in artifact_contract["bootstrap_seed_schedule"]
@@ -472,6 +524,9 @@ def validate_preregistration_section(
             > audit["mse_bootstrap_replicates"]
             or not isinstance(audit.get("bootstrap_resource_bound"), str)
             or not audit["bootstrap_resource_bound"].strip()
+            or not isinstance(audit.get("candidate_replication_pairing"), str)
+            or "shared across cells"
+            not in audit["candidate_replication_pairing"]
         ):
             fail("RL bootstrap engine or resource bound is not frozen")
         if (
@@ -641,6 +696,11 @@ def require_execution_ready(
         != integrity_gate["validator_sha256"]
         or not isinstance(integrity_gate.get("review_record"), str)
         or not integrity_gate["review_record"].strip()
+        or integrity_gate.get("validator_interface")
+        != "paper-artifact-integrity-cli-v1"
+        or not isinstance(integrity_gate.get("validator_timeout_seconds"), int)
+        or integrity_gate["validator_timeout_seconds"] <= 0
+        or not isinstance(integrity_gate.get("validator_dependencies"), list)
     ):
         fail(f"real {paper} execution needs a reviewed artifact-integrity validator")
 
@@ -832,21 +892,7 @@ def digest_artifact(path: Path) -> dict[str, Any]:
 
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    try:
-        with path.open(encoding="utf-8") as handle:
-            for line_number, line in enumerate(handle, start=1):
-                try:
-                    row = json.loads(line)
-                except json.JSONDecodeError as exc:
-                    fail(f"{path}:{line_number}: invalid JSONL: {exc}")
-                if not isinstance(row, dict):
-                    fail(f"{path}:{line_number}: expected an object")
-                rows.append(row)
-    except FileNotFoundError:
-        fail(f"declared ledger was not produced: {path}")
-    if not rows:
-        fail(f"declared ledger is empty: {path}")
+    rows, _ = load_jsonl_with_sha256(path)
     return rows
 
 
@@ -876,6 +922,31 @@ def confined_work_path(work_dir: Path, declared: Any) -> Path:
 def lineage_record_id(row: dict[str, Any]) -> Any:
     provenance = row.get("provenance")
     return provenance.get("record_id") if isinstance(provenance, dict) else None
+
+
+def recorded_stage_artifact_sha256(
+    run_manifest: dict[str, Any],
+    stage_name: str,
+    work_dir: Path,
+    relative_path: str,
+) -> str:
+    stage = run_manifest.get("stages", {}).get(stage_name)
+    artifacts = stage.get("artifacts") if isinstance(stage, dict) else None
+    expected_path = str((work_dir / relative_path).resolve())
+    matches = [
+        artifact
+        for artifact in artifacts
+        if isinstance(artifact, dict)
+        and str(Path(str(artifact.get("path", ""))).resolve()) == expected_path
+    ] if isinstance(artifacts, list) else []
+    if (
+        len(matches) != 1
+        or not is_sha256(matches[0].get("sha256"))
+    ):
+        fail(
+            f"{stage_name} manifest does not bind JSONL artifact {relative_path}"
+        )
+    return matches[0]["sha256"]
 
 
 def validate_process_content_lineage(
@@ -922,10 +993,11 @@ def validate_process_content_lineage(
         ):
             fail(f"{paper} readiness ledger has an invalid retained-role file")
         path = confined_work_path(work_dir, role_file["path"])
-        rows = load_jsonl(path)
+        rows, _ = load_jsonl_with_sha256(
+            path, role_file.get("sha256")
+        )
         if (
-            role_file.get("sha256") != digest_file(path)
-            or role_file.get("rows") != len(rows)
+            role_file.get("rows") != len(rows)
         ):
             fail(f"{paper} retained-role artifact hash or count is stale")
         for row in rows:
@@ -977,10 +1049,11 @@ def validate_process_content_lineage(
             fail(f"{paper} content partition name is invalid or duplicated")
         declared_partitions.add(partition)
         path = confined_work_path(work_dir, declaration.get("path"))
-        rows = load_jsonl(path)
+        rows, _ = load_jsonl_with_sha256(
+            path, declaration.get("sha256")
+        )
         if (
-            declaration.get("sha256") != digest_file(path)
-            or declaration.get("rows") != len(rows)
+            declaration.get("rows") != len(rows)
         ):
             fail(f"{paper} content partition artifact hash or count is stale")
         partition_record_ids: set[str] = set()
@@ -1055,7 +1128,7 @@ def validate_process_content_lineage(
     }
 
 
-def validate_real_stage(
+def validate_real_stage_semantics(
     paper: str,
     stage_name: str,
     work_dir: Path,
@@ -1288,7 +1361,13 @@ def validate_real_stage(
         return {**content_validation, "evi_configuration_valid": True}
 
     if paper == "eval" and stage_name == "train":
-        rows = load_jsonl(work_dir / "train" / "acquisition_ledger.jsonl")
+        ledger_relative = "train/acquisition_ledger.jsonl"
+        rows, _ = load_jsonl_with_sha256(
+            work_dir / ledger_relative,
+            recorded_stage_artifact_sha256(
+                run_manifest, "train", work_dir, ledger_relative
+            ),
+        )
         expected_slots = nested(section, "acquisition.adaptive_fixed_budget_attempts")
         slot_ids = {row.get("slot_id") for row in rows}
         if (
@@ -1307,7 +1386,13 @@ def validate_real_stage(
 
     if paper == "eval" and stage_name == "evaluate":
         summary = load_json(work_dir / "evaluate" / "summary.json")
-        audit_rows = load_jsonl(work_dir / "evaluate" / "audit_ledger.jsonl")
+        audit_relative = "evaluate/audit_ledger.jsonl"
+        audit_rows, _ = load_jsonl_with_sha256(
+            work_dir / audit_relative,
+            recorded_stage_artifact_sha256(
+                run_manifest, "evaluate", work_dir, audit_relative
+            ),
+        )
         human = nested(section, "human_protocol")
         audit = human["adaptive_audit"]
         audit_slots = nested(
@@ -1373,7 +1458,13 @@ def validate_real_stage(
         }
 
     if paper == "rl" and stage_name == "train":
-        rows = load_jsonl(work_dir / "train" / "trajectory_ledger.jsonl")
+        trajectory_relative = "train/trajectory_ledger.jsonl"
+        rows, _ = load_jsonl_with_sha256(
+            work_dir / trajectory_relative,
+            recorded_stage_artifact_sha256(
+                run_manifest, "train", work_dir, trajectory_relative
+            ),
+        )
         audit = nested(section, "estimator_audit")
         dimension = audit["projection_dimension"]
         count_by_cell = {
@@ -1533,13 +1624,22 @@ def validate_real_stage(
         audit = nested(section, "estimator_audit")
         trajectory_ledger_path = work_dir / "train" / "trajectory_ledger.jsonl"
         try:
+            trajectory_rows, trajectory_ledger_sha256 = load_jsonl_with_sha256(
+                trajectory_ledger_path,
+                recorded_stage_artifact_sha256(
+                    run_manifest,
+                    "train",
+                    work_dir,
+                    "train/trajectory_ledger.jsonl",
+                ),
+            )
             recomputed = analyze_rl_estimator_rows(
-                load_jsonl(trajectory_ledger_path), section
+                trajectory_rows, section
             )
             aggregation_validation = validate_rl_estimator_summary(
                 summary,
                 recomputed,
-                digest_file(trajectory_ledger_path),
+                trajectory_ledger_sha256,
                 section,
                 execution_class="real",
             )
@@ -1602,6 +1702,167 @@ def validate_real_stage(
         }
 
     return content_validation or {"declared_checks_require_site_validator": True}
+
+
+def invoke_artifact_integrity_validator(
+    paper: str,
+    stage_name: str,
+    work_dir: Path,
+    section: dict[str, Any],
+) -> dict[str, Any]:
+    gate = nested(section, "artifact_integrity_gate")
+    if gate.get("status") != "frozen":
+        fail(f"real {paper} execution has no frozen artifact-integrity validator")
+    repo = Path(__file__).resolve().parents[1]
+    validator_relative = Path(gate["validator_path"])
+    dependencies = gate.get("validator_dependencies")
+    if not isinstance(dependencies, list):
+        fail(f"{paper} artifact-integrity validator dependencies are missing")
+    declared_files = [
+        {
+            "path": str(validator_relative),
+            "sha256": gate["validator_sha256"],
+        },
+        *dependencies,
+    ]
+    immutable_files: dict[str, bytes] = {}
+    for declaration in declared_files:
+        relative_text = (
+            declaration.get("path") if isinstance(declaration, dict) else None
+        )
+        expected_sha256 = (
+            declaration.get("sha256") if isinstance(declaration, dict) else None
+        )
+        if (
+            not isinstance(relative_text, str)
+            or not relative_text
+            or not is_sha256(expected_sha256)
+        ):
+            fail(f"{paper} artifact-integrity dependency declaration is invalid")
+        relative = Path(relative_text)
+        if relative.is_absolute() or ".." in relative.parts:
+            fail(f"{paper} artifact-integrity dependency escapes the repository")
+        source = repo
+        for part in relative.parts:
+            source = source / part
+            if source.is_symlink():
+                fail(f"{paper} integrity validator dependency traverses a symlink")
+        try:
+            descriptor = os.open(
+                source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            )
+        except OSError as exc:
+            fail(f"{paper} could not open integrity validator dependency: {exc}")
+        try:
+            metadata = os.fstat(descriptor)
+            if not stat.S_ISREG(metadata.st_mode):
+                fail(f"{paper} integrity validator dependency is not regular")
+            with os.fdopen(descriptor, "rb") as handle:
+                descriptor = -1
+                payload = handle.read()
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+        if hashlib.sha256(payload).hexdigest() != expected_sha256:
+            fail(f"{paper} integrity validator dependency hash is stale")
+        if relative_text in immutable_files:
+            fail(f"{paper} integrity validator dependency is duplicated")
+        immutable_files[relative_text] = payload
+    timeout = gate["validator_timeout_seconds"]
+    with tempfile.TemporaryDirectory(prefix=f"{paper}-integrity-validator-") as tmp:
+        immutable_root = Path(tmp)
+        for relative_text, payload in immutable_files.items():
+            destination = immutable_root / relative_text
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(payload)
+        immutable_validator = immutable_root / validator_relative
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(immutable_validator),
+                "--paper",
+                paper,
+                "--stage",
+                stage_name,
+                "--work-dir",
+                str(work_dir.resolve()),
+            ],
+            cwd=immutable_root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    if completed.returncode != 0:
+        fail(
+            f"{paper} {stage_name} artifact-integrity validator failed: "
+            + completed.stderr.strip()
+        )
+    try:
+        report = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        fail(f"{paper} artifact-integrity validator emitted invalid JSON: {exc}")
+    artifacts = report.get("validated_artifacts") if isinstance(report, dict) else None
+    if (
+        not isinstance(report, dict)
+        or report.get("schema_version") != 1
+        or report.get("artifact_type") != "paper_artifact_integrity_validation"
+        or report.get("paper") != paper
+        or report.get("stage") != stage_name
+        or report.get("status") != "pass"
+        or report.get("preregistration_section_sha256")
+        != canonical_digest(section)
+        or not isinstance(artifacts, list)
+        or not artifacts
+    ):
+        fail(f"{paper} artifact-integrity report is incomplete or stale")
+    root = work_dir.resolve()
+    seen: set[str] = set()
+    for artifact in artifacts:
+        declared = artifact.get("path") if isinstance(artifact, dict) else None
+        if (
+            not isinstance(declared, str)
+            or not declared
+            or declared in seen
+            or not is_sha256(artifact.get("sha256"))
+        ):
+            fail(f"{paper} artifact-integrity report has an invalid artifact")
+        relative = Path(declared)
+        if relative.is_absolute() or ".." in relative.parts:
+            fail(f"{paper} artifact-integrity report path escapes the run")
+        current = root
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                fail(f"{paper} integrity-validated artifact traverses a symlink")
+        resolved = current.resolve()
+        if root not in resolved.parents:
+            fail(f"{paper} integrity-validated artifact escapes the run")
+        if digest_file(resolved) != artifact["sha256"]:
+            fail(f"{paper} integrity-validated artifact changed after validation")
+        seen.add(declared)
+    return {
+        "status": "pass",
+        "validator_sha256": gate["validator_sha256"],
+        "validated_artifacts": len(artifacts),
+        "report_sha256": canonical_digest(report),
+    }
+
+
+def validate_real_stage(
+    paper: str,
+    stage_name: str,
+    work_dir: Path,
+    section: dict[str, Any],
+    run_manifest: dict[str, Any],
+) -> dict[str, Any]:
+    semantic = validate_real_stage_semantics(
+        paper, stage_name, work_dir, section, run_manifest
+    )
+    integrity = invoke_artifact_integrity_validator(
+        paper, stage_name, work_dir, section
+    )
+    return {**semantic, "artifact_integrity_validation": integrity}
 
 
 def atomic_json(path: Path, value: Any) -> None:

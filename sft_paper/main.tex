@@ -795,10 +795,11 @@ space.
 \texttt{experiments/overlap\_projection\_contract.json} now enumerates every
 pilot source/role and requires separate model-input, training-target,
 protected-input, and protected-target slots as applicable. Its validator binds
-an inventory to the source revision, exporter implementation, canonical field
-paths, and review record, and rejects missing classes, duplicate slots,
-substituted paths, stale revisions, and generated attestations relabeled as
-real. The generated two-field fixture is only a schema audit. All eight real
+each inventory to source revision, configuration, split, exporter, canonical
+field paths, and a review-artifact hash. Runtime enumeration requires every
+textual leaf path to be projected or explicitly excluded; generated
+attestations cannot be relabeled as real. The generated two-field fixture is
+only a schema audit. All eight real
 field inventories and review records remain null, so concatenating one
 convenient text field cannot clear the overlap gate.
 The separate \texttt{experiments/sft\_reference\_contract.json} fixes the

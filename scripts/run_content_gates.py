@@ -141,10 +141,36 @@ def read_json_with_sha256(path: Path) -> tuple[Any, str]:
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows, _ = read_jsonl_with_sha256(path)
+    return rows
+
+
+def read_jsonl_with_sha256(
+    path: Path, expected_sha256: str | None = None
+) -> tuple[list[dict[str, Any]], str]:
     try:
-        text = path.read_text(encoding="utf-8")
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     except FileNotFoundError:
         fail(f"file not found: {path}")
+    except OSError as exc:
+        fail(f"could not open regular JSONL file {path}: {exc}")
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            fail(f"JSONL input must be a regular file: {path}")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
+            payload = handle.read()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    observed = hashlib.sha256(payload).hexdigest()
+    if expected_sha256 is not None and observed != expected_sha256:
+        fail(f"JSONL artifact hash mismatch: {path}")
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        fail(f"invalid UTF-8 JSONL in {path}: {exc}")
     rows: list[dict[str, Any]] = []
     for line_number, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
@@ -158,7 +184,7 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
         rows.append(value)
     if not rows:
         fail(f"{path}: artifact is empty")
-    return rows
+    return rows, observed
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -373,6 +399,20 @@ def textual_leaves(value: Any) -> Iterable[str]:
             yield from textual_leaves(value[key])
 
 
+def textual_leaf_paths(value: Any, path: str = "") -> Iterable[str]:
+    if isinstance(value, str):
+        if path:
+            yield path
+    elif isinstance(value, list):
+        child_path = path + "[]" if path else "[]"
+        for item in value:
+            yield from textual_leaf_paths(item, child_path)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            child_path = f"{path}.{key}" if path else str(key)
+            yield from textual_leaf_paths(item, child_path)
+
+
 def _projection_key(provenance: dict[str, Any]) -> tuple[str, str, str, str]:
     fields = ("source_key", "config", "upstream_split", "requested_role")
     if not all(isinstance(provenance.get(field), str) for field in fields):
@@ -404,12 +444,85 @@ def load_materialized_rows(
         is not content.get("synthetic_fixture")
     ):
         fail("materialization manifests are missing or inconsistent")
+    overlap_contract = read_json(DEFAULT_OVERLAP_PROJECTION_CONTRACT)
+    source_registry = read_json(DEFAULT_PUBLIC_SOURCE_REGISTRY)
+    pilot_preregistration = read_json(DEFAULT_PILOT_PREREGISTRATION)
+    registry_entries = {
+        entry.get("key"): entry
+        for entry in source_registry.get("sources", [])
+        if isinstance(entry, dict)
+    }
+    paper = acquisition["paper"]
+    section = pilot_preregistration.get(paper)
+    if not isinstance(section, dict):
+        fail("materialization paper has no current preregistration section")
+    referenced: set[str] = set()
+    for field, value in section.items():
+        if field == "source_keys" or field.endswith("_model_key") or field.endswith(
+            "_model_keys"
+        ):
+            referenced.update(value if isinstance(value, list) else [value])
+    if not referenced.issubset(registry_entries):
+        fail("current preregistration references an unknown registry entry")
+    expected_reviews = (
+        []
+        if acquisition["synthetic_fixture"] is True
+        else [
+            {
+                "key": key,
+                "status": registry_entries[key]["manual_review"]["status"],
+                "review_record": registry_entries[key]["manual_review"].get(
+                    "review_record"
+                ),
+            }
+            for key in sorted(referenced)
+        ]
+    )
+    expected_models = [
+        {
+            "key": key,
+            "repo_id": registry_entries[key]["repo_id"],
+            "revision": registry_entries[key]["revision"],
+        }
+        for key in sorted(referenced)
+        if registry_entries[key]["kind"] == "model"
+    ]
+    acquisition_inputs = acquisition.get("inputs")
+    if (
+        not isinstance(acquisition_inputs, list)
+        or not acquisition_inputs
+        or acquisition.get("registry_sha256") != digest_value(source_registry)
+        or acquisition.get("preregistration_section_sha256")
+        != digest_value(section)
+        or acquisition.get("manual_review_records") != expected_reviews
+        or acquisition.get("referenced_models") != expected_models
+        or (
+            acquisition["synthetic_fixture"] is False
+            and (
+                {
+                    item.get("source_key")
+                    for item in acquisition_inputs
+                    if isinstance(item, dict)
+                }
+                != set(section.get("source_keys", []))
+                or any(
+                    review["status"] != "approved"
+                    or not isinstance(review["review_record"], str)
+                    or not review["review_record"].strip()
+                    for review in expected_reviews
+                )
+            )
+        )
+    ):
+        fail("materialization does not bind the current registry and preregistration")
     provenance_path = confined_path(
         materialization, acquisition.get("row_provenance_path")
     )
+    provenance_rows, provenance_sha256 = read_jsonl_with_sha256(
+        provenance_path, acquisition.get("row_provenance_sha256")
+    )
     if (
-        digest_file(provenance_path) != acquisition.get("row_provenance_sha256")
-        or len(read_jsonl(provenance_path)) != acquisition.get("row_count")
+        len(provenance_rows) != acquisition.get("row_count")
     ):
         fail("row provenance does not match the acquisition manifest")
     materialized_rows = 0
@@ -419,12 +532,26 @@ def load_materialized_rows(
         ):
             fail("acquisition manifest has an invalid materialized input")
         path = confined_path(materialization, input_file["materialized_path"])
-        values = read_jsonl(path)
+        values, materialized_sha256 = read_jsonl_with_sha256(
+            path, input_file.get("materialized_sha256")
+        )
         if (
-            digest_file(path) != input_file.get("materialized_sha256")
-            or len(values) != input_file.get("input_rows")
+            len(values) != input_file.get("input_rows")
         ):
             fail(f"materialized input does not match acquisition manifest: {path}")
+        observed_text_paths = sorted(
+            {
+                field_path
+                for value in values
+                for field_path in textual_leaf_paths(value.get("row"))
+            }
+        )
+        attestation = input_file.get("overlap_projection_attestation")
+        if (
+            not isinstance(attestation, dict)
+            or observed_text_paths != attestation.get("raw_text_paths")
+        ):
+            fail("materialized textual paths differ from projection inventory")
         materialized_rows += len(values)
     if materialized_rows != acquisition.get("row_count"):
         fail("materialized input counts do not reproduce acquisition row count")
@@ -436,9 +563,6 @@ def load_materialized_rows(
         if digest_file(artifact_path) != content.get(hash_field):
             fail(f"processing artifact hash mismatch: {artifact_path}")
 
-    overlap_contract = read_json(DEFAULT_OVERLAP_PROJECTION_CONTRACT)
-    source_registry = read_json(DEFAULT_PUBLIC_SOURCE_REGISTRY)
-    pilot_preregistration = read_json(DEFAULT_PILOT_PREREGISTRATION)
     projections: dict[tuple[str, str, str, str], list[dict[str, str]]] = {}
     for input_file in acquisition.get("inputs", []):
         if not isinstance(input_file, dict):
@@ -477,8 +601,26 @@ def load_materialized_rows(
                     "acquisition projection attestation execution class "
                     "does not match the materialization"
                 )
+            if (
+                attestation.get("paper") != acquisition.get("paper")
+                or attestation.get("source_key") != input_file.get("source_key")
+                or attestation.get("source_revision")
+                != input_file.get("revision")
+                or attestation.get("role") != input_file.get("role")
+                or attestation.get("config") != input_file.get("config")
+                or attestation.get("split") != input_file.get("split")
+            ):
+                fail("acquisition projection attestation binds another source")
             if attestation.get("exporter") != input_file.get("exporter"):
                 fail("acquisition projection attestation binds another exporter")
+            registered_entry = registry_entries.get(input_file.get("source_key"))
+            if (
+                not isinstance(registered_entry, dict)
+                or input_file.get("repo_id") != registered_entry.get("repo_id")
+                or input_file.get("revision")
+                != registered_entry.get("revision")
+            ):
+                fail("acquisition source repository or revision is stale")
         except ProjectionContractError as exc:
             fail(f"acquisition overlap projection does not verify: {exc}")
         field_class_by_slot = {
@@ -505,10 +647,9 @@ def load_materialized_rows(
         ):
             fail("content manifest has an invalid retained-role declaration")
         path = confined_path(materialization, role_file["path"])
-        observed_hash = digest_file(path)
-        if observed_hash != role_file["sha256"]:
-            fail(f"retained role file hash mismatch: {path}")
-        values = read_jsonl(path)
+        values, observed_hash = read_jsonl_with_sha256(
+            path, role_file["sha256"]
+        )
         if len(values) != role_file.get("rows"):
             fail(f"retained role file row count mismatch: {path}")
         role_file_hashes.append(
@@ -746,6 +887,89 @@ def near_duplicate_findings(
     training = set(specification["role_classes"]["training"])
     protected = set(specification["role_classes"]["protected"])
     findings: list[dict[str, Any]] = []
+
+    def threshold_for(
+        left: ScanRow,
+        left_field_class: str,
+        right: ScanRow,
+        right_field_class: str,
+    ) -> tuple[str, float]:
+        field_classes = {left_field_class, right_field_class}
+        if (
+            any(name.startswith("protected-") for name in field_classes)
+            and any(not name.startswith("protected-") for name in field_classes)
+        ):
+            return (
+                "training_protected_near_duplicate",
+                similarity["training_protected_threshold"],
+            )
+        if left.role == right.role:
+            return "within_role_near_duplicate", similarity["within_role_threshold"]
+        if (
+            left.role in training
+            and right.role in protected
+            or right.role in training
+            and left.role in protected
+        ):
+            return (
+                "training_protected_near_duplicate",
+                similarity["training_protected_threshold"],
+            )
+        return "cross_role_near_duplicate", similarity["cross_role_threshold"]
+
+    def append_if_qualifying(
+        left: ScanRow,
+        left_slot: str,
+        left_field_class: str,
+        left_ngrams: frozenset[str],
+        right: ScanRow,
+        right_slot: str,
+        right_field_class: str,
+        right_ngrams: frozenset[str],
+    ) -> None:
+        if not left_ngrams or not right_ngrams:
+            return
+        finding_type, threshold = threshold_for(
+            left, left_field_class, right, right_field_class
+        )
+        length_upper_bound = min(
+            len(left_ngrams), len(right_ngrams)
+        ) / max(len(left_ngrams), len(right_ngrams))
+        if length_upper_bound < threshold:
+            return
+        similarity_value = jaccard(left_ngrams, right_ngrams)
+        if similarity_value < threshold:
+            return
+        ordered = sorted(
+            (
+                (left.record_id, left.role, left_slot, left_field_class),
+                (right.record_id, right.role, right_slot, right_field_class),
+            )
+        )
+        findings.append(
+            {
+                "finding_type": finding_type,
+                "pair_id": digest_value(
+                    {
+                        "left_record_id": ordered[0][0],
+                        "left_slot": ordered[0][2],
+                        "right_record_id": ordered[1][0],
+                        "right_slot": ordered[1][2],
+                    }
+                ),
+                "left_record_id": ordered[0][0],
+                "left_role": ordered[0][1],
+                "left_slot": ordered[0][2],
+                "left_field_class": ordered[0][3],
+                "right_record_id": ordered[1][0],
+                "right_role": ordered[1][1],
+                "right_slot": ordered[1][2],
+                "right_field_class": ordered[1][3],
+                "character_5gram_jaccard": round(similarity_value, 12),
+                "threshold": threshold,
+            }
+        )
+
     for left_index, right_index in pairs:
         left = rows[left_index]
         right = rows[right_index]
@@ -759,76 +983,40 @@ def near_duplicate_findings(
                 right_field_class,
                 right_ngrams,
             ) in segment_ngrams[right_index].items():
-                if not left_ngrams or not right_ngrams:
-                    continue
-                field_classes = {left_field_class, right_field_class}
-                if (
-                    any(name.startswith("protected-") for name in field_classes)
-                    and any(
-                        not name.startswith("protected-")
-                        for name in field_classes
-                    )
-                ):
-                    finding_type = "training_protected_near_duplicate"
-                    threshold = similarity["training_protected_threshold"]
-                elif left.role == right.role:
-                    finding_type = "within_role_near_duplicate"
-                    threshold = similarity["within_role_threshold"]
-                elif (
-                    left.role in training
-                    and right.role in protected
-                    or right.role in training
-                    and left.role in protected
-                ):
-                    finding_type = "training_protected_near_duplicate"
-                    threshold = similarity["training_protected_threshold"]
-                else:
-                    finding_type = "cross_role_near_duplicate"
-                    threshold = similarity["cross_role_threshold"]
-                length_upper_bound = min(
-                    len(left_ngrams), len(right_ngrams)
-                ) / max(len(left_ngrams), len(right_ngrams))
-                if length_upper_bound < threshold:
-                    continue
-                similarity_value = jaccard(left_ngrams, right_ngrams)
-                if similarity_value < threshold:
-                    continue
-                ordered = sorted(
-                    (
-                        (left.record_id, left.role, left_slot),
-                        (right.record_id, right.role, right_slot),
-                    )
+                append_if_qualifying(
+                    left,
+                    left_slot,
+                    left_field_class,
+                    left_ngrams,
+                    right,
+                    right_slot,
+                    right_field_class,
+                    right_ngrams,
                 )
-                findings.append(
-                    {
-                        "finding_type": finding_type,
-                        "pair_id": digest_value(
-                            {
-                                "left_record_id": ordered[0][0],
-                                "left_slot": ordered[0][2],
-                                "right_record_id": ordered[1][0],
-                                "right_slot": ordered[1][2],
-                            }
-                        ),
-                        "left_record_id": ordered[0][0],
-                        "left_role": ordered[0][1],
-                        "left_slot": ordered[0][2],
-                        "left_field_class": (
-                            left_field_class
-                            if ordered[0][0] == left.record_id
-                            else right_field_class
-                        ),
-                        "right_record_id": ordered[1][0],
-                        "right_role": ordered[1][1],
-                        "right_slot": ordered[1][2],
-                        "right_field_class": (
-                            right_field_class
-                            if ordered[1][0] == right.record_id
-                            else left_field_class
-                        ),
-                        "character_5gram_jaccard": round(similarity_value, 12),
-                        "threshold": threshold,
-                    }
+    for row_index, row in enumerate(rows):
+        for (
+            left_slot,
+            (left_field_class, left_ngrams),
+        ), (
+            right_slot,
+            (right_field_class, right_ngrams),
+        ) in itertools.combinations(segment_ngrams[row_index].items(), 2):
+            field_classes = {left_field_class, right_field_class}
+            if (
+                any(name.startswith("protected-") for name in field_classes)
+                and any(
+                    not name.startswith("protected-") for name in field_classes
+                )
+            ):
+                append_if_qualifying(
+                    row,
+                    left_slot,
+                    left_field_class,
+                    left_ngrams,
+                    row,
+                    right_slot,
+                    right_field_class,
+                    right_ngrams,
                 )
     return (
         sorted(
@@ -1255,6 +1443,32 @@ def run_self_test() -> None:
         )
     ):
         fail("self-test did not apply field classes before the role threshold")
+    same_record_findings = near_duplicate_findings(
+        [
+            ScanRow(
+                "same-record",
+                "prompt-train",
+                (
+                    ("model-input", "model-input", same_role_base),
+                    (
+                        "protected-target",
+                        "protected-target",
+                        same_role_base + " extended suffix",
+                    ),
+                ),
+                same_role_base,
+            )
+        ],
+        specification,
+    )[0]
+    if (
+        len(same_record_findings) != 1
+        or same_record_findings[0]["left_record_id"] != "same-record"
+        or same_record_findings[0]["right_record_id"] != "same-record"
+        or same_record_findings[0]["finding_type"]
+        != "training_protected_near_duplicate"
+    ):
+        fail("self-test missed a same-record training/protected overlap")
     _, short_rows, _, _ = near_duplicate_findings(
         [fixture("short", "candidate-general", "tiny")], specification
     )

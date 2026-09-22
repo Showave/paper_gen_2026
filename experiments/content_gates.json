@@ -55,7 +55,7 @@
     "contract_path": "experiments/external_overlap_audit.json",
     "contract_sha256": "51c19c946cb5f4aaaccfd2c87a87f3d14f16516589179340361908a78b4b312e",
     "validator_path": "scripts/validate_external_overlap_audit.py",
-    "validator_sha256": "c621c44a28e5b23935fc71066062379bfe97902b90d3c77704972e7dd6b775e2"
+    "validator_sha256": "f6db8180baddd363434de59d0eb07a71054a4b03d12bf0f986fc56044887b2d4"
   },
   "failure_policy": {
     "pii_in_retained_content": "block",

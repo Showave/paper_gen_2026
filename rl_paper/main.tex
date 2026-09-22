@@ -510,8 +510,10 @@ MSE by
 (\widehat g-R_1)^\top(\widehat g-R_2).
 \end{equation}
 Its expectation is projected MSE although one realization may be negative.
-Intervals independently resample candidate replications, $R_1$ trajectories,
-and $R_2$ trajectories, retaining their shared-reference dependence.
+Intervals jointly resample paired candidate replication IDs across cells and
+independently resample $R_1$ and $R_2$ trajectories, retaining shared-reference
+dependence. Every draw recomputes measured cost, nonnegative MSE--cost risk,
+and selected-minus-on-policy confirmation contrasts.
 Point estimates are independently recomputed from the hash-bound trajectory
 ledger: candidate stratum means, MSE, mean complete-replication cost, the
 selection argmin, and both selected and on-policy untouched confirmation cells
@@ -788,9 +790,11 @@ are filled; a reviewed successor must cover every cross-record segment pair.
 \texttt{experiments/overlap\_projection\_contract.json} now enumerates every
 pilot source/role and requires separate model-input, training-target,
 protected-input, and protected-target slots where applicable. Its validator
-binds each inventory to a source revision, exporter implementation, canonical
-field paths, and review record; generated attestations cannot be relabeled as
-real. The schema audit covers the DAPO prompt and protected-answer classes,
+binds each inventory to source revision, configuration, split, exporter,
+canonical paths, and a review-artifact hash. Runtime enumeration requires
+every textual leaf to be projected or explicitly excluded, and
+training/protected fields are compared even within one record. Generated
+attestations cannot be relabeled as real. The schema audit covers the DAPO prompt and protected-answer classes,
 but the actual field inventory and review record remain null blockers.
 The companion \texttt{synthetic\_commands.json} fixes a four-cell trajectory
 law, $\alpha=1/2$, 32 draws per source, 2,000 replications, and seed 20260902.
@@ -804,10 +808,11 @@ audit, not model-training evidence; its outputs cannot populate
 audit. Its generated two-dimensional ledger has hand-computed current, stale,
 and independent reference terms; the same code used for a real ledger must
 recover both selection-cell MSEs, the nonnegative-risk argmin, and selected
-plus on-policy confirmation MSEs. It independently resamples complete
-candidate replications, $R_1$ trajectories, and $R_2$ trajectories within each
-target law, derives a domain-separated stream from the frozen seed, and
-requires exact nearest-rank 2.5/97.5 percentile bounds. The pilot refreezes a
+plus on-policy confirmation MSEs. It jointly resamples complete paired
+candidate replication IDs across cells and independently resamples $R_1$ and
+$R_2$ trajectories within each target law. A domain-separated stream drives
+exact nearest-rank 2.5/97.5 percentile bounds for cell MSE, measured cost,
+risk, and selected-minus-control contrasts. The pilot refreezes a
 feasible shape of 64 projected coordinates, 250 candidate replications per
 cell, 2,048 trajectories per reference sample, and 2,000 bootstrap draws.
 NumPy~2.5.3 PCG64 emits exact multinomial weights in chunks of 32; projected

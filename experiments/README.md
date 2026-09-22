@@ -180,10 +180,15 @@ make overlap-projection-audit
 source/role used by the three pilots and the minimum model-input,
 training-target, protected-input, and protected-target field classes that a
 reviewed exporter must preserve. A field inventory binds canonical slots to
-exact source paths, exporter code, source revision, and a review record.
+exact source paths, exporter code, source revision, configuration, split, and a
+hash-bound review artifact. Materialization enumerates every runtime textual
+leaf path and requires it to be either projected or explicitly excluded with a
+reviewed reason; a field inventory cannot be reused across configurations.
 Downstream lexical comparison retains each slot as a separate comparison unit
 so, for example, a training response is checked against a protected prompt
-rather than hidden by record-level concatenation. The committed synthetic
+rather than hidden by record-level concatenation. Training/protected segment
+pairs are also checked within one record, catching prompts that expose their
+own protected target. The committed synthetic
 materialization exercises this path with model-input and training-target
 slots. The eight real inventories are intentionally null and
 `unfrozen_site_schema`; generated attestations and mutation tests do not clear
@@ -255,10 +260,11 @@ The aggregator reconstructs the stratified estimate, cross-reference MSE,
 mean complete-replication cost, selection argmin, and untouched-confirmation
 results from the ledger hash. It retains negative raw cross-MSE, uses the
 nonnegative MSE--cost transform only for selection, and requires the selected
-plus alpha=1 confirmation cells. It now also independently resamples candidate
-replications, R1 trajectories, and R2 trajectories and requires exact
-reproduction of each reported percentile interval under the domain-separated
-seed schedule. The frozen exploratory shape uses 64 projected coordinates,
+plus alpha=1 confirmation cells. It now jointly resamples paired candidate
+replication IDs across cells while independently resampling R1 and R2
+trajectories. It requires exact reproduction of per-cell MSE, cost, and risk
+intervals and selected-minus-control confirmation intervals under the
+domain-separated seed schedule. The frozen exploratory shape uses 64 projected coordinates,
 250 candidate replications per cell, 2,048 trajectories per reference sample,
 and 2,000 bootstrap draws. NumPy 2.5.3 PCG64 generates exact multinomial
 weights in chunks of 32; projected means and squared norms are sufficient, so
@@ -293,7 +299,12 @@ still carry an `artifact_integrity_gate` with status `unfrozen_blocker`. The
 multi-field contract now makes the required source/role inventories
 machine-checkable, but every real inventory and review record remains null;
 paper-specific downstream validators must also be hash-frozen. Declarative
-stage checks and synthetic-audit bypasses do not satisfy this gate.
+stage checks and synthetic-audit bypasses do not satisfy this gate. Once a
+paper gate is frozen, the runner invokes its reviewed hash-bound validator
+after every real stage through `paper-artifact-integrity-cli-v1`, checks the
+validator and declared dependencies from no-follow, hash-verified immutable
+copies, checks the returned artifact hashes itself, and binds the report digest
+into stage validation; merely listing a validator path is insufficient.
 
 ## Reproducible design audits
 

@@ -151,7 +151,7 @@ reduce static contamination through generated or refreshed tasks
 forms of memorized ordering \cite{oren2024contamination}. Freshness, however,
 changes the evaluation distribution and complicates longitudinal claims.
 ATLAS uses item-response information to adaptively estimate a scalar model
-ability from static benchmark items \cite{li2026atlas}. It is a relevant
+ability from static benchmark items \cite{li2025atlas}. It is a relevant
 efficiency comparator, but its calibrated-item-bank target differs from our
 crossed human pairwise mean and four-action replacement decision.
 Finally, non-transitive judge preferences can make a scalar rank
@@ -823,9 +823,10 @@ are filled; a reviewed successor must cover every cross-record segment pair.
 \texttt{experiments/overlap\_projection\_contract.json} separately requires a
 source/revision/role inventory for every model-visible or protected field,
 including prompts, references, tests, and rubrics. Its validator binds
-canonical slots to exporter code and a review record, and rejects omitted
-field classes, duplicate slots, substituted paths, stale revisions, and a
-generated attestation relabeled as real. The generated fixture is a schema
+canonical slots to source revision, configuration, split, exporter code, and a
+review-artifact hash. Runtime enumeration requires every textual leaf to be
+projected or explicitly excluded, and rejects a generated attestation
+relabeled as real. The generated fixture is a schema
 test only; all LiveBench field inventories remain null blockers.
 The same section fixes the Qwen, SmolLM, Mistral, and Phi jury revisions,
 posterior prior scales, one-step damped Newton approximation, unit annotation

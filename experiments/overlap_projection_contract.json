@@ -29,7 +29,9 @@
       ],
       "projection_status": "unfrozen_site_schema",
       "field_inventory_sha256": null,
-      "review_record": null
+      "reviewed_config_split_inventories": null,
+      "review_record": null,
+      "review_artifact_sha256": null
     },
     {
       "paper": "sft",
@@ -42,7 +44,9 @@
       ],
       "projection_status": "unfrozen_site_schema",
       "field_inventory_sha256": null,
-      "review_record": null
+      "reviewed_config_split_inventories": null,
+      "review_record": null,
+      "review_artifact_sha256": null
     },
     {
       "paper": "sft",
@@ -55,7 +59,9 @@
       ],
       "projection_status": "unfrozen_site_schema",
       "field_inventory_sha256": null,
-      "review_record": null
+      "reviewed_config_split_inventories": null,
+      "review_record": null,
+      "review_artifact_sha256": null
     },
     {
       "paper": "sft",
@@ -68,7 +74,9 @@
       ],
       "projection_status": "unfrozen_site_schema",
       "field_inventory_sha256": null,
-      "review_record": null
+      "reviewed_config_split_inventories": null,
+      "review_record": null,
+      "review_artifact_sha256": null
     },
     {
       "paper": "rl",
@@ -81,7 +89,9 @@
       ],
       "projection_status": "unfrozen_site_schema",
       "field_inventory_sha256": null,
-      "review_record": null
+      "reviewed_config_split_inventories": null,
+      "review_record": null,
+      "review_artifact_sha256": null
     },
     {
       "paper": "eval",
@@ -94,7 +104,9 @@
       ],
       "projection_status": "unfrozen_site_schema",
       "field_inventory_sha256": null,
-      "review_record": null
+      "reviewed_config_split_inventories": null,
+      "review_record": null,
+      "review_artifact_sha256": null
     },
     {
       "paper": "eval",
@@ -107,7 +119,9 @@
       ],
       "projection_status": "unfrozen_site_schema",
       "field_inventory_sha256": null,
-      "review_record": null
+      "reviewed_config_split_inventories": null,
+      "review_record": null,
+      "review_artifact_sha256": null
     },
     {
       "paper": "eval",
@@ -120,15 +134,17 @@
       ],
       "projection_status": "unfrozen_site_schema",
       "field_inventory_sha256": null,
-      "review_record": null
+      "reviewed_config_split_inventories": null,
+      "review_record": null,
+      "review_artifact_sha256": null
     }
   ],
   "review_requirements": [
     "Inventory every textual field in the pinned source schema and classify whether it is model-visible, optimization-visible, or protected.",
-    "Bind the inventory to the exact source revision, exporter implementation, exporter version, and source-specific manual review record.",
-    "Demonstrate that every required class has exactly one or more named canonical slots and that no textual field is silently concatenated away.",
+    "Bind each inventory to the exact source revision, configuration, split, exporter implementation, exporter version, and SHA-256 of the source-specific review artifact.",
+    "Enumerate every runtime textual leaf path and classify it as a canonical projected slot or a reviewed exclusion with a reason; no textual field may be silently omitted or concatenated away.",
     "Review structured-to-string flattening, message order, templates, tests, references, and alternate-answer fields before setting projection_status to reviewed_pass.",
-    "Freeze one field_inventory_sha256 and nonempty review_record per source declaration; partial approval is not inherited across revisions or roles."
+    "Freeze one field_inventory_sha256 per admitted configuration/split plus a nonempty review record and review-artifact SHA-256; partial approval is not inherited across revisions, configurations, splits, or roles."
   ],
   "failure_policy": {
     "unfrozen_contract": "block real execution",

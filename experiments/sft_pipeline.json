@@ -44,7 +44,7 @@
         "Frozen experiments/content_gates.json and its hash-bound content-readiness ledger",
         "Frozen experiments/overlap_projection_contract.json plus one reviewed source/revision/role field inventory per SFT dataset",
         "Frozen experiments/sft_reference_contract.json and reviewed semantic-cluster audit hash",
-        "For more than 4096 retained rows, a frozen reviewed exact engine and hash-bound external-overlap shards covering every unordered pair",
+        "For more than 4096 retained rows, a frozen reviewed segment-pair engine and hash-bound shards covering the complete cross-record field-segment pair space",
         "Reviewed site-local semantic-cluster audit configuration"
       ],
       "artifacts": [

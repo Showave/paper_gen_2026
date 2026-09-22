@@ -18,8 +18,10 @@ import argparse
 import copy
 import hashlib
 import json
+import os
 import re
 import shutil
+import stat
 import tempfile
 import unicodedata
 from collections import Counter, defaultdict
@@ -129,11 +131,37 @@ def write_jsonl(path: Path, values: Iterable[dict[str, Any]]) -> None:
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows, _ = read_jsonl_with_sha256(path)
+    return rows
+
+
+def read_jsonl_with_sha256(
+    path: Path, expected_sha256: str | None = None
+) -> tuple[list[dict[str, Any]], str]:
     try:
-        text = path.read_text(encoding="utf-8")
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     except FileNotFoundError:
         fail(f"file not found: {path}")
-    return parse_jsonl(text, str(path))
+    except OSError as exc:
+        fail(f"could not open regular JSONL file {path}: {exc}")
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            fail(f"JSONL input must be a regular file: {path}")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
+            payload = handle.read()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    observed = digest_bytes(payload)
+    if expected_sha256 is not None and observed != expected_sha256:
+        fail(f"JSONL artifact hash mismatch: {path}")
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        fail(f"{path}: export must be UTF-8: {exc}")
+    return parse_jsonl(text, str(path)), observed
 
 
 def parse_jsonl(text: str, source: str) -> list[dict[str, Any]]:
@@ -154,21 +182,8 @@ def parse_jsonl(text: str, source: str) -> list[dict[str, Any]]:
 
 
 def read_pinned_jsonl(path: Path, expected_sha256: str) -> list[dict[str, Any]]:
-    try:
-        payload = path.read_bytes()
-    except FileNotFoundError:
-        fail(f"file not found: {path}")
-    observed = digest_bytes(payload)
-    if observed != expected_sha256:
-        fail(
-            f"{path}: byte hash {observed} differs from declared "
-            f"{expected_sha256}"
-        )
-    try:
-        text = payload.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        fail(f"{path}: export must be UTF-8: {exc}")
-    return parse_jsonl(text, str(path))
+    rows, observed = read_jsonl_with_sha256(path, expected_sha256)
+    return rows
 
 
 def nested(value: Any, dotted_path: str) -> Any:
@@ -198,6 +213,20 @@ def meaningful(value: Any) -> bool:
     if isinstance(value, dict):
         return bool(value) and any(meaningful(item) for item in value.values())
     return False
+
+
+def textual_leaf_paths(value: Any, path: str = "") -> Iterable[str]:
+    if isinstance(value, str):
+        if path:
+            yield path
+    elif isinstance(value, list):
+        child_path = path + "[]" if path else "[]"
+        for item in value:
+            yield from textual_leaf_paths(item, child_path)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            child_path = f"{path}.{key}" if path else str(key)
+            yield from textual_leaf_paths(item, child_path)
 
 
 def project_content(
@@ -477,6 +506,15 @@ def validate_input_spec(
                     f"{key}: projection attestation execution class does not "
                     "match the materialization"
                 )
+            if (
+                attestation.get("paper") != paper
+                or attestation.get("source_key") != key
+                or attestation.get("source_revision") != entry["revision"]
+                or attestation.get("role") != declaration["role"]
+                or attestation.get("config") != declaration["config"]
+                or attestation.get("split") != declaration["split"]
+            ):
+                fail(f"{key}: projection attestation binds another source identity")
             if attestation.get("exporter") != exporter:
                 fail(f"{key}: projection attestation binds a different exporter")
         except ProjectionContractError as exc:
@@ -682,6 +720,23 @@ def materialize(
             key = declaration["source_key"]
             path = resolve_input(input_spec_path, declaration["path"])
             rows = read_pinned_jsonl(path, declaration["sha256"])
+            observed_text_paths = sorted(
+                {
+                    field_path
+                    for row in rows
+                    for field_path in textual_leaf_paths(row)
+                }
+            )
+            if (
+                observed_text_paths
+                != declaration["overlap_projection_attestation"][
+                    "raw_text_paths"
+                ]
+            ):
+                fail(
+                    f"{key}: runtime textual leaf paths differ from the "
+                    "reviewed projection inventory"
+                )
             materialized: list[dict[str, Any]] = []
             for line_number, row in enumerate(rows, start=1):
                 record = provenance_record(
@@ -948,15 +1003,99 @@ def verify_output(
     ):
         fail("materialization execution classes are missing or inconsistent")
     registry = read_json(DEFAULT_REGISTRY)
+    entries = validate_registry(registry, DEFAULT_REGISTRY)
     preregistration = read_json(DEFAULT_PREREGISTRATION)
     overlap_projection_contract = read_json(DEFAULT_OVERLAP_PROJECTION_CONTRACT)
+    paper = acquisition.get("paper")
+    section, referenced = validate_preregistration(
+        preregistration, paper, DEFAULT_PREREGISTRATION
+    )
+    expected_reviews = (
+        []
+        if acquisition["synthetic_fixture"] is True
+        else [
+            {
+                "key": key,
+                "status": entries[key]["manual_review"]["status"],
+                "review_record": entries[key]["manual_review"].get(
+                    "review_record"
+                ),
+            }
+            for key in sorted(referenced)
+        ]
+    )
+    expected_models = [
+        {
+            "key": key,
+            "repo_id": entries[key]["repo_id"],
+            "revision": entries[key]["revision"],
+        }
+        for key in sorted(referenced)
+        if entries[key]["kind"] == "model"
+    ]
+    if (
+        acquisition.get("registry_sha256") != digest_value(registry)
+        or acquisition.get("preregistration_section_sha256")
+        != digest_value(section)
+        or acquisition.get("manual_review_records") != expected_reviews
+        or acquisition.get("referenced_models") != expected_models
+        or (
+            acquisition["synthetic_fixture"] is False
+            and any(
+                review["status"] != "approved"
+                or not isinstance(review["review_record"], str)
+                or not review["review_record"].strip()
+                for review in expected_reviews
+            )
+        )
+    ):
+        fail("materialization does not bind the current registry and preregistration")
+    acquisition_inputs = acquisition.get("inputs")
+    if not isinstance(acquisition_inputs, list) or not acquisition_inputs:
+        fail("acquisition manifest has no input declarations")
+    if acquisition["synthetic_fixture"] is False:
+        observed_sources = {
+            item.get("source_key")
+            for item in acquisition_inputs
+            if isinstance(item, dict)
+        }
+        if observed_sources != set(section["source_keys"]):
+            fail("real acquisition omits or adds a preregistered dataset source")
+    observed_exports: set[tuple[str, str, str, str]] = set()
+    for input_file in acquisition_inputs:
+        if not isinstance(input_file, dict):
+            fail("acquisition input declaration must be an object")
+        export_key = tuple(
+            input_file.get(field)
+            for field in ("source_key", "config", "split", "role")
+        )
+        if export_key in observed_exports:
+            fail("acquisition contains a duplicate source/config/split/role")
+        observed_exports.add(export_key)
+        entry = entries.get(input_file.get("source_key"))
+        admitted = {
+            input_file.get("config"),
+            f"{input_file.get('config')}:{input_file.get('split')}",
+        }
+        allowed_roles = {
+            usage.split(":", 1)[1]
+            for usage in entry.get("usage", [])
+            if isinstance(usage, str) and usage.startswith(str(paper) + ":")
+        } if isinstance(entry, dict) else set()
+        if (
+            not isinstance(entry, dict)
+            or entry.get("kind") != "dataset"
+            or not admitted.intersection(entry.get("configs", []))
+            or input_file.get("role") not in allowed_roles
+        ):
+            fail("acquisition source/config/split/role is not registered")
 
     provenance_path = confined_output_path(
         output, acquisition["row_provenance_path"]
     )
-    if digest_file(provenance_path) != acquisition["row_provenance_sha256"]:
-        fail("row provenance ledger hash does not match acquisition manifest")
-    provenance = read_jsonl(provenance_path)
+    provenance, provenance_sha256 = read_jsonl_with_sha256(
+        provenance_path, acquisition["row_provenance_sha256"]
+    )
     if len(provenance) != acquisition["row_count"]:
         fail("row provenance count does not match acquisition manifest")
     expected_provenance: list[dict[str, Any]] = []
@@ -986,11 +1125,23 @@ def verify_output(
         if not re.fullmatch(r"^[0-9a-f]{64}$", str(input_file["input_sha256"])):
             fail("acquisition input declaration has an invalid export-byte hash")
         path = confined_output_path(output, input_file["materialized_path"])
-        if digest_file(path) != input_file["materialized_sha256"]:
-            fail(f"materialized acquisition file hash mismatch: {path}")
-        values = read_jsonl(path)
+        values, materialized_sha256 = read_jsonl_with_sha256(
+            path, input_file["materialized_sha256"]
+        )
         if len(values) != input_file["input_rows"]:
             fail(f"materialized acquisition row count mismatch: {path}")
+        observed_text_paths = sorted(
+            {
+                field_path
+                for value in values
+                for field_path in textual_leaf_paths(value.get("row"))
+            }
+        )
+        if (
+            observed_text_paths
+            != input_file["overlap_projection_attestation"]["raw_text_paths"]
+        ):
+            fail("materialized textual leaf paths differ from projection inventory")
         declaration = {
             "source_key": input_file["source_key"],
             "config": input_file["config"],
@@ -1024,12 +1175,37 @@ def verify_output(
                     "does not match the acquisition"
                 )
             if (
+                input_file["overlap_projection_attestation"].get("paper")
+                != paper
+                or input_file["overlap_projection_attestation"].get(
+                    "source_key"
+                )
+                != input_file["source_key"]
+                or input_file["overlap_projection_attestation"].get(
+                    "source_revision"
+                )
+                != input_file["revision"]
+                or input_file["overlap_projection_attestation"].get("role")
+                != input_file["role"]
+                or input_file["overlap_projection_attestation"].get("config")
+                != input_file["config"]
+                or input_file["overlap_projection_attestation"].get("split")
+                != input_file["split"]
+            ):
+                fail("materialized projection attestation binds another source")
+            if (
                 input_file["overlap_projection_attestation"].get("exporter")
                 != input_file.get("exporter")
             ):
                 fail("materialized projection attestation binds another exporter")
         except ProjectionContractError as exc:
             fail(f"materialized overlap projection does not verify: {exc}")
+        registered_entry = entries[input_file["source_key"]]
+        if (
+            input_file["repo_id"] != registered_entry.get("repo_id")
+            or input_file["revision"] != registered_entry.get("revision")
+        ):
+            fail("materialized source repository or revision is stale")
         entry = {
             "repo_id": input_file["repo_id"],
             "revision": input_file["revision"],
@@ -1089,9 +1265,9 @@ def verify_output(
             fail("retained role declarations must have unique roles")
         observed_roles.add(role_file["role"])
         path = confined_output_path(output, role_file["path"])
-        if digest_file(path) != role_file["sha256"]:
-            fail(f"retained role file hash mismatch: {path}")
-        values = read_jsonl(path)
+        values, role_file_sha256 = read_jsonl_with_sha256(
+            path, role_file["sha256"]
+        )
         if len(values) != role_file["rows"]:
             fail(f"retained role row count mismatch: {path}")
         hashes = {
@@ -1130,9 +1306,10 @@ def verify_output(
     )
     for artifact_field, digest_field, expected_values in disposition_artifacts:
         path = confined_output_path(output, process[artifact_field])
-        if digest_file(path) != process[digest_field]:
-            fail(f"artifact hash mismatch: {path}")
-        if read_jsonl(path) != expected_values:
+        observed_values, observed_sha256 = read_jsonl_with_sha256(
+            path, process[digest_field]
+        )
+        if observed_values != expected_values:
             fail(f"{artifact_field} does not reproduce canonical dispositions")
     expected_summary = {
         "input_row_count": len(expected_provenance),
@@ -1251,6 +1428,29 @@ def run_self_test() -> None:
             write_json(acquisition_path, acquisition)
             write_json(process_path, process)
 
+        def transplant_projection_attestation(case: Path) -> None:
+            acquisition_path = case / "acquire" / "data_manifest.json"
+            acquisition = read_json(acquisition_path)
+            acquisition["inputs"][0]["overlap_projection_attestation"], acquisition[
+                "inputs"
+            ][1]["overlap_projection_attestation"] = (
+                acquisition["inputs"][1]["overlap_projection_attestation"],
+                acquisition["inputs"][0]["overlap_projection_attestation"],
+            )
+            write_json(acquisition_path, acquisition)
+
+        def stale_source_revision(case: Path) -> None:
+            acquisition_path = case / "acquire" / "data_manifest.json"
+            acquisition = read_json(acquisition_path)
+            acquisition["inputs"][0]["revision"] = "0" * 40
+            write_json(acquisition_path, acquisition)
+
+        def stale_registry_binding(case: Path) -> None:
+            acquisition_path = case / "acquire" / "data_manifest.json"
+            acquisition = read_json(acquisition_path)
+            acquisition["registry_sha256"] = "0" * 64
+            write_json(acquisition_path, acquisition)
+
         expect_chain_rejection("forged-record-id", forge_provenance)
         expect_chain_rejection("undisposed-acquired-row", omit_disposition)
         expect_chain_rejection(
@@ -1261,6 +1461,12 @@ def run_self_test() -> None:
             "synthetic-attestation-in-real-materialization",
             relabel_materialization_real,
         )
+        expect_chain_rejection(
+            "transplanted-projection-attestation",
+            transplant_projection_attestation,
+        )
+        expect_chain_rejection("stale-source-revision", stale_source_revision)
+        expect_chain_rejection("stale-registry-binding", stale_registry_binding)
 
         readiness_path = output / "process" / "content_readiness_ledger.json"
         readiness = read_json(readiness_path)

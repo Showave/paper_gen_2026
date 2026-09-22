@@ -207,17 +207,46 @@ def validate_contract(
         ):
             fail("source projection is missing, duplicated, stale, or misclassified")
         if status == "reviewed_pass":
+            inventories = declaration.get("reviewed_config_split_inventories")
             if (
-                not is_sha256(declaration.get("field_inventory_sha256"))
+                not isinstance(inventories, dict)
+                or not inventories
+                or not all(
+                    isinstance(config_split, str)
+                    and "|" in config_split
+                    and is_sha256(inventory_sha256)
+                    for config_split, inventory_sha256 in inventories.items()
+                )
+                or declaration.get("field_inventory_sha256")
+                != digest_value(inventories)
                 or not isinstance(declaration.get("review_record"), str)
                 or not declaration["review_record"].strip()
+                or not is_sha256(declaration.get("review_artifact_sha256"))
             ):
-                fail("reviewed source projection needs an inventory hash and record")
+                fail(
+                    "reviewed source projection needs config/split inventory "
+                    "hashes and a hash-bound review artifact"
+                )
+            covered_configs: set[str] = set()
+            for config_split in inventories:
+                config, split = config_split.split("|", 1)
+                admitted = {config, f"{config}:{split}"}
+                if (
+                    not config
+                    or not split
+                    or not admitted.intersection(entry.get("configs", []))
+                ):
+                    fail("reviewed source projection has an unregistered config/split")
+                covered_configs.update(admitted.intersection(entry["configs"]))
+            if covered_configs != set(entry.get("configs", [])):
+                fail("reviewed source projection omits an admitted configuration")
         else:
             pending += 1
             if (
                 declaration.get("field_inventory_sha256") is not None
                 or declaration.get("review_record") is not None
+                or declaration.get("review_artifact_sha256") is not None
+                or declaration.get("reviewed_config_split_inventories") is not None
             ):
                 fail("unreviewed source projection cannot carry approval evidence")
         observed[key] = declaration
@@ -243,9 +272,19 @@ def field_inventory_digest(attestation: dict[str, Any]) -> str:
             "paper": attestation.get("paper"),
             "source_key": attestation.get("source_key"),
             "source_revision": attestation.get("source_revision"),
+            "config": attestation.get("config"),
+            "split": attestation.get("split"),
             "role": attestation.get("role"),
+            "execution_class": attestation.get("execution_class"),
+            "projection_status": attestation.get("projection_status"),
+            "review_record": attestation.get("review_record"),
+            "review_artifact_sha256": attestation.get(
+                "review_artifact_sha256"
+            ),
             "exporter": attestation.get("exporter"),
             "fields": attestation.get("fields"),
+            "raw_text_paths": attestation.get("raw_text_paths"),
+            "excluded_text_paths": attestation.get("excluded_text_paths"),
         }
     )
 
@@ -282,12 +321,21 @@ def validate_attestation(
         for declaration in contract["source_projections"]
     }
     declaration = declarations.get(key)
+    source_entry = registry_entries(registry).get(attestation.get("source_key"))
     exporter = attestation.get("exporter")
     fields = attestation.get("fields")
+    config = attestation.get("config")
+    split = attestation.get("split")
+    raw_text_paths = attestation.get("raw_text_paths")
+    excluded_text_paths = attestation.get("excluded_text_paths")
     if (
         declaration is None
         or attestation.get("source_revision")
         != declaration.get("source_revision")
+        or not isinstance(config, str)
+        or not config
+        or not isinstance(split, str)
+        or not split
         or not isinstance(exporter, dict)
         or set(exporter) != {"name", "version", "implementation_sha256"}
         or not isinstance(exporter["name"], str)
@@ -297,6 +345,14 @@ def validate_attestation(
         or not is_sha256(exporter["implementation_sha256"])
         or not isinstance(fields, list)
         or not fields
+        or not isinstance(raw_text_paths, list)
+        or raw_text_paths != sorted(set(raw_text_paths))
+        or not all(isinstance(path, str) and path for path in raw_text_paths)
+        or not isinstance(excluded_text_paths, list)
+        or not isinstance(source_entry, dict)
+        or not {config, f"{config}:{split}"}.intersection(
+            source_entry.get("configs", [])
+        )
     ):
         fail("overlap-projection attestation source or exporter is invalid")
     slots: set[str] = set()
@@ -332,24 +388,48 @@ def validate_attestation(
         fail("overlap-projection attestation omits a required field class")
     if content_projection != projected:
         fail("materialization projection differs from the reviewed field inventory")
+    excluded_paths: set[str] = set()
+    for exclusion in excluded_text_paths:
+        path = exclusion.get("field_path") if isinstance(exclusion, dict) else None
+        reason = exclusion.get("reason") if isinstance(exclusion, dict) else None
+        if (
+            not isinstance(path, str)
+            or not path
+            or path in excluded_paths
+            or path in paths
+            or not isinstance(reason, str)
+            or not reason.strip()
+        ):
+            fail("excluded textual path is invalid, duplicated, or projected")
+        excluded_paths.add(path)
+    if paths | excluded_paths != set(raw_text_paths):
+        fail("projection inventory does not classify every raw textual leaf path")
     if attestation.get("field_inventory_sha256") != field_inventory_digest(
         attestation
     ):
         fail("overlap-projection field-inventory hash does not reproduce")
 
     if attestation["execution_class"] == "real":
+        inventory_key = f"{config}|{split}"
+        reviewed_inventories = declaration.get(
+            "reviewed_config_split_inventories"
+        )
         if (
             contract["execution_status"] != "reviewed_pass"
             or declaration["projection_status"] != "reviewed_pass"
             or attestation.get("projection_status") != "reviewed_pass"
-            or attestation.get("field_inventory_sha256")
-            != declaration["field_inventory_sha256"]
+            or not isinstance(reviewed_inventories, dict)
+            or reviewed_inventories.get(inventory_key)
+            != attestation.get("field_inventory_sha256")
             or attestation.get("review_record") != declaration["review_record"]
+            or attestation.get("review_artifact_sha256")
+            != declaration["review_artifact_sha256"]
         ):
             fail("real projection attestation is not contract-reviewed")
     elif (
         attestation.get("projection_status") != "generated_pass"
         or attestation.get("review_record") is not None
+        or attestation.get("review_artifact_sha256") is not None
     ):
         fail("synthetic projection attestation cannot claim a real review")
     return {
@@ -388,9 +468,12 @@ def generated_attestation(
         "paper": declaration["paper"],
         "source_key": declaration["source_key"],
         "source_revision": declaration["source_revision"],
+        "config": "smol-constraints",
+        "split": "train",
         "role": declaration["role"],
         "projection_status": "generated_pass",
         "review_record": None,
+        "review_artifact_sha256": None,
         "exporter": {
             "name": "generated-overlap-projection-fixture",
             "version": "1",
@@ -399,6 +482,8 @@ def generated_attestation(
             ).hexdigest(),
         },
         "fields": fields,
+        "raw_text_paths": ["generated_prompt", "generated_response"],
+        "excluded_text_paths": [],
         "field_inventory_sha256": None,
     }
     attestation["field_inventory_sha256"] = field_inventory_digest(attestation)
@@ -487,6 +572,8 @@ def self_test(
     relabelled["execution_class"] = "real"
     relabelled["projection_status"] = "reviewed_pass"
     relabelled["review_record"] = "invented-review"
+    relabelled["review_artifact_sha256"] = "1" * 64
+    relabelled["field_inventory_sha256"] = field_inventory_digest(relabelled)
     expect_attestation_rejection(
         relabelled,
         projection,
@@ -495,10 +582,36 @@ def self_test(
         preregistration,
         "a generated attestation relabelled real",
     )
+
+    incomplete_paths = copy.deepcopy(attestation)
+    incomplete_paths["raw_text_paths"].remove("generated_response")
+    incomplete_paths["field_inventory_sha256"] = field_inventory_digest(
+        incomplete_paths
+    )
+    expect_attestation_rejection(
+        incomplete_paths,
+        projection,
+        contract,
+        registry,
+        preregistration,
+        "an unclassified runtime textual path",
+    )
+
+    wrong_config = copy.deepcopy(attestation)
+    wrong_config["config"] = "unregistered-config"
+    wrong_config["field_inventory_sha256"] = field_inventory_digest(wrong_config)
+    expect_attestation_rejection(
+        wrong_config,
+        projection,
+        contract,
+        registry,
+        preregistration,
+        "an unregistered configuration inventory",
+    )
     return {
         **summary,
         "generated_fields_validated": validated["fields"],
-        "fault_injections_rejected": 5,
+        "fault_injections_rejected": 7,
     }
 
 

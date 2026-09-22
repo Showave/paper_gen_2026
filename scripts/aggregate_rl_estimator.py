@@ -5,9 +5,11 @@ Successful candidate rows store the projected per-trajectory term before its
 stratum mean: ``A=(h-b)s+alpha*w*(U-h)s`` for current rows and
 ``B=w*(U-h)s`` for stale rows.  This script reconstructs
 ``mean(A)+(1-alpha)*mean(B)``, the cross-reference MSE, and the registered
-three-way bootstrap by independently resampling candidate replications and
-both reference-trajectory samples.  Its generated self-test is equation and
-artifact validation, not empirical evidence.
+three-way bootstrap. Candidate replication IDs are resampled jointly across
+cells while both reference-trajectory samples are resampled independently;
+MSE, measured cost, nonnegative risk, and confirmation contrasts are all
+recomputed. Its generated self-test is equation and artifact validation, not
+empirical evidence.
 """
 
 from __future__ import annotations
@@ -136,6 +138,7 @@ def three_way_bootstrap_intervals(
     *,
     law: str,
     candidate_estimates: dict[tuple[float, str], list[list[float]]],
+    candidate_costs: dict[tuple[float, str], list[float]],
     reference_one: list[list[float]],
     reference_two: list[list[float]],
     replicates: int,
@@ -144,7 +147,7 @@ def three_way_bootstrap_intervals(
     chunk_size: int,
     numpy_version: str,
     rng_name: str,
-) -> dict[tuple[float, str], list[float]]:
+) -> dict[str, Any]:
     """Chunked exact multinomial resampling of all three empirical sources."""
     if (
         np is None
@@ -159,6 +162,7 @@ def three_way_bootstrap_intervals(
         or not reference_one
         or not reference_two
         or any(not estimates for estimates in candidate_estimates.values())
+        or set(candidate_costs) != set(candidate_estimates)
     ):
         fail("three-way bootstrap inputs are incomplete")
     ordered_cells = sorted(candidate_estimates)
@@ -168,12 +172,24 @@ def three_way_bootstrap_intervals(
         cell: np.asarray(candidate_estimates[cell], dtype=np.float64)
         for cell in ordered_cells
     }
+    candidate_cost_arrays = {
+        cell: np.asarray(candidate_costs[cell], dtype=np.float64)
+        for cell in ordered_cells
+    }
+    replication_counts = {len(values) for values in candidate_arrays.values()}
     if (
         r1.shape != (len(reference_one), dimension)
         or r2.shape != (len(reference_two), dimension)
         or any(
             values.shape != (len(candidate_estimates[cell]), dimension)
             for cell, values in candidate_arrays.items()
+        )
+        or len(replication_counts) != 1
+        or any(
+            costs.shape != (len(candidate_estimates[cell]),)
+            or not np.isfinite(costs).all()
+            or np.any(costs <= 0)
+            for cell, costs in candidate_cost_arrays.items()
         )
     ):
         fail("three-way bootstrap arrays do not match the projection dimension")
@@ -185,15 +201,14 @@ def three_way_bootstrap_intervals(
 
     r1_probabilities = uniform_probabilities(len(r1))
     r2_probabilities = uniform_probabilities(len(r2))
-    candidate_probabilities = {
-        cell: uniform_probabilities(len(values))
-        for cell, values in candidate_arrays.items()
-    }
+    replication_count = next(iter(replication_counts))
+    candidate_probabilities = uniform_probabilities(replication_count)
     candidate_norms = {
         cell: np.einsum("ij,ij->i", values, values)
         for cell, values in candidate_arrays.items()
     }
-    draws = np.empty((replicates, len(ordered_cells)), dtype=np.float64)
+    mse_draws = np.empty((replicates, len(ordered_cells)), dtype=np.float64)
+    cost_draws = np.empty((replicates, len(ordered_cells)), dtype=np.float64)
     rng = np.random.Generator(np.random.PCG64(bootstrap_seed(seed, law)))
     for start in range(0, replicates, chunk_size):
         stop = min(start + chunk_size, replicates)
@@ -207,27 +222,55 @@ def three_way_bootstrap_intervals(
         r1_mean = r1_weights @ r1 / len(r1)
         r2_mean = r2_weights @ r2 / len(r2)
         reference_cross = np.einsum("ij,ij->i", r1_mean, r2_mean)
+        candidate_weights = rng.multinomial(
+            replication_count, candidate_probabilities, size=count
+        )
         for column, cell in enumerate(ordered_cells):
             values = candidate_arrays[cell]
-            weights = rng.multinomial(
-                len(values), candidate_probabilities[cell], size=count
-            )
-            candidate_mean = weights @ values / len(values)
+            candidate_mean = candidate_weights @ values / replication_count
             candidate_norm_mean = (
-                weights @ candidate_norms[cell] / len(values)
+                candidate_weights @ candidate_norms[cell] / replication_count
             )
-            draws[start:stop, column] = (
+            mse_draws[start:stop, column] = (
                 candidate_norm_mean
                 - np.einsum("ij,ij->i", candidate_mean, r1_mean)
                 - np.einsum("ij,ij->i", candidate_mean, r2_mean)
                 + reference_cross
             )
-    return {
-        cell: [
-            nearest_rank_quantile(draws[:, column].tolist(), 0.025),
-            nearest_rank_quantile(draws[:, column].tolist(), 0.975),
+            cost_draws[start:stop, column] = (
+                candidate_weights @ candidate_cost_arrays[cell]
+                / replication_count
+            )
+    risk_draws = np.maximum(mse_draws, 0.0) * cost_draws
+
+    def interval(values: Any) -> list[float]:
+        as_list = values.tolist()
+        return [
+            nearest_rank_quantile(as_list, 0.025),
+            nearest_rank_quantile(as_list, 0.975),
         ]
-        for column, cell in enumerate(ordered_cells)
+
+    return {
+        "intervals": {
+            cell: {
+                "three_way_bootstrap_interval": interval(mse_draws[:, column]),
+                "accelerator_seconds_bootstrap_interval": interval(
+                    cost_draws[:, column]
+                ),
+                "selection_risk_bootstrap_interval": interval(
+                    risk_draws[:, column]
+                ),
+            }
+            for column, cell in enumerate(ordered_cells)
+        },
+        "draws": {
+            cell: {
+                "projected_mse": mse_draws[:, column],
+                "accelerator_seconds": cost_draws[:, column],
+                "selection_risk": risk_draws[:, column],
+            }
+            for column, cell in enumerate(ordered_cells)
+        },
     }
 
 
@@ -329,12 +372,13 @@ def analyze_rows(
     candidates: dict[
         tuple[str, float, str, int, str], list[tuple[str, list[float]]]
     ] = defaultdict(list)
-    candidate_costs: dict[tuple[str, float, str, int], float] = defaultdict(float)
+    candidate_costs: dict[
+        tuple[str, float, str, int], list[tuple[str, float]]
+    ] = defaultdict(list)
+    reference_costs: list[tuple[str, float]] = []
     attempt_ids: set[str] = set()
     trajectory_ids: set[str] = set()
     failures = 0
-    reference_accelerator_seconds = 0.0
-
     for row in rows:
         attempt_id = row.get("attempt_id")
         law = row.get("target_law")
@@ -380,7 +424,7 @@ def analyze_rows(
             ):
                 fail("reference rows must store current-policy target terms")
             references[(law, role)].append((trajectory_id, vector))
-            reference_accelerator_seconds += float(cost)
+            reference_costs.append((attempt_id, float(cost)))
             continue
 
         alpha = row.get("alpha")
@@ -410,7 +454,9 @@ def analyze_rows(
         candidates[(law, key[0], key[1], replication, source)].append(
             (trajectory_id, vector)
         )
-        candidate_costs[(law, key[0], key[1], replication)] += float(cost)
+        candidate_costs[(law, key[0], key[1], replication)].append(
+            (attempt_id, float(cost))
+        )
 
     if failures:
         return {
@@ -422,6 +468,9 @@ def analyze_rows(
         }
 
     reference_count = audit["reference_current_policy_trajectories_per_replica"]
+    reference_accelerator_seconds = math.fsum(
+        cost for _, cost in sorted(reference_costs)
+    )
     reference_vectors: dict[tuple[str, str], list[list[float]]] = {}
     reference_means: dict[tuple[str, str], list[float]] = {}
     for law in ("select", "confirm"):
@@ -439,6 +488,7 @@ def analyze_rows(
             reference_means[(law, role)] = vector_mean(vectors, dimension)
 
     law_results: dict[str, list[dict[str, Any]]] = {"select": [], "confirm": []}
+    bootstrap_by_law: dict[str, dict[str, Any]] = {}
     for law in ("select", "confirm"):
         replications = (
             audit["selection_replications"]
@@ -455,6 +505,7 @@ def analyze_rows(
         if law == "confirm" and not 1 <= len(present_cells) <= 2:
             fail("confirmation law must contain one or two frozen cells")
         estimates_by_cell: dict[tuple[float, str], list[list[float]]] = {}
+        costs_by_cell: dict[tuple[float, str], list[float]] = {}
         for alpha, allocation_id in sorted(present_cells):
             current_count, stale_count = cells[(alpha, allocation_id)]
             replication_mse: list[float] = []
@@ -493,13 +544,17 @@ def analyze_rows(
                         reference_means[(law, "r2")],
                     )
                 )
-                cost = candidate_costs.get(
-                    (law, alpha, allocation_id, replication), 0.0
+                identified_costs = candidate_costs.get(
+                    (law, alpha, allocation_id, replication), []
+                )
+                cost = math.fsum(
+                    value for _, value in sorted(identified_costs)
                 )
                 if cost <= 0:
                     fail("candidate replication must have positive measured cost")
                 replication_cost.append(cost)
             estimates_by_cell[(alpha, allocation_id)] = replication_estimates
+            costs_by_cell[(alpha, allocation_id)] = replication_cost
             point_mse = statistics.fmean(replication_mse)
             point_cost = statistics.fmean(replication_cost)
             law_results[law].append(
@@ -516,6 +571,7 @@ def analyze_rows(
         intervals = three_way_bootstrap_intervals(
             law=law,
             candidate_estimates=estimates_by_cell,
+            candidate_costs=costs_by_cell,
             reference_one=reference_vectors[(law, "r1")],
             reference_two=reference_vectors[(law, "r2")],
             replicates=audit["mse_bootstrap_replicates"],
@@ -525,10 +581,13 @@ def analyze_rows(
             numpy_version=audit["mse_bootstrap_numpy_version"],
             rng_name=audit["mse_bootstrap_rng"],
         )
+        bootstrap_by_law[law] = intervals
         for result in law_results[law]:
-            result["three_way_bootstrap_interval"] = intervals[
-                (result["alpha"], result["allocation_id"])
-            ]
+            result.update(
+                intervals["intervals"][
+                    (result["alpha"], result["allocation_id"])
+                ]
+            )
 
     selected = min(
         law_results["select"],
@@ -559,6 +618,16 @@ def analyze_rows(
     }
     selected_confirmation = confirmation_by_key[selected_key]
     control_confirmation = confirmation_by_key[control_key]
+    selected_draws = bootstrap_by_law["confirm"]["draws"][selected_key]
+    control_draws = bootstrap_by_law["confirm"]["draws"][control_key]
+
+    def draw_interval(values: Any) -> list[float]:
+        as_list = values.tolist()
+        return [
+            nearest_rank_quantile(as_list, 0.025),
+            nearest_rank_quantile(as_list, 0.975),
+        ]
+
     confirmation_contrast = {
         "selected_minus_on_policy_projected_mse": (
             selected_confirmation["projected_mse"]
@@ -567,6 +636,16 @@ def analyze_rows(
         "selected_minus_on_policy_selection_risk": (
             selected_confirmation["selection_risk"]
             - control_confirmation["selection_risk"]
+        ),
+        "selected_minus_on_policy_projected_mse_interval": draw_interval(
+            selected_draws["projected_mse"] - control_draws["projected_mse"]
+        ),
+        "selected_minus_on_policy_selection_risk_interval": draw_interval(
+            selected_draws["selection_risk"] - control_draws["selection_risk"]
+        ),
+        "bootstrap_pairing": (
+            "shared candidate replication-index weights and shared R1/R2 "
+            "trajectory weights within target law"
         ),
     }
     return {
@@ -580,8 +659,9 @@ def analyze_rows(
         "projected_mse_formula": "(g_hat-R1)^T(g_hat-R2)",
         "candidate_estimator_formula": "mean(A_current)+(1-alpha)*mean(B_stale)",
         "three_way_bootstrap_rule": (
-            "independently resample candidate replications, R1 trajectories, "
-            "and R2 trajectories within target law"
+            "jointly resample paired candidate replication IDs across cells; "
+            "independently resample R1 and R2 trajectories within target law; "
+            "recompute MSE, measured cost, risk, and confirmation contrasts"
         ),
         "bootstrap_seed_schedule": (
             "first 64 bits of sha256("
@@ -607,6 +687,21 @@ def close(observed: Any, expected: Any) -> bool:
         and math.isfinite(observed)
         and math.isclose(float(observed), float(expected), rel_tol=1e-12, abs_tol=1e-12)
     )
+
+
+def close_structure(observed: Any, expected: Any) -> bool:
+    if isinstance(expected, list):
+        return (
+            isinstance(observed, list)
+            and len(observed) == len(expected)
+            and all(
+                close_structure(observed_value, expected_value)
+                for observed_value, expected_value in zip(observed, expected)
+            )
+        )
+    if isinstance(expected, str):
+        return observed == expected
+    return close(observed, expected)
 
 
 def validate_summary(
@@ -691,7 +786,11 @@ def validate_summary(
             fail("RL summary cell results must be objects")
         key = f"{reported.get('alpha')}|{reported.get('allocation_id')}"
         expected = by_key.get(key)
-        interval = reported.get("three_way_bootstrap_interval")
+        interval_fields = (
+            "three_way_bootstrap_interval",
+            "accelerator_seconds_bootstrap_interval",
+            "selection_risk_bootstrap_interval",
+        )
         if (
             expected is None
             or key in seen
@@ -706,15 +805,12 @@ def validate_summary(
                 expected["mse_times_accelerator_seconds"],
             )
             or not close(reported.get("selection_risk"), expected["selection_risk"])
-            or not isinstance(interval, list)
-            or len(interval) != 2
-            or not all(
-                close(observed, expected_value)
-                for observed, expected_value in zip(
-                    interval, expected["three_way_bootstrap_interval"]
-                )
+            or reported.get("replications") != expected["replications"]
+            or any(
+                not close_structure(reported.get(field), expected[field])
+                for field in interval_fields
             )
-            or interval[0] > interval[1]
+            or any(reported[field][0] > reported[field][1] for field in interval_fields)
         ):
             fail("RL summary selection result does not recompute from the ledger")
         seen.add(key)
@@ -731,9 +827,15 @@ def validate_summary(
     }
     seen_confirmation: set[str] = set()
     for reported in reported_confirmation:
+        if not isinstance(reported, dict):
+            fail("RL confirmation results must be objects")
         key = f"{reported.get('alpha')}|{reported.get('allocation_id')}"
         expected = expected_confirmation_by_key.get(key)
-        interval = reported.get("three_way_bootstrap_interval")
+        interval_fields = (
+            "three_way_bootstrap_interval",
+            "accelerator_seconds_bootstrap_interval",
+            "selection_risk_bootstrap_interval",
+        )
         if (
             expected is None
             or key in seen_confirmation
@@ -746,24 +848,25 @@ def validate_summary(
                     "selection_risk",
                 )
             )
-            or not isinstance(interval, list)
-            or len(interval) != 2
-            or not all(
-                close(observed, expected_value)
-                for observed, expected_value in zip(
-                    interval, expected["three_way_bootstrap_interval"]
-                )
+            or reported.get("replications") != expected["replications"]
+            or any(
+                not close_structure(reported.get(field), expected[field])
+                for field in interval_fields
             )
-            or interval[0] > interval[1]
+            or any(reported[field][0] > reported[field][1] for field in interval_fields)
         ):
             fail("RL confirmation result does not recompute from the ledger")
         seen_confirmation.add(key)
     if seen_confirmation != set(expected_confirmation_by_key):
         fail("RL summary omits a required confirmation cell")
     reported_contrast = summary.get("confirmation_contrast")
-    if not isinstance(reported_contrast, dict) or any(
-        not close(reported_contrast.get(field), value)
-        for field, value in analysis["confirmation_contrast"].items()
+    if (
+        not isinstance(reported_contrast, dict)
+        or set(reported_contrast) != set(analysis["confirmation_contrast"])
+        or any(
+            not close_structure(reported_contrast.get(field), value)
+            for field, value in analysis["confirmation_contrast"].items()
+        )
     ):
         fail("RL selected-minus-on-policy confirmation contrast is incorrect")
     return {
@@ -1003,6 +1106,26 @@ def self_test() -> dict[str, Any]:
     else:
         fail("self-test accepted a fabricated three-way bootstrap interval")
 
+    tampered_contrast = copy.deepcopy(summary)
+    tampered_contrast["confirmation_contrast"][
+        "selected_minus_on_policy_projected_mse_interval"
+    ][1] += 0.25
+    try:
+        validate_summary(
+            tampered_contrast,
+            analysis,
+            ledger_sha256,
+            section,
+            execution_class="synthetic-audit",
+        )
+    except AggregationError:
+        pass
+    else:
+        fail("self-test accepted a fabricated confirmation contrast interval")
+
+    if analyze_rows(reversed(rows), section) != analysis:
+        fail("RL aggregation depends on trajectory-ledger row order")
+
     incomplete = copy.deepcopy(rows)
     incomplete.pop(
         next(
@@ -1047,6 +1170,10 @@ def self_test() -> dict[str, Any]:
     production_intervals = three_way_bootstrap_intervals(
         law="select",
         candidate_estimates=zero_candidates,
+        candidate_costs={
+            cell: [1.0] * production_audit["selection_replications"]
+            for cell in zero_candidates
+        },
         reference_one=zero_reference,
         reference_two=zero_reference,
         replicates=production_audit["mse_bootstrap_replicates"],
@@ -1057,8 +1184,14 @@ def self_test() -> dict[str, Any]:
         rng_name=production_audit["mse_bootstrap_rng"],
     )
     if (
-        set(production_intervals) != set(zero_candidates)
-        or any(interval != [0.0, 0.0] for interval in production_intervals.values())
+        set(production_intervals["intervals"]) != set(zero_candidates)
+        or any(
+            intervals["three_way_bootstrap_interval"] != [0.0, 0.0]
+            or intervals["accelerator_seconds_bootstrap_interval"]
+            != [1.0, 1.0]
+            or intervals["selection_risk_bootstrap_interval"] != [0.0, 0.0]
+            for intervals in production_intervals["intervals"].values()
+        )
     ):
         fail("production-shape vectorized bootstrap fixture did not reproduce")
     return {
@@ -1087,7 +1220,7 @@ def self_test() -> dict[str, Any]:
         },
         "production_shape_vectorized_bootstrap_validated": True,
         "hand_computed_values_reproduced": True,
-        "fault_injections_rejected": 4,
+        "fault_injections_rejected": 6,
     }
 
 

@@ -13,9 +13,9 @@
     ],
     "content_readiness": {
       "specification_path": "experiments/content_gates.json",
-      "specification_sha256": "ccd4fe5477024c88c84af34aed0d5565bb6ee59cfb7bfadcebfc8de0080ab44c",
+      "specification_sha256": "a5707ec56091d3d9dd7f13ce9ec1bfb29c809be3dcd653bcc82461446da1e535",
       "implementation_path": "scripts/run_content_gates.py",
-      "implementation_sha256": "d062e4e5f44f258bc51f23ebec97d0ff42fc4a6790a6a01667322215573c57c8",
+      "implementation_sha256": "3fa01df16e84c23cfbb1e6229e884d643cb48e3eab36fabafff25b0f7ecd5d6a",
       "required_status": "pass",
       "required_partitions": [
         "candidate",
@@ -35,9 +35,9 @@
     },
     "overlap_projection_contract": {
       "specification_path": "experiments/overlap_projection_contract.json",
-      "specification_sha256": "b2fce8f667e70960cb100eb5f3d5bcb441238ba92f39e23e459dc832b9a06c5c",
+      "specification_sha256": "63db1f33b4ad130565e57e20249e689432305386a8b1da5b4ed5e58d92517fc5",
       "validator_path": "scripts/validate_overlap_projection_contract.py",
-      "validator_sha256": "b0b4538c9520d24ecdc5b97dd630ec58e73ef78b97980f5d15b5a7850474790b",
+      "validator_sha256": "930832d696b2d6a440d75fbc5ff6757992b5b81ee8761fa7b04b434d60b54ce7",
       "required_status": "reviewed_pass",
       "current_status": "unfrozen_review_blocker",
       "interpretation": "Every model-visible, optimization-visible, and protected textual field needs a source/revision/role-specific reviewed inventory. Generated attestations are software tests only."
@@ -53,6 +53,9 @@
     },
     "artifact_integrity_gate": {
       "status": "unfrozen_blocker",
+      "validator_interface": "paper-artifact-integrity-cli-v1",
+      "validator_timeout_seconds": 300,
+      "validator_dependencies": [],
       "blocking_gaps": [
         "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
         "factorial endpoint rows are not yet closed against train-ledger records and a common split-manifest hash",
@@ -227,9 +230,9 @@
     ],
     "content_readiness": {
       "specification_path": "experiments/content_gates.json",
-      "specification_sha256": "ccd4fe5477024c88c84af34aed0d5565bb6ee59cfb7bfadcebfc8de0080ab44c",
+      "specification_sha256": "a5707ec56091d3d9dd7f13ce9ec1bfb29c809be3dcd653bcc82461446da1e535",
       "implementation_path": "scripts/run_content_gates.py",
-      "implementation_sha256": "d062e4e5f44f258bc51f23ebec97d0ff42fc4a6790a6a01667322215573c57c8",
+      "implementation_sha256": "3fa01df16e84c23cfbb1e6229e884d643cb48e3eab36fabafff25b0f7ecd5d6a",
       "required_status": "pass",
       "required_partitions": [
         "nuisance-fit",
@@ -247,15 +250,18 @@
     },
     "overlap_projection_contract": {
       "specification_path": "experiments/overlap_projection_contract.json",
-      "specification_sha256": "b2fce8f667e70960cb100eb5f3d5bcb441238ba92f39e23e459dc832b9a06c5c",
+      "specification_sha256": "63db1f33b4ad130565e57e20249e689432305386a8b1da5b4ed5e58d92517fc5",
       "validator_path": "scripts/validate_overlap_projection_contract.py",
-      "validator_sha256": "b0b4538c9520d24ecdc5b97dd630ec58e73ef78b97980f5d15b5a7850474790b",
+      "validator_sha256": "930832d696b2d6a440d75fbc5ff6757992b5b81ee8761fa7b04b434d60b54ce7",
       "required_status": "reviewed_pass",
       "current_status": "unfrozen_review_blocker",
       "interpretation": "Every model-visible, optimization-visible, and protected textual field needs a source/revision/role-specific reviewed inventory. Generated attestations are software tests only."
     },
     "artifact_integrity_gate": {
       "status": "unfrozen_blocker",
+      "validator_interface": "paper-artifact-integrity-cli-v1",
+      "validator_timeout_seconds": 300,
+      "validator_dependencies": [],
       "blocking_gaps": [
         "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
         "the estimator aggregator consumes self-declared projected terms rather than reconstructing them from probabilities, rewards, costs, nuisance predictions, and projected scores",
@@ -347,21 +353,22 @@
       "reference_independence": "For each of D_select and D_confirm, R1 and R2 are mutually independent and independent of every candidate replication.",
       "reference_storage": "retain every per-trajectory projected gradient and trajectory id separately for R1 and R2",
       "projected_mse_estimator": "(g_hat - R1)^T (g_hat - R2), averaged over paired replications; individual values may be negative",
-      "mse_interval": "three-way nonparametric bootstrap: independently resample candidate replications, R1 trajectories, and R2 trajectories; 2000 replicates with seed 2026090392, exact multinomial sufficient statistics, and nearest-rank 0.025/0.975 quantiles",
+      "mse_interval": "three-way nonparametric bootstrap: jointly resample paired candidate replication IDs across cells and independently resample R1 and R2 trajectories; recompute raw MSE, measured cost, nonnegative MSE-cost risk, and selected-minus-control contrasts; 2000 replicates with seed 2026090392, exact multinomial sufficient statistics, and nearest-rank 0.025/0.975 quantiles",
       "mse_bootstrap_replicates": 2000,
       "mse_bootstrap_seed": 2026090392,
       "mse_bootstrap_chunk_size": 32,
       "mse_bootstrap_numpy_version": "2.5.3",
       "mse_bootstrap_rng": "numpy.random.PCG64",
+      "candidate_replication_pairing": "Within each target law, replication_id denotes a common predeclared seed block across every candidate cell. One multinomial replication-weight vector is shared across cells in each bootstrap draw; selection and confirmation laws use separate streams.",
       "bootstrap_resource_bound": "At most 32 bootstrap draws are resident per source/cell. With 64 projected coordinates, 2048 rows per reference sample, 250 candidate replications per cell, and 2000 bootstrap draws, the vectorized sufficient-statistic implementation avoids materializing resampled trajectory tensors.",
       "selection_rule": "At fixed 64-trajectory and verifier-call counts, minimize max(raw cross-reference projected MSE, 0) times mean complete-replication allocated accelerator-seconds. The unclipped raw MSE is always retained. Ties choose lower measured cost, then larger alpha, then lexicographic allocation_id.",
       "confirmation_required_cells": "Evaluate the selected cell and the alpha=1 on-policy control on untouched D_confirm replications; if alpha=1 is selected these are one cell.",
-      "confirmation_primary_contrast": "selected minus alpha=1 difference in raw projected MSE and nonnegative MSE-cost selection risk under D_confirm; estimator-claim eligibility is reported separately from this contrast",
+      "confirmation_primary_contrast": "selected minus alpha=1 difference in raw projected MSE and nonnegative MSE-cost selection risk under D_confirm, each with a jointly paired three-way bootstrap interval; estimator-claim eligibility is reported separately from this contrast",
       "allocation_restriction_mode": "alpha_equals_sampling_fraction",
       "allocation_restriction": "For this exploratory grid only, alpha equals n_current/(n_current+n_stale). This is not required for unbiasedness; confirmation must cross mixture mass with source allocation.",
       "artifact_contract": {
         "aggregator_path": "scripts/aggregate_rl_estimator.py",
-        "aggregator_sha256": "e2ca3d77484421c86c7d20625e20b6651c438a50e074b79378aec602d4aab777",
+        "aggregator_sha256": "fce892826a2b53359bd0ff756cb67978039330ff4d82e0fe95932e6e8f6df78f",
         "current_candidate_term": "A=(h-b)s+alpha*w*(U-h)s",
         "stale_candidate_term": "B=w*(U-h)s",
         "reference_term": "target=U*s",
@@ -369,7 +376,7 @@
         "cost_unit": "allocated accelerator-seconds recorded on every attempted trajectory; candidate-cell cost is the mean complete replication sum and reference cost is retained separately",
         "failure_rule": "Any infrastructure failure blocks estimator-claim eligibility and confirmatory comparison; no success-conditioned MSE or selected alpha is reported.",
         "summary_binding": "evaluate/summary.json records the exact train/trajectory_ledger.jsonl SHA-256; point MSE, nonnegative selection risk, cell cost, selection argmin, selected and alpha=1 untouched confirmation cells, and their contrast are recomputed from that ledger.",
-        "three_way_bootstrap": "Independently resample complete candidate replications, R1 trajectories, and R2 trajectories within each target law; use chunked exact multinomial weights and projected sufficient statistics to recompute every percentile interval rather than accepting reported bounds.",
+        "three_way_bootstrap": "Jointly resample complete paired candidate replication IDs across cells and independently resample R1 trajectories and R2 trajectories within each target law; use chunked exact multinomial weights and projected sufficient statistics to recompute MSE, cost, risk, and selected-minus-control percentile intervals rather than accepting reported bounds.",
         "bootstrap_seed_schedule": "For each target law, initialize NumPy 2.5.3 PCG64 from the first 64 bits of SHA-256('rl-three-way-bootstrap-v1' | base seed | target law); use nearest-rank 0.025 and 0.975 quantiles.",
         "fixture_status": "The generated self-test uses hand-computed two-dimensional vectors, reports empirical_evidence=false, and cannot populate paper result cells."
       }
@@ -474,9 +481,9 @@
     "execution_status": "blocked_unfrozen_estimand_generation",
     "content_readiness": {
       "specification_path": "experiments/content_gates.json",
-      "specification_sha256": "ccd4fe5477024c88c84af34aed0d5565bb6ee59cfb7bfadcebfc8de0080ab44c",
+      "specification_sha256": "a5707ec56091d3d9dd7f13ce9ec1bfb29c809be3dcd653bcc82461446da1e535",
       "implementation_path": "scripts/run_content_gates.py",
-      "implementation_sha256": "d062e4e5f44f258bc51f23ebec97d0ff42fc4a6790a6a01667322215573c57c8",
+      "implementation_sha256": "3fa01df16e84c23cfbb1e6229e884d643cb48e3eab36fabafff25b0f7ecd5d6a",
       "required_status": "pass",
       "required_partitions": [
         "frame"
@@ -492,15 +499,18 @@
     },
     "overlap_projection_contract": {
       "specification_path": "experiments/overlap_projection_contract.json",
-      "specification_sha256": "b2fce8f667e70960cb100eb5f3d5bcb441238ba92f39e23e459dc832b9a06c5c",
+      "specification_sha256": "63db1f33b4ad130565e57e20249e689432305386a8b1da5b4ed5e58d92517fc5",
       "validator_path": "scripts/validate_overlap_projection_contract.py",
-      "validator_sha256": "b0b4538c9520d24ecdc5b97dd630ec58e73ef78b97980f5d15b5a7850474790b",
+      "validator_sha256": "930832d696b2d6a440d75fbc5ff6757992b5b81ee8761fa7b04b434d60b54ce7",
       "required_status": "reviewed_pass",
       "current_status": "unfrozen_review_blocker",
       "interpretation": "Every model-visible, optimization-visible, and protected textual field needs a source/revision/role-specific reviewed inventory. Generated attestations are software tests only."
     },
     "artifact_integrity_gate": {
       "status": "unfrozen_blocker",
+      "validator_interface": "paper-artifact-integrity-cli-v1",
+      "validator_timeout_seconds": 300,
+      "validator_dependencies": [],
       "blocking_gaps": [
         "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
         "root ranks, prompt cells, batch probabilities, sequential contributions, missingness bounds, and terminal actions are not yet recomputed by one real/golden validator",

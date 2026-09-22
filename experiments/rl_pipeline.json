@@ -44,7 +44,7 @@
         "Parser, timeout, sandbox-error, EOS, and truncation reward rules",
         "Frozen experiments/content_gates.json, its hash-bound ledger, and a reviewed hidden-evaluator semantic-overlap audit",
         "Frozen experiments/overlap_projection_contract.json plus reviewed prompt and protected-answer field inventories",
-        "For more than 4096 retained rows, a frozen reviewed exact engine and hash-bound external-overlap shards covering every unordered pair"
+        "For more than 4096 retained rows, a frozen reviewed segment-pair engine and hash-bound shards covering the complete cross-record field-segment pair space"
       ],
       "artifacts": [
         "process/trajectory_schema.json"
@@ -136,7 +136,7 @@
       "checks": [
         "Projected MSE uses the cross-reference product (g_hat - R1)^T(g_hat - R2)",
         "aggregate_rl_estimator.py reconstructs mean(A_current)+(1-alpha)*mean(B_stale), cell cost, the selection argmin, and untouched-confirmation MSE directly from the hash-bound trajectory ledger",
-        "The same aggregator independently resamples candidate replications, R1 trajectories, and R2 trajectories and exactly reproduces each reported percentile interval from the frozen seed schedule",
+        "The same aggregator jointly resamples paired candidate replication IDs across cells, independently resamples R1 and R2 trajectories, and exactly reproduces cell MSE/cost/risk intervals plus selected-minus-control confirmation intervals",
         "Chunked exact multinomial sufficient statistics reproduce the full 64-coordinate, 250-replication, 2048-reference-row, 2000-bootstrap selection-law fixture without materializing resampled trajectory tensors",
         "Selection retains negative raw cross-MSE but uses max(raw MSE,0) times cost; untouched confirmation contains the selected cell and alpha=1 control plus their contrast",
         "Reference-generation accelerator cost remains in the summary separately rather than disappearing into a shared constant",
