@@ -1,7 +1,8 @@
 #!/bin/sh
 # Build one paper directory (argument: sft_paper, rl_paper, or eval_paper).
-# Prefers latexmk; falls back to pdflatex + bibtex, then Tectonic. On macOS, prepends
-# MacTeX's /Library/TeX/texbin so GUI TeX installs work from make.
+# Prefers latexmk; falls back to pdflatex + bibtex. Tectonic is used only when
+# PAPER_ALLOW_TECTONIC=1. On macOS, prepends MacTeX's /Library/TeX/texbin so
+# GUI TeX installs work from make.
 set -eu
 
 usage() {
@@ -11,7 +12,7 @@ usage() {
 
 print_install_help() {
   cat >&2 <<'EOF'
-error: no LaTeX engine found (need latexmk, pdflatex, or tectonic).
+error: no ICML-capable LaTeX engine found (need latexmk or pdflatex).
 
 Install a TeX distribution, then open a new terminal and retry `make`.
 
@@ -31,10 +32,6 @@ Install a TeX distribution, then open a new terminal and retry `make`.
     sudo apt-get update
     sudo apt-get install -y texlive-latex-recommended texlive-latex-extra \
       texlive-fonts-recommended texlive-science latexmk
-
-  Portable fallback:
-    install the latest Tectonic release from
-    https://tectonic-typesetting.github.io/book/latest/installation/
 
 If TeX is already installed, it is often missing from PATH. Try:
     export PATH="/Library/TeX/texbin:$PATH"
@@ -84,11 +81,9 @@ if [ "$mode" = "deps" ]; then
     echo "bibtex: missing"
   fi
   if have tectonic; then
-    echo "tectonic: $(command -v tectonic)"
-  else
-    echo "tectonic: missing"
+    echo "tectonic: $(command -v tectonic) (preview only; set PAPER_ALLOW_TECTONIC=1)"
   fi
-  if have latexmk || have pdflatex || have tectonic; then
+  if have latexmk || have pdflatex; then
     exit 0
   fi
   print_install_help
@@ -133,10 +128,19 @@ if have pdflatex; then
   exit 0
 fi
 
-if have tectonic; then
-  echo "warning: latexmk and pdflatex not found; using tectonic" >&2
+# Tectonic (XeTeX) substitutes Latin Modern for the Times fonts that
+# icml2026.sty selects and trips its running-title check, so its PDFs do not
+# meet ICML formatting and must never be committed.
+if have tectonic && [ "${PAPER_ALLOW_TECTONIC:-0}" = "1" ]; then
+  echo "warning: using tectonic for a local preview only; output is not ICML-conformant" >&2
   tectonic --keep-logs -Z search-path=../template/icml2026 main.tex
   exit 0
+fi
+
+if have tectonic; then
+  echo "error: only tectonic was found; it cannot produce ICML-conformant PDFs." >&2
+  echo "Install TeX Live (pdflatex), or set PAPER_ALLOW_TECTONIC=1 for a local preview." >&2
+  echo >&2
 fi
 
 print_install_help

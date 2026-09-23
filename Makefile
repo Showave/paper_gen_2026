@@ -9,7 +9,7 @@ STYLE_FILES := \
 	template/preamble.tex
 BUILD := scripts/latex_build.sh
 
-.PHONY: all clean check-deps source-audit provenance-audit content-gates-audit external-overlap-audit overlap-projection-audit sft-reference-audit sft-factorial-audit rl-estimator-audit eval-simulation-design-audit design-audits protocol-audits
+.PHONY: all clean check-deps pdf-check source-audit provenance-audit content-gates-audit external-overlap-audit overlap-projection-audit sft-reference-audit sft-factorial-audit rl-estimator-audit eval-simulation-design-audit design-audits protocol-audits
 
 all: $(PDFS)
 
@@ -23,6 +23,9 @@ clean:
 
 check-deps:
 	@$(BUILD) sft_paper deps
+
+pdf-check: $(PDFS)
+	python3 scripts/check_paper_pdfs.py $(PDFS)
 
 source-audit:
 	python3 scripts/audit_public_sources.py
