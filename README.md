@@ -42,6 +42,21 @@ sudo apt-get install -y texlive-latex-extra texlive-fonts-recommended \
 
 Then retry `make`. Check which engine was found with `make check-deps`.
 
+The committed `main.pdf` files must come from pdfTeX. Tectonic/XeTeX builds
+substitute Latin Modern for the Times fonts selected by `icml2026.sty` and
+replace the running head with "Title Suppressed Due to Excessive Size", so
+the build script refuses Tectonic unless `PAPER_ALLOW_TECTONIC=1` is set for
+a local preview. Before committing PDFs, run:
+
+```bash
+sudo apt-get install -y poppler-utils   # or: brew install poppler
+make pdf-check
+```
+
+`make pdf-check` fails unless each PDF was produced by pdfTeX on US-letter
+paper with only Type 1 fonts, a Times body font, and the paper's own
+running head.
+
 This builds:
 
 ```text
