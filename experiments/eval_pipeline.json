@@ -13,7 +13,7 @@
       "inputs": [
         "Approved entries and exact revisions from experiments/public_source_registry.json",
         "Frozen eval section of experiments/pilot_preregistration.json",
-        "Verified preflight data/content manifests and retained role-file hashes from hash-pinned local JSONL exports",
+        "Verified preflight data/content manifests, passing content-readiness ledger, and retained role-file hashes from hash-pinned local JSONL exports",
         "Timestamped deployment-log sample or weighted benchmark frame",
         "Rater recruitment definition, target weights, consent, compensation, and withdrawal protocol",
         "Evaluated model, tokenizer, decoder, prompt-generator, and jury revisions"
@@ -25,7 +25,9 @@
         "Target item, prompt, response, rater, and display-order masses sum to one",
         "The frame contains 200 reasoning, 200 math, and 128 coding roots with one-third source mass",
         "frame_manifest.json lists 528 unique row_uid values with per-root mass 1/(3*n_source)",
+        "The registered frame expands to 2112 root-prompt-order cells, 8448 full-jury calls, and 168960 human target units",
         "Stable row, raw-content, and normalized-content hashes are recorded before frame sampling",
+        "The frozen PII, secret, and lexical near-duplicate gates report no retained-content finding; passing is not represented as semantic or privacy clearance",
         "The acquisition manifest embeds the preflight manifest and retained role-file hashes",
         "Personal data and unsupported licenses are excluded",
         "The sealed target-random audit seed and cells are inaccessible to acquisition"
@@ -42,13 +44,19 @@
       "inputs": [
         "acquire/frame_manifest.json",
         "Prompt-variant weights, response seeds, coupling rule, and semantic-cluster threshold",
-        "Rubric, tie subtypes, skip reasons, and sensitive-content warnings"
+        "Rubric, tie subtypes, skip reasons, and sensitive-content warnings",
+        "Frozen experiments/content_gates.json, its hash-bound ledger, and a reviewed paraphrase/template-leakage audit",
+        "Frozen experiments/overlap_projection_contract.json plus reviewed prompt, reference, test, and rubric field inventories",
+        "For more than 4096 retained rows, a frozen reviewed segment-pair engine and hash-bound shards covering the complete cross-record field-segment pair space"
       ],
       "artifacts": [
         "process/cell_manifest.json"
       ],
       "checks": [
         "Every retained normalized duplicate cluster is assigned wholly to one frame unit or excluded",
+        "The record-pair external audit remains blocking for a multi-field export; a reviewed successor must cover the full cross-record segment-pair space and independently reproduce every qualifying segment pair",
+        "The cell manifest embeds the passing content-readiness ledger hash and accounts for every scanned record with an included partition or explicit exclusion reason",
+        "Every protected input and target slot reproduces from a reviewed multi-field projection attestation; generated or null inventories cannot clear real execution",
         "Audit attempts are independent draws from the full target mass; hidden audit membership never removes a target unit from adaptive support",
         "AB and BA renders strip model identifiers and preserve content",
         "Assignment attempts, nonresponse, latency, and tie subtype have explicit fields"
@@ -77,6 +85,7 @@
         "Each hypothetical outcome applies the frozen damped Newton mode/Hessian update before recomputing state mass",
         "Posterior, frame-functional, and Newton-implementation hashes equal the frozen preregistration hashes",
         "Working-posterior Bayes-risk EVI is computed before p_b and does not call the terminal confidence-set action",
+        "Each adaptive batch draws the frozen 256-unit IID target candidate multiset before EVI; multiplicities, domain-separated seed, log-sum-exp normalization, and the 30720-update resource ceiling reproduce",
         "The judge-cell overlap graph is connected and both orders are represented",
         "Every target unit satisfies the logged positivity floor"
       ],
@@ -92,7 +101,7 @@
       "objective": "Run preregistered simulations, then acquire fixed-budget human pilot and adaptive ratings without optional stopping.",
       "inputs": [
         "build/evaluation_model_manifest.json",
-        "Two-thousand-trial simulation grid and frozen Monte Carlo seeds",
+        "Frozen 189-condition fractional screening layout, two-thousand trials per condition, and deterministic condition/policy Monte Carlo seeds",
         "Complete-response protocol plus nonresponse bounds and sensitivity models"
       ],
       "artifacts": [
@@ -100,8 +109,11 @@
       ],
       "checks": [
         "Each draw logs pi, p_t, model revision, EVI, outcome, and pre-outcome timestamp",
-        "Executable DGPs, missingness laws, baseline policies, and factor crossings match replacement-preregistration hashes",
-        "Simulation covers boundary effects, dependence, misspecification, small propensities, and drift",
+        "The first 200 human attempts are IID target-random pilot draws from pi; no unbudgeted human baseline arm is inferred from them",
+        "validate_eval_simulation_design.py reproduces the 16 orthogonal main-effect rows, zero main--two-factor aliases, center/local-alternative blocks, 189 unique conditions, and condition seeds",
+        "Executable DGPs, missingness laws, baseline policies, and estimator implementations match replacement-preregistration hashes; the frozen layout alone does not clear this blocker",
+        "Simulation covers decision boundaries, dependence, misspecification, small propensities, nonresponse, and drift without attempting the infeasible full Cartesian crossing",
+        "Active Testing, CVE, and PPAT labels are reported as score-inspired proposal adaptations unless faithful native implementations are separately frozen",
         "T counts all preassigned slots; a cap, withdrawal, or nonresponse records R_t=0, never triggers replacement, and does not stop later slots"
       ],
       "costs": [

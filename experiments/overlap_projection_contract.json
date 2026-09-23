@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "artifact_type": "multi_field_overlap_projection_contract",
+  "execution_status": "unfrozen_review_blocker",
+  "evidence_status": "Schema and generated software-audit contract only. Source-specific field inventories have not been reviewed, and no real materialization is cleared.",
+  "normalization": "unicode-nfkc-casefold-whitespace-v1",
+  "comparison_unit": {
+    "field_segment": "Each exporter emits one nonempty UTF-8 string per declared canonical slot. Every normalized slot is retained as a separate overlap unit.",
+    "record_aggregate": "The domain-separated ordered slot/value aggregate remains a record-level exact-deduplication unit.",
+    "cross_field_rule": "The lexical audit compares every eligible field segment against every field segment of every other retained record, including unlike field classes.",
+    "pair_identity": "sha256(canonical-json({left_record_id,left_slot,right_record_id,right_slot})) after lexicographic endpoint ordering",
+    "empty_or_missing_rule": "A missing, empty, unreviewed, or multiply mapped required field class blocks materialization."
+  },
+  "field_classes": {
+    "model-input": "Text rendered to a trainable or evaluated model before it generates an output.",
+    "training-target": "Text used as an SFT target or otherwise made directly model-visible during optimization.",
+    "protected-input": "Sealed benchmark or evaluation prompt text that must be checked for overlap but withheld from training and selection.",
+    "protected-target": "Reference answer, verifier material, test, rubric, or other protected text that must be checked for leakage and access-isolated."
+  },
+  "source_projections": [
+    {
+      "paper": "sft",
+      "source_key": "smoltalk-sft",
+      "source_revision": "5feaf2fd3ffca7c237fc38d1861bc30365d48ffa",
+      "role": "candidate-general",
+      "required_field_classes": [
+        "model-input",
+        "training-target"
+      ],
+      "projection_status": "unfrozen_site_schema",
+      "field_inventory_sha256": null,
+      "reviewed_config_split_inventories": null,
+      "review_record": null,
+      "review_artifact_sha256": null
+    },
+    {
+      "paper": "sft",
+      "source_key": "openr1-math-sft",
+      "source_revision": "e4e141ec9dea9f8326f4d347be56105859b2bd68",
+      "role": "candidate-math",
+      "required_field_classes": [
+        "model-input",
+        "training-target"
+      ],
+      "projection_status": "unfrozen_site_schema",
+      "field_inventory_sha256": null,
+      "reviewed_config_split_inventories": null,
+      "review_record": null,
+      "review_artifact_sha256": null
+    },
+    {
+      "paper": "sft",
+      "source_key": "commitpackft-sft",
+      "source_revision": "fc56fe33c030c6daa414c2b112c932b8eed085e6",
+      "role": "candidate-code",
+      "required_field_classes": [
+        "model-input",
+        "training-target"
+      ],
+      "projection_status": "unfrozen_site_schema",
+      "field_inventory_sha256": null,
+      "reviewed_config_split_inventories": null,
+      "review_record": null,
+      "review_artifact_sha256": null
+    },
+    {
+      "paper": "sft",
+      "source_key": "bigcodebench-eval",
+      "source_revision": "b74c0d0bf70d2c0bc459be537895cca163007f1a",
+      "role": "sealed-code-benchmark",
+      "required_field_classes": [
+        "protected-input",
+        "protected-target"
+      ],
+      "projection_status": "unfrozen_site_schema",
+      "field_inventory_sha256": null,
+      "reviewed_config_split_inventories": null,
+      "review_record": null,
+      "review_artifact_sha256": null
+    },
+    {
+      "paper": "rl",
+      "source_key": "dapo-math-rl",
+      "source_revision": "65877096c24ffa7abc4e4fa5edb95cf3413a5674",
+      "role": "prompt-train",
+      "required_field_classes": [
+        "model-input",
+        "protected-target"
+      ],
+      "projection_status": "unfrozen_site_schema",
+      "field_inventory_sha256": null,
+      "reviewed_config_split_inventories": null,
+      "review_record": null,
+      "review_artifact_sha256": null
+    },
+    {
+      "paper": "eval",
+      "source_key": "livebench-reasoning-eval",
+      "source_revision": "6fc6498a5dfba553f69f4413feabade1f1a2d384",
+      "role": "sealed-root-frame",
+      "required_field_classes": [
+        "protected-input",
+        "protected-target"
+      ],
+      "projection_status": "unfrozen_site_schema",
+      "field_inventory_sha256": null,
+      "reviewed_config_split_inventories": null,
+      "review_record": null,
+      "review_artifact_sha256": null
+    },
+    {
+      "paper": "eval",
+      "source_key": "livebench-math-eval",
+      "source_revision": "bb66571c8ccf32d3df9e6f48b920d3770ff4aacb",
+      "role": "sealed-root-frame",
+      "required_field_classes": [
+        "protected-input",
+        "protected-target"
+      ],
+      "projection_status": "unfrozen_site_schema",
+      "field_inventory_sha256": null,
+      "reviewed_config_split_inventories": null,
+      "review_record": null,
+      "review_artifact_sha256": null
+    },
+    {
+      "paper": "eval",
+      "source_key": "livebench-coding-eval",
+      "source_revision": "a958549fdd8aa57be0a3fafe7b205ffc160ed5f4",
+      "role": "sealed-root-frame",
+      "required_field_classes": [
+        "protected-input",
+        "protected-target"
+      ],
+      "projection_status": "unfrozen_site_schema",
+      "field_inventory_sha256": null,
+      "reviewed_config_split_inventories": null,
+      "review_record": null,
+      "review_artifact_sha256": null
+    }
+  ],
+  "review_requirements": [
+    "Inventory every textual field in the pinned source schema and classify whether it is model-visible, optimization-visible, or protected.",
+    "Bind each inventory to the exact source revision, configuration, split, exporter implementation, exporter version, and SHA-256 of the source-specific review artifact.",
+    "Enumerate every runtime textual leaf path and classify it as a canonical projected slot or a reviewed exclusion with a reason; no textual field may be silently omitted or concatenated away.",
+    "Review structured-to-string flattening, message order, templates, tests, references, and alternate-answer fields before setting projection_status to reviewed_pass.",
+    "Freeze one field_inventory_sha256 per admitted configuration/split plus a nonempty review record and review-artifact SHA-256; partial approval is not inherited across revisions, configurations, splits, or roles."
+  ],
+  "failure_policy": {
+    "unfrozen_contract": "block real execution",
+    "missing_source_projection": "block",
+    "stale_source_revision": "block",
+    "missing_required_field_class": "block",
+    "duplicate_canonical_slot": "block",
+    "duplicate_source_field_path": "block",
+    "unreviewed_field_inventory": "block real execution",
+    "generated_attestation_relabelled_real": "block"
+  },
+  "limitations": [
+    "This contract does not infer source schemas or approve the null field inventories committed here.",
+    "Field-complete lexical comparison is still not a semantic, privacy, legal, contamination, or human-subjects clearance.",
+    "The external exact-audit contract currently indexes record pairs; a segment-pair successor is required before a large multi-field artifact can pass.",
+    "Protected fields must be checked by an access-isolated process; listing their paths does not authorize selection or training code to read their bytes."
+  ]
+}

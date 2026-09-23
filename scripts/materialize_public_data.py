@@ -15,15 +15,30 @@ cross-role quarantine, and artifact verification.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
+import os
 import re
 import shutil
+import stat
 import tempfile
 import unicodedata
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
+
+from run_content_gates import (
+    DEFAULT_SPECIFICATION as DEFAULT_CONTENT_GATE_SPECIFICATION,
+    GateError as ContentGateError,
+    audit_materialization as audit_content_readiness,
+    verify_readiness_ledger,
+)
+from validate_overlap_projection_contract import (
+    DEFAULT_CONTRACT as DEFAULT_OVERLAP_PROJECTION_CONTRACT,
+    ProjectionContractError,
+    validate_attestation as validate_overlap_projection_attestation,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,11 +50,6 @@ DEFAULT_FIXTURE = (
 REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 SPACE_RE = re.compile(r"\s+")
 ROLE_RE = re.compile(r"^[a-z][a-z0-9-]*$")
-CANONICAL_CONTENT_SLOTS = {
-    "sft": ("dedup-text",),
-    "rl": ("dedup-text",),
-    "eval": ("dedup-text",),
-}
 NORMALIZATION = {
     "name": "unicode-nfkc-casefold-whitespace-v1",
     "unicode": "NFKC",
@@ -121,11 +131,37 @@ def write_jsonl(path: Path, values: Iterable[dict[str, Any]]) -> None:
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows, _ = read_jsonl_with_sha256(path)
+    return rows
+
+
+def read_jsonl_with_sha256(
+    path: Path, expected_sha256: str | None = None
+) -> tuple[list[dict[str, Any]], str]:
     try:
-        text = path.read_text(encoding="utf-8")
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     except FileNotFoundError:
         fail(f"file not found: {path}")
-    return parse_jsonl(text, str(path))
+    except OSError as exc:
+        fail(f"could not open regular JSONL file {path}: {exc}")
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            fail(f"JSONL input must be a regular file: {path}")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
+            payload = handle.read()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    observed = digest_bytes(payload)
+    if expected_sha256 is not None and observed != expected_sha256:
+        fail(f"JSONL artifact hash mismatch: {path}")
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        fail(f"{path}: export must be UTF-8: {exc}")
+    return parse_jsonl(text, str(path)), observed
 
 
 def parse_jsonl(text: str, source: str) -> list[dict[str, Any]]:
@@ -146,21 +182,8 @@ def parse_jsonl(text: str, source: str) -> list[dict[str, Any]]:
 
 
 def read_pinned_jsonl(path: Path, expected_sha256: str) -> list[dict[str, Any]]:
-    try:
-        payload = path.read_bytes()
-    except FileNotFoundError:
-        fail(f"file not found: {path}")
-    observed = digest_bytes(payload)
-    if observed != expected_sha256:
-        fail(
-            f"{path}: byte hash {observed} differs from declared "
-            f"{expected_sha256}"
-        )
-    try:
-        text = payload.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        fail(f"{path}: export must be UTF-8: {exc}")
-    return parse_jsonl(text, str(path))
+    rows, observed = read_jsonl_with_sha256(path, expected_sha256)
+    return rows
 
 
 def nested(value: Any, dotted_path: str) -> Any:
@@ -190,6 +213,20 @@ def meaningful(value: Any) -> bool:
     if isinstance(value, dict):
         return bool(value) and any(meaningful(item) for item in value.values())
     return False
+
+
+def textual_leaf_paths(value: Any, path: str = "") -> Iterable[str]:
+    if isinstance(value, str):
+        if path:
+            yield path
+    elif isinstance(value, list):
+        child_path = path + "[]" if path else "[]"
+        for item in value:
+            yield from textual_leaf_paths(item, child_path)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            child_path = f"{path}.{key}" if path else str(key)
+            yield from textual_leaf_paths(item, child_path)
 
 
 def project_content(
@@ -282,6 +319,52 @@ def validate_preregistration(
     return section, referenced_registry_keys(section)
 
 
+def require_content_gate_specification(section: dict[str, Any]) -> None:
+    readiness = section.get("content_readiness")
+    if (
+        not isinstance(readiness, dict)
+        or readiness.get("specification_path") != "experiments/content_gates.json"
+        or readiness.get("implementation_path") != "scripts/run_content_gates.py"
+        or readiness.get("required_status") != "pass"
+        or not isinstance(readiness.get("specification_sha256"), str)
+        or not isinstance(readiness.get("implementation_sha256"), str)
+        or digest_file(DEFAULT_CONTENT_GATE_SPECIFICATION)
+        != readiness["specification_sha256"]
+        or digest_file(ROOT / "scripts" / "run_content_gates.py")
+        != readiness["implementation_sha256"]
+    ):
+        fail(
+            "preregistration does not bind the current content gate specification "
+            "and implementation"
+        )
+
+
+def require_overlap_projection_contract(section: dict[str, Any]) -> dict[str, Any]:
+    binding = section.get("overlap_projection_contract")
+    if (
+        not isinstance(binding, dict)
+        or binding.get("specification_path")
+        != "experiments/overlap_projection_contract.json"
+        or binding.get("validator_path")
+        != "scripts/validate_overlap_projection_contract.py"
+        or binding.get("required_status") != "reviewed_pass"
+        or not isinstance(binding.get("specification_sha256"), str)
+        or not isinstance(binding.get("validator_sha256"), str)
+        or digest_file(DEFAULT_OVERLAP_PROJECTION_CONTRACT)
+        != binding["specification_sha256"]
+        or digest_file(ROOT / "scripts" / "validate_overlap_projection_contract.py")
+        != binding["validator_sha256"]
+    ):
+        fail(
+            "preregistration does not bind the current overlap-projection "
+            "contract and validator"
+        )
+    contract = read_json(DEFAULT_OVERLAP_PROJECTION_CONTRACT)
+    if contract.get("execution_status") != binding.get("current_status"):
+        fail("overlap-projection contract status differs from preregistration")
+    return contract
+
+
 def require_clearance(
     referenced: set[str], entries: dict[str, dict[str, Any]]
 ) -> None:
@@ -316,6 +399,9 @@ def validate_input_spec(
     paper: str,
     section: dict[str, Any],
     entries: dict[str, dict[str, Any]],
+    registry: dict[str, Any],
+    preregistration: dict[str, Any],
+    overlap_projection_contract: dict[str, Any],
     synthetic_fixture: bool,
 ) -> list[dict[str, Any]]:
     if not isinstance(value, dict) or value.get("schema_version") != 1:
@@ -380,18 +466,14 @@ def validate_input_spec(
         slots = [item["slot"] for item in projection]
         if len(slots) != len(set(slots)):
             fail(f"{key}: content_projection slots must be unique")
-        expected_slots = set(CANONICAL_CONTENT_SLOTS[paper])
-        if set(slots) != expected_slots:
-            fail(
-                f"{key}: content_projection slots must be exactly "
-                f"{sorted(expected_slots)} for {paper}"
-            )
         exporter = declaration.get("exporter")
         if not isinstance(exporter, dict) or not all(
             isinstance(exporter.get(field), str) and exporter[field].strip()
-            for field in ("name", "version")
+            for field in ("name", "version", "implementation_sha256")
         ):
-            fail(f"{key}: exporter must name a tool and version")
+            fail(f"{key}: exporter must name a tool, version, and implementation hash")
+        if not re.fullmatch(r"^[0-9a-f]{64}$", exporter["implementation_sha256"]):
+            fail(f"{key}: exporter implementation hash must be a SHA-256")
         license_fields = declaration.get("license_fields")
         if not isinstance(license_fields, list) or not license_fields or not all(
             isinstance(item, str) and item for item in license_fields
@@ -407,6 +489,36 @@ def validate_input_spec(
                 f"{key}: role {declaration['role']!r} is not among the "
                 f"registered {paper} roles {sorted(allowed_roles)}"
             )
+        try:
+            attestation = declaration.get("overlap_projection_attestation")
+            validate_overlap_projection_attestation(
+                attestation,
+                projection,
+                overlap_projection_contract,
+                registry,
+                preregistration,
+            )
+            expected_execution_class = (
+                "synthetic-audit" if synthetic_fixture else "real"
+            )
+            if attestation.get("execution_class") != expected_execution_class:
+                fail(
+                    f"{key}: projection attestation execution class does not "
+                    "match the materialization"
+                )
+            if (
+                attestation.get("paper") != paper
+                or attestation.get("source_key") != key
+                or attestation.get("source_revision") != entry["revision"]
+                or attestation.get("role") != declaration["role"]
+                or attestation.get("config") != declaration["config"]
+                or attestation.get("split") != declaration["split"]
+            ):
+                fail(f"{key}: projection attestation binds another source identity")
+            if attestation.get("exporter") != exporter:
+                fail(f"{key}: projection attestation binds a different exporter")
+        except ProjectionContractError as exc:
+            fail(f"{key}: invalid overlap projection attestation: {exc}")
         export_key = (
             key,
             declaration["config"],
@@ -476,6 +588,71 @@ def provenance_record(
     }
 
 
+def derive_dispositions(
+    records: list[dict[str, Any]],
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    int,
+    int,
+]:
+    clusters: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    exact_clusters: Counter[str] = Counter()
+    for record in records:
+        clusters[record["normalized_content_sha256"]].append(record)
+        exact_clusters[record["exact_content_sha256"]] += 1
+
+    retained: list[dict[str, Any]] = []
+    suppressed: list[dict[str, Any]] = []
+    quarantined: list[dict[str, Any]] = []
+    cross_role_clusters: list[dict[str, Any]] = []
+    for cluster_id, members in sorted(clusters.items()):
+        roles = sorted({member["requested_role"] for member in members})
+        if len(roles) > 1:
+            cross_role_clusters.append(
+                {
+                    "cluster_id": cluster_id,
+                    "roles": roles,
+                    "record_ids": sorted(member["record_id"] for member in members),
+                }
+            )
+            for member in members:
+                quarantined.append(
+                    {
+                        **member,
+                        "quarantine_reason": "cross-role-normalized-duplicate",
+                    }
+                )
+            continue
+        ordered = sorted(
+            members,
+            key=lambda item: (
+                item["source_key"],
+                item["stable_row_id_sha256"],
+                item["raw_row_sha256"],
+            ),
+        )
+        retained.append({**ordered[0], "duplicate_cluster_id": cluster_id})
+        for member in ordered[1:]:
+            suppressed.append(
+                {
+                    **member,
+                    "duplicate_cluster_id": cluster_id,
+                    "canonical_record_id": ordered[0]["record_id"],
+                }
+            )
+    return (
+        sorted(retained, key=lambda item: item["record_id"]),
+        sorted(suppressed, key=lambda item: item["record_id"]),
+        sorted(quarantined, key=lambda item: item["record_id"]),
+        cross_role_clusters,
+        sum(count > 1 for count in exact_clusters.values()),
+        sum(len(members) > 1 for members in clusters.values()),
+    )
+
+
 def materialize(
     paper: str,
     input_spec_path: Path,
@@ -484,6 +661,7 @@ def materialize(
     preregistration_path: Path,
     synthetic_fixture: bool,
     force: bool,
+    prepare_external_overlap_audit: bool,
 ) -> dict[str, Any]:
     registry = read_json(registry_path)
     entries = validate_registry(registry, registry_path)
@@ -491,6 +669,8 @@ def materialize(
     section, referenced = validate_preregistration(
         preregistration, paper, preregistration_path
     )
+    require_content_gate_specification(section)
+    overlap_projection_contract = require_overlap_projection_contract(section)
     if not referenced.issubset(entries):
         fail("preregistration references an unregistered source or model")
     if synthetic_fixture:
@@ -506,6 +686,9 @@ def materialize(
         paper,
         section,
         entries,
+        registry,
+        preregistration,
+        overlap_projection_contract,
         synthetic_fixture,
     )
 
@@ -537,6 +720,23 @@ def materialize(
             key = declaration["source_key"]
             path = resolve_input(input_spec_path, declaration["path"])
             rows = read_pinned_jsonl(path, declaration["sha256"])
+            observed_text_paths = sorted(
+                {
+                    field_path
+                    for row in rows
+                    for field_path in textual_leaf_paths(row)
+                }
+            )
+            if (
+                observed_text_paths
+                != declaration["overlap_projection_attestation"][
+                    "raw_text_paths"
+                ]
+            ):
+                fail(
+                    f"{key}: runtime textual leaf paths differ from the "
+                    "reviewed projection inventory"
+                )
             materialized: list[dict[str, Any]] = []
             for line_number, row in enumerate(rows, start=1):
                 record = provenance_record(
@@ -588,6 +788,12 @@ def materialize(
                     "split": declaration["split"],
                     "role": declaration["role"],
                     "exporter": declaration["exporter"],
+                    "row_id_fields": declaration["row_id_fields"],
+                    "content_projection": declaration["content_projection"],
+                    "overlap_projection_attestation": declaration[
+                        "overlap_projection_attestation"
+                    ],
+                    "license_fields": declaration.get("license_fields", []),
                     "input_sha256": declaration["sha256"],
                     "input_rows": len(rows),
                     "materialized_path": str(destination.relative_to(staging)),
@@ -642,51 +848,14 @@ def materialize(
         }
         write_json(staging / "acquire" / "data_manifest.json", acquisition)
 
-        clusters: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        exact_clusters: Counter[str] = Counter()
-        for record in records:
-            clusters[record["normalized_content_sha256"]].append(record)
-            exact_clusters[record["exact_content_sha256"]] += 1
-
-        retained: list[dict[str, Any]] = []
-        suppressed: list[dict[str, Any]] = []
-        quarantined: list[dict[str, Any]] = []
-        cross_role_clusters: list[dict[str, Any]] = []
-        for cluster_id, members in sorted(clusters.items()):
-            roles = sorted({member["requested_role"] for member in members})
-            if len(roles) > 1:
-                cross_role_clusters.append(
-                    {
-                        "cluster_id": cluster_id,
-                        "roles": roles,
-                        "record_ids": sorted(member["record_id"] for member in members),
-                    }
-                )
-                for member in members:
-                    quarantined.append(
-                        {
-                            **member,
-                            "quarantine_reason": "cross-role-normalized-duplicate",
-                        }
-                    )
-                continue
-            ordered = sorted(
-                members,
-                key=lambda item: (
-                    item["source_key"],
-                    item["stable_row_id_sha256"],
-                    item["raw_row_sha256"],
-                ),
-            )
-            retained.append({**ordered[0], "duplicate_cluster_id": cluster_id})
-            for member in ordered[1:]:
-                suppressed.append(
-                    {
-                        **member,
-                        "duplicate_cluster_id": cluster_id,
-                        "canonical_record_id": ordered[0]["record_id"],
-                    }
-                )
+        (
+            retained,
+            suppressed,
+            quarantined,
+            cross_role_clusters,
+            exact_duplicate_cluster_count,
+            normalized_duplicate_cluster_count,
+        ) = derive_dispositions(records)
 
         retained_by_role: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for record in retained:
@@ -739,12 +908,8 @@ def materialize(
             "input_row_count": len(records),
             "retained_row_count": len(retained),
             "within_role_duplicate_rows_suppressed": len(suppressed),
-            "exact_duplicate_clusters": sum(
-                count > 1 for count in exact_clusters.values()
-            ),
-            "normalized_duplicate_clusters": sum(
-                len(members) > 1 for members in clusters.values()
-            ),
+            "exact_duplicate_clusters": exact_duplicate_cluster_count,
+            "normalized_duplicate_clusters": normalized_duplicate_cluster_count,
             "cross_role_clusters_quarantined": len(cross_role_clusters),
             "cross_role_rows_quarantined": len(quarantined),
             "cross_role_clusters": cross_role_clusters,
@@ -766,17 +931,64 @@ def materialize(
             },
         }
         write_json(staging / "process" / "content_manifest.json", process_manifest)
-        verify_output(staging)
+        try:
+            readiness = audit_content_readiness(
+                staging,
+                DEFAULT_CONTENT_GATE_SPECIFICATION,
+                write_ledger=True,
+                require_pass=not prepare_external_overlap_audit,
+            )
+        except ContentGateError as exc:
+            fail(f"content readiness gate failed: {exc}")
+        if prepare_external_overlap_audit and (
+            readiness["status"] not in {"pass", "inconclusive"}
+            or (
+                readiness["status"] == "inconclusive"
+                and readiness["blocking_failures"]
+                != [{"gate": "approximate_candidate_generation", "count": 1}]
+            )
+        ):
+            fail(
+                "external-overlap preparation can defer only the large-artifact "
+                "approximate-candidate blocker"
+            )
+        verify_output(
+            staging,
+            allow_inconclusive_overlap=prepare_external_overlap_audit,
+        )
         staging.replace(output)
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
 
-    verify_output(output)
+    verify_output(
+        output,
+        allow_inconclusive_overlap=prepare_external_overlap_audit,
+    )
     return process_manifest
 
 
-def verify_output(output: Path) -> None:
+def confined_output_path(output: Path, declared: Any) -> Path:
+    if not isinstance(declared, str) or not declared:
+        fail("artifact path must be a nonempty relative string")
+    relative = Path(declared)
+    if relative.is_absolute() or ".." in relative.parts:
+        fail(f"artifact path escapes materialization: {declared!r}")
+    root = output.resolve()
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            fail(f"artifact path traverses a symlink: {declared!r}")
+    resolved = current.resolve()
+    if root not in resolved.parents:
+        fail(f"artifact path escapes materialization: {declared!r}")
+    return resolved
+
+
+def verify_output(
+    output: Path, *, allow_inconclusive_overlap: bool = False
+) -> None:
     acquisition_path = output / "acquire" / "data_manifest.json"
     process_path = output / "process" / "content_manifest.json"
     acquisition = read_json(acquisition_path)
@@ -784,32 +996,278 @@ def verify_output(output: Path) -> None:
     for manifest, path in ((acquisition, acquisition_path), (process, process_path)):
         if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
             fail(f"{path}: expected schema_version 1")
+    if (
+        not isinstance(acquisition.get("synthetic_fixture"), bool)
+        or acquisition.get("synthetic_fixture")
+        is not process.get("synthetic_fixture")
+    ):
+        fail("materialization execution classes are missing or inconsistent")
+    registry = read_json(DEFAULT_REGISTRY)
+    entries = validate_registry(registry, DEFAULT_REGISTRY)
+    preregistration = read_json(DEFAULT_PREREGISTRATION)
+    overlap_projection_contract = read_json(DEFAULT_OVERLAP_PROJECTION_CONTRACT)
+    paper = acquisition.get("paper")
+    section, referenced = validate_preregistration(
+        preregistration, paper, DEFAULT_PREREGISTRATION
+    )
+    expected_reviews = (
+        []
+        if acquisition["synthetic_fixture"] is True
+        else [
+            {
+                "key": key,
+                "status": entries[key]["manual_review"]["status"],
+                "review_record": entries[key]["manual_review"].get(
+                    "review_record"
+                ),
+            }
+            for key in sorted(referenced)
+        ]
+    )
+    expected_models = [
+        {
+            "key": key,
+            "repo_id": entries[key]["repo_id"],
+            "revision": entries[key]["revision"],
+        }
+        for key in sorted(referenced)
+        if entries[key]["kind"] == "model"
+    ]
+    if (
+        acquisition.get("registry_sha256") != digest_value(registry)
+        or acquisition.get("preregistration_section_sha256")
+        != digest_value(section)
+        or acquisition.get("manual_review_records") != expected_reviews
+        or acquisition.get("referenced_models") != expected_models
+        or (
+            acquisition["synthetic_fixture"] is False
+            and any(
+                review["status"] != "approved"
+                or not isinstance(review["review_record"], str)
+                or not review["review_record"].strip()
+                for review in expected_reviews
+            )
+        )
+    ):
+        fail("materialization does not bind the current registry and preregistration")
+    acquisition_inputs = acquisition.get("inputs")
+    if not isinstance(acquisition_inputs, list) or not acquisition_inputs:
+        fail("acquisition manifest has no input declarations")
+    if acquisition["synthetic_fixture"] is False:
+        observed_sources = {
+            item.get("source_key")
+            for item in acquisition_inputs
+            if isinstance(item, dict)
+        }
+        if observed_sources != set(section["source_keys"]):
+            fail("real acquisition omits or adds a preregistered dataset source")
+    observed_exports: set[tuple[str, str, str, str]] = set()
+    for input_file in acquisition_inputs:
+        if not isinstance(input_file, dict):
+            fail("acquisition input declaration must be an object")
+        export_key = tuple(
+            input_file.get(field)
+            for field in ("source_key", "config", "split", "role")
+        )
+        if export_key in observed_exports:
+            fail("acquisition contains a duplicate source/config/split/role")
+        observed_exports.add(export_key)
+        entry = entries.get(input_file.get("source_key"))
+        admitted = {
+            input_file.get("config"),
+            f"{input_file.get('config')}:{input_file.get('split')}",
+        }
+        allowed_roles = {
+            usage.split(":", 1)[1]
+            for usage in entry.get("usage", [])
+            if isinstance(usage, str) and usage.startswith(str(paper) + ":")
+        } if isinstance(entry, dict) else set()
+        if (
+            not isinstance(entry, dict)
+            or entry.get("kind") != "dataset"
+            or not admitted.intersection(entry.get("configs", []))
+            or input_file.get("role") not in allowed_roles
+        ):
+            fail("acquisition source/config/split/role is not registered")
 
-    provenance_path = output / acquisition["row_provenance_path"]
-    if digest_file(provenance_path) != acquisition["row_provenance_sha256"]:
-        fail("row provenance ledger hash does not match acquisition manifest")
-    provenance = read_jsonl(provenance_path)
+    provenance_path = confined_output_path(
+        output, acquisition["row_provenance_path"]
+    )
+    provenance, provenance_sha256 = read_jsonl_with_sha256(
+        provenance_path, acquisition["row_provenance_sha256"]
+    )
     if len(provenance) != acquisition["row_count"]:
         fail("row provenance count does not match acquisition manifest")
-    materialized_count = 0
+    expected_provenance: list[dict[str, Any]] = []
+    raw_rows_by_id: dict[str, dict[str, Any]] = {}
     for input_file in acquisition.get("inputs", []):
-        path = output / input_file["materialized_path"]
-        if digest_file(path) != input_file["materialized_sha256"]:
-            fail(f"materialized acquisition file hash mismatch: {path}")
-        values = read_jsonl(path)
+        required_input_fields = {
+            "source_key",
+            "repo_id",
+            "revision",
+            "config",
+            "split",
+            "role",
+            "exporter",
+            "row_id_fields",
+            "content_projection",
+            "overlap_projection_attestation",
+            "license_fields",
+            "input_sha256",
+            "materialized_path",
+            "materialized_sha256",
+            "input_rows",
+        }
+        if not isinstance(input_file, dict) or not required_input_fields.issubset(
+            input_file
+        ):
+            fail("acquisition input declaration is incomplete")
+        if not re.fullmatch(r"^[0-9a-f]{64}$", str(input_file["input_sha256"])):
+            fail("acquisition input declaration has an invalid export-byte hash")
+        path = confined_output_path(output, input_file["materialized_path"])
+        values, materialized_sha256 = read_jsonl_with_sha256(
+            path, input_file["materialized_sha256"]
+        )
         if len(values) != input_file["input_rows"]:
             fail(f"materialized acquisition row count mismatch: {path}")
-        materialized_count += len(values)
-    if materialized_count != acquisition["row_count"]:
+        observed_text_paths = sorted(
+            {
+                field_path
+                for value in values
+                for field_path in textual_leaf_paths(value.get("row"))
+            }
+        )
+        if (
+            observed_text_paths
+            != input_file["overlap_projection_attestation"]["raw_text_paths"]
+        ):
+            fail("materialized textual leaf paths differ from projection inventory")
+        declaration = {
+            "source_key": input_file["source_key"],
+            "config": input_file["config"],
+            "split": input_file["split"],
+            "role": input_file["role"],
+            "row_id_fields": input_file["row_id_fields"],
+            "content_projection": input_file["content_projection"],
+            "license_fields": input_file["license_fields"],
+        }
+        try:
+            validate_overlap_projection_attestation(
+                input_file["overlap_projection_attestation"],
+                input_file["content_projection"],
+                overlap_projection_contract,
+                registry,
+                preregistration,
+            )
+            expected_execution_class = (
+                "synthetic-audit"
+                if acquisition.get("synthetic_fixture") is True
+                else "real"
+            )
+            if (
+                input_file["overlap_projection_attestation"].get(
+                    "execution_class"
+                )
+                != expected_execution_class
+            ):
+                fail(
+                    "materialized projection attestation execution class "
+                    "does not match the acquisition"
+                )
+            if (
+                input_file["overlap_projection_attestation"].get("paper")
+                != paper
+                or input_file["overlap_projection_attestation"].get(
+                    "source_key"
+                )
+                != input_file["source_key"]
+                or input_file["overlap_projection_attestation"].get(
+                    "source_revision"
+                )
+                != input_file["revision"]
+                or input_file["overlap_projection_attestation"].get("role")
+                != input_file["role"]
+                or input_file["overlap_projection_attestation"].get("config")
+                != input_file["config"]
+                or input_file["overlap_projection_attestation"].get("split")
+                != input_file["split"]
+            ):
+                fail("materialized projection attestation binds another source")
+            if (
+                input_file["overlap_projection_attestation"].get("exporter")
+                != input_file.get("exporter")
+            ):
+                fail("materialized projection attestation binds another exporter")
+        except ProjectionContractError as exc:
+            fail(f"materialized overlap projection does not verify: {exc}")
+        registered_entry = entries[input_file["source_key"]]
+        if (
+            input_file["repo_id"] != registered_entry.get("repo_id")
+            or input_file["revision"] != registered_entry.get("revision")
+        ):
+            fail("materialized source repository or revision is stale")
+        entry = {
+            "repo_id": input_file["repo_id"],
+            "revision": input_file["revision"],
+        }
+        for line_number, value in enumerate(values, start=1):
+            if (
+                not isinstance(value, dict)
+                or set(value) != {"provenance", "row"}
+                or not isinstance(value["row"], dict)
+            ):
+                fail(f"materialized acquisition row has an invalid schema: {path}")
+            expected = provenance_record(
+                value["row"], line_number, declaration, entry
+            )
+            expected["record_id"] = digest_value(
+                {
+                    "source_key": input_file["source_key"],
+                    "revision": input_file["revision"],
+                    "config": input_file["config"],
+                    "split": input_file["split"],
+                    "stable_row_id": expected["stable_row_id"],
+                }
+            )
+            if value["provenance"] != expected:
+                fail(f"materialized provenance does not recompute: {path}")
+            if expected["record_id"] in raw_rows_by_id:
+                fail("materialized acquisition contains a duplicate record ID")
+            expected_provenance.append(expected)
+            raw_rows_by_id[expected["record_id"]] = value["row"]
+    expected_provenance.sort(key=lambda item: item["record_id"])
+    if len(expected_provenance) != acquisition["row_count"]:
         fail("materialized acquisition counts do not match row provenance")
+    if provenance != expected_provenance:
+        fail("row provenance ledger is not a bijection of materialized inputs")
+
+    (
+        expected_retained,
+        expected_suppressed,
+        expected_quarantined,
+        expected_cross_role_clusters,
+        expected_exact_duplicate_clusters,
+        expected_normalized_duplicate_clusters,
+    ) = derive_dispositions(expected_provenance)
+    expected_retained_by_role: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for record in expected_retained:
+        expected_retained_by_role[record["requested_role"]].append(record)
 
     hashes_by_role: dict[str, set[str]] = {}
     retained_count = 0
+    observed_roles: set[str] = set()
     for role_file in process["retained_role_files"]:
-        path = output / role_file["path"]
-        if digest_file(path) != role_file["sha256"]:
-            fail(f"retained role file hash mismatch: {path}")
-        values = read_jsonl(path)
+        if (
+            not isinstance(role_file, dict)
+            or not isinstance(role_file.get("role"), str)
+            or role_file["role"] in observed_roles
+        ):
+            fail("retained role declarations must have unique roles")
+        observed_roles.add(role_file["role"])
+        path = confined_output_path(output, role_file["path"])
+        values, role_file_sha256 = read_jsonl_with_sha256(
+            path, role_file["sha256"]
+        )
         if len(values) != role_file["rows"]:
             fail(f"retained role row count mismatch: {path}")
         hashes = {
@@ -817,8 +1275,19 @@ def verify_output(output: Path) -> None:
         }
         if len(hashes) != len(values):
             fail(f"retained role still contains normalized duplicates: {path}")
+        expected_values = [
+            {
+                "provenance": record,
+                "row": raw_rows_by_id[record["record_id"]],
+            }
+            for record in expected_retained_by_role.get(role_file["role"], [])
+        ]
+        if values != expected_values:
+            fail(f"retained role rows do not reproduce canonical dispositions: {path}")
         hashes_by_role[role_file["role"]] = hashes
         retained_count += len(values)
+    if observed_roles != set(expected_retained_by_role):
+        fail("retained role files omit or add a canonical role")
     roles = sorted(hashes_by_role)
     for index, left in enumerate(roles):
         for right in roles[index + 1 :]:
@@ -827,13 +1296,42 @@ def verify_output(output: Path) -> None:
     if retained_count != process["retained_row_count"]:
         fail("retained row count does not match process manifest")
 
-    for artifact_field, digest_field in (
-        ("duplicate_suppressed_path", "duplicate_suppressed_sha256"),
-        ("quarantine_path", "quarantine_sha256"),
-    ):
-        path = output / process[artifact_field]
-        if digest_file(path) != process[digest_field]:
-            fail(f"artifact hash mismatch: {path}")
+    disposition_artifacts = (
+        (
+            "duplicate_suppressed_path",
+            "duplicate_suppressed_sha256",
+            expected_suppressed,
+        ),
+        ("quarantine_path", "quarantine_sha256", expected_quarantined),
+    )
+    for artifact_field, digest_field, expected_values in disposition_artifacts:
+        path = confined_output_path(output, process[artifact_field])
+        observed_values, observed_sha256 = read_jsonl_with_sha256(
+            path, process[digest_field]
+        )
+        if observed_values != expected_values:
+            fail(f"{artifact_field} does not reproduce canonical dispositions")
+    expected_summary = {
+        "input_row_count": len(expected_provenance),
+        "retained_row_count": len(expected_retained),
+        "within_role_duplicate_rows_suppressed": len(expected_suppressed),
+        "exact_duplicate_clusters": expected_exact_duplicate_clusters,
+        "normalized_duplicate_clusters": expected_normalized_duplicate_clusters,
+        "cross_role_clusters_quarantined": len(expected_cross_role_clusters),
+        "cross_role_rows_quarantined": len(expected_quarantined),
+    }
+    if any(process.get(field) != value for field, value in expected_summary.items()):
+        fail("process summary does not reproduce canonical dispositions")
+    if process.get("cross_role_clusters") != expected_cross_role_clusters:
+        fail("cross-role cluster summary does not reproduce")
+    try:
+        verify_readiness_ledger(
+            output,
+            DEFAULT_CONTENT_GATE_SPECIFICATION,
+            allow_inconclusive=allow_inconclusive_overlap,
+        )
+    except ContentGateError as exc:
+        fail(f"content readiness ledger failed verification: {exc}")
 
 
 def run_self_test() -> None:
@@ -849,6 +1347,7 @@ def run_self_test() -> None:
             preregistration_path=DEFAULT_PREREGISTRATION,
             synthetic_fixture=True,
             force=False,
+            prepare_external_overlap_audit=False,
         )
         expected = {
             "input_row_count": 5,
@@ -861,6 +1360,221 @@ def run_self_test() -> None:
         observed = {field: summary.get(field) for field in expected}
         if observed != expected:
             fail(f"synthetic fixture summary differs: {observed} != {expected}")
+
+        def expect_chain_rejection(name: str, mutate: Any) -> None:
+            case = Path(directory) / f"chain-fault-{name}"
+            shutil.copytree(output, case)
+            mutate(case)
+            try:
+                verify_output(case)
+            except ContractError:
+                return
+            fail(f"materialization chain accepted {name}")
+
+        def forge_provenance(case: Path) -> None:
+            acquisition_path = case / "acquire" / "data_manifest.json"
+            acquisition = read_json(acquisition_path)
+            path = case / acquisition["row_provenance_path"]
+            rows = read_jsonl(path)
+            rows[0]["record_id"] = "f" * 64
+            write_jsonl(path, rows)
+            acquisition["row_provenance_sha256"] = digest_file(path)
+            write_json(acquisition_path, acquisition)
+
+        def omit_disposition(case: Path) -> None:
+            process_path = case / "process" / "content_manifest.json"
+            process = read_json(process_path)
+            path = case / process["quarantine_path"]
+            rows = read_jsonl(path)
+            rows.pop()
+            write_jsonl(path, rows)
+            process["quarantine_sha256"] = digest_file(path)
+            process["cross_role_rows_quarantined"] = len(rows)
+            write_json(process_path, process)
+
+        def forge_canonical_representative(case: Path) -> None:
+            process_path = case / "process" / "content_manifest.json"
+            process = read_json(process_path)
+            path = case / process["duplicate_suppressed_path"]
+            rows = read_jsonl(path)
+            rows[0]["canonical_record_id"] = "0" * 64
+            write_jsonl(path, rows)
+            process["duplicate_suppressed_sha256"] = digest_file(path)
+            write_json(process_path, process)
+
+        def insert_orphan_retained(case: Path) -> None:
+            process_path = case / "process" / "content_manifest.json"
+            process = read_json(process_path)
+            role_file = process["retained_role_files"][0]
+            path = case / role_file["path"]
+            rows = read_jsonl(path)
+            orphan = copy.deepcopy(rows[0])
+            orphan["provenance"]["record_id"] = "e" * 64
+            orphan["provenance"]["normalized_content_sha256"] = "d" * 64
+            rows.append(orphan)
+            write_jsonl(path, rows)
+            role_file["rows"] = len(rows)
+            role_file["sha256"] = digest_file(path)
+            process["retained_row_count"] += 1
+            write_json(process_path, process)
+
+        def relabel_materialization_real(case: Path) -> None:
+            acquisition_path = case / "acquire" / "data_manifest.json"
+            process_path = case / "process" / "content_manifest.json"
+            acquisition = read_json(acquisition_path)
+            process = read_json(process_path)
+            acquisition["synthetic_fixture"] = False
+            process["synthetic_fixture"] = False
+            write_json(acquisition_path, acquisition)
+            write_json(process_path, process)
+
+        def transplant_projection_attestation(case: Path) -> None:
+            acquisition_path = case / "acquire" / "data_manifest.json"
+            acquisition = read_json(acquisition_path)
+            acquisition["inputs"][0]["overlap_projection_attestation"], acquisition[
+                "inputs"
+            ][1]["overlap_projection_attestation"] = (
+                acquisition["inputs"][1]["overlap_projection_attestation"],
+                acquisition["inputs"][0]["overlap_projection_attestation"],
+            )
+            write_json(acquisition_path, acquisition)
+
+        def stale_source_revision(case: Path) -> None:
+            acquisition_path = case / "acquire" / "data_manifest.json"
+            acquisition = read_json(acquisition_path)
+            acquisition["inputs"][0]["revision"] = "0" * 40
+            write_json(acquisition_path, acquisition)
+
+        def stale_registry_binding(case: Path) -> None:
+            acquisition_path = case / "acquire" / "data_manifest.json"
+            acquisition = read_json(acquisition_path)
+            acquisition["registry_sha256"] = "0" * 64
+            write_json(acquisition_path, acquisition)
+
+        expect_chain_rejection("forged-record-id", forge_provenance)
+        expect_chain_rejection("undisposed-acquired-row", omit_disposition)
+        expect_chain_rejection(
+            "wrong-canonical-representative", forge_canonical_representative
+        )
+        expect_chain_rejection("orphan-retained-row", insert_orphan_retained)
+        expect_chain_rejection(
+            "synthetic-attestation-in-real-materialization",
+            relabel_materialization_real,
+        )
+        expect_chain_rejection(
+            "transplanted-projection-attestation",
+            transplant_projection_attestation,
+        )
+        expect_chain_rejection("stale-source-revision", stale_source_revision)
+        expect_chain_rejection("stale-registry-binding", stale_registry_binding)
+
+        readiness_path = output / "process" / "content_readiness_ledger.json"
+        readiness = read_json(readiness_path)
+        forged_readiness = dict(readiness)
+        forged_readiness["summary"] = dict(readiness["summary"])
+        forged_readiness["summary"]["retained_rows_scanned"] = 0
+        write_json(readiness_path, forged_readiness)
+        try:
+            verify_output(output)
+        except ContractError as exc:
+            if "content readiness ledger" not in str(exc):
+                raise
+        else:
+            fail("artifact verification accepted a forged readiness ledger")
+        write_json(readiness_path, readiness)
+        from run_experiment_pipeline import (
+            validate_process_content_lineage,
+            validate_real_stage,
+        )
+
+        process_manifest_path = output / "process" / "splits_manifest.json"
+        content_lineage = []
+        content_partitions = []
+        for role_file in summary["retained_role_files"]:
+            retained_rows = read_jsonl(output / role_file["path"])
+            record_ids = []
+            for retained in retained_rows:
+                record_id = retained["provenance"]["record_id"]
+                record_ids.append(record_id)
+                content_lineage.append(
+                    {
+                        "record_id": record_id,
+                        "disposition": "included",
+                        "partition": role_file["role"],
+                        "exclusion_reason": None,
+                    }
+                )
+            content_partitions.append(
+                {
+                    "partition": role_file["role"],
+                    "path": role_file["path"],
+                    "rows": role_file["rows"],
+                    "sha256": role_file["sha256"],
+                    "record_ids_sha256": digest_value(sorted(record_ids)),
+                }
+            )
+        write_json(
+            process_manifest_path,
+            {
+                "content_readiness_ledger_sha256": digest_file(readiness_path),
+                "content_lineage": content_lineage,
+                "content_partitions": content_partitions,
+            },
+        )
+        fixture_section = {
+            "content_readiness": {
+                "required_partitions": [
+                    partition["partition"] for partition in content_partitions
+                ],
+                "allowed_exclusion_reasons": ["generated-self-test"],
+            }
+        }
+        validated_records = validate_process_content_lineage(
+            "sft",
+            output,
+            fixture_section,
+            readiness,
+            digest_file(readiness_path),
+        )
+        if validated_records["records"] != len(content_lineage):
+            fail("process lineage validator did not account for every fixture row")
+        write_json(
+            process_manifest_path,
+            {"content_readiness_ledger_sha256": "0" * 64},
+        )
+        try:
+            validate_process_content_lineage(
+                "sft",
+                output,
+                fixture_section,
+                readiness,
+                digest_file(readiness_path),
+            )
+        except SystemExit as exc:
+            if "does not bind" not in str(exc):
+                raise
+        else:
+            fail("process lineage validator accepted an unbound readiness ledger")
+        section = read_json(DEFAULT_PREREGISTRATION)["sft"]
+        acquisition = read_json(output / "acquire" / "data_manifest.json")
+        try:
+            validate_real_stage(
+                "sft",
+                "build",
+                output,
+                section,
+                {
+                    "source_registry_sha256": acquisition["registry_sha256"],
+                    "preregistration_sha256": acquisition[
+                        "preregistration_section_sha256"
+                    ],
+                },
+            )
+        except SystemExit as exc:
+            if "current approved real materialization" not in str(exc):
+                raise
+        else:
+            fail("real validator accepted the synthetic clearance bypass")
         role_path = output / summary["retained_role_files"][0]["path"]
         with role_path.open("ab") as handle:
             handle.write(b"\n")
@@ -881,6 +1595,7 @@ def run_self_test() -> None:
                 preregistration_path=DEFAULT_PREREGISTRATION,
                 synthetic_fixture=False,
                 force=False,
+                prepare_external_overlap_audit=False,
             )
         except ContractError as exc:
             if "missing approved review records" not in str(exc):
@@ -888,8 +1603,8 @@ def run_self_test() -> None:
         else:
             fail("real materialization ran without approved review records")
     print(
-        "validated clearance blocking, row provenance, deduplication, quarantine, "
-        "and tamper detection"
+        "validated clearance blocking, closed provenance/disposition chain, "
+        "deduplication, quarantine, content readiness, and rehashed fault rejection"
     )
 
 
@@ -909,6 +1624,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--force", action="store_true")
     parser.add_argument(
+        "--prepare-external-overlap-audit",
+        action="store_true",
+        help=(
+            "retain an otherwise valid large materialization with an "
+            "inconclusive lexical ledger so a frozen exact external engine can "
+            "write process/external_overlap_audit; all downstream real stages "
+            "still require a passing ledger"
+        ),
+    )
+    parser.add_argument(
         "--verify-output",
         type=Path,
         help="verify an existing materialization artifact and exit",
@@ -919,6 +1644,10 @@ def parse_args() -> argparse.Namespace:
         help="run the committed synthetic contract test and exit",
     )
     args = parser.parse_args()
+    if args.synthetic_fixture and args.prepare_external_overlap_audit:
+        parser.error(
+            "--prepare-external-overlap-audit is only for reviewed real exports"
+        )
     if args.self_test or args.verify_output:
         return args
     if args.paper is None or args.input_spec is None or args.output is None:
@@ -944,9 +1673,15 @@ def main() -> None:
             preregistration_path=args.preregistration.resolve(),
             synthetic_fixture=args.synthetic_fixture,
             force=args.force,
+            prepare_external_overlap_audit=args.prepare_external_overlap_audit,
+        )
+        prefix = (
+            "prepared unready materialization for exact external overlap audit"
+            if args.prepare_external_overlap_audit
+            else "materialized"
         )
         print(
-            f"materialized {summary['input_row_count']} rows; retained "
+            f"{prefix}: {summary['input_row_count']} rows; retained "
             f"{summary['retained_row_count']}, suppressed "
             f"{summary['within_role_duplicate_rows_suppressed']}, quarantined "
             f"{summary['cross_role_rows_quarantined']}"

@@ -121,6 +121,11 @@ distillation amortizes expensive influence computations through landmarks
 \cite{nikdan2025influence}. Large-pool studies caution that expensive selectors
 can underperform simple representation-similarity selection
 \cite{ivison2025largescale}.
+A controlled ICML study separates representation from subset optimization and
+finds that gradient representations are the most consistently predictive, but
+that selector differences shrink as budget grows \cite{nayak2026critical}.
+We therefore retain zero-shot and simple greedy baselines and test
+cost--packer interactions at every budget rather than only the smallest one.
 SPICE is especially close: it combines Fisher information with a penalty for
 gradient conflict \cite{chang2026spice}. Our target-gradient proxy is not
 presented as new. The distinction under study is joint physical-pack
@@ -189,14 +194,16 @@ L^{\mathrm{tr}}_B(\theta)=
 The global denominator is fixed across microbatches so that, with dropout
 disabled, isolated examples have additive gradients.
 
-Reference distributions are represented by disjoint datasets
+Reference distributions are represented by source-defined dataset slices
 $V_0,V_1,\ldots,V_C$. $V_0$ measures the target behavior; $V_{1:C}$ are
 protected slices. Their differentiable losses are $L_c(\theta)$.
 $V^{\mathrm{score}}$ may be queried repeatedly by the scheduler,
 $V^{\mathrm{gate}}$ supplies fresh post-selection checks, and
-$V^{\mathrm{audit}}$ remains sealed until every hyperparameter and stopping
-rule is frozen. Source- and template-level deduplication is required across
-these resources and the final benchmarks.
+$V^{\mathrm{audit}}$ is intended to remain sealed until every hyperparameter
+and stopping rule is frozen. The repository contract requires source-,
+template-, and reviewed-cluster disjointness, but same-user file execution does
+not enforce sealing; a site-local access-isolation attestation is a real-run
+blocker.
 
 A packing assignment $\pi$ maps examples to physical packs and obeys
 \begin{equation}
@@ -303,15 +310,46 @@ selected content, and a versioned Unicode-normalized form. Duplicate clusters
 are formed before split assignment: a normalized cluster crossing registered
 candidate-source, reference, or benchmark roles is quarantined in full, and a
 retained cluster is assigned wholly to one downstream split.
-Normalized equality is only an exact cleaning rule; semantic-near-duplicate,
-secret, and privacy scans remain separate blocking checks.
+Normalized equality is only an exact cleaning rule. A hash-bound preflight
+then blocks named PII/secret patterns and retained character-5-gram
+near-duplicates. This deterministic lexical screen is not a semantic or privacy
+certificate: reviewed multilingual, paraphrase, benchmark-leakage, and privacy
+audits remain separate blocking checks. Above the exhaustive limit, only a
+reviewed exact engine whose hash-bound shards cover all cross-record field
+segments can lift the lexical blocker. The committed engine is unfrozen and
+indexes record pairs only, so it cannot clear a real multi-field export.
 
 Reference sets measure losses rather than benchmark exact match because the
-gate requires differentiability. For each capability, score, gate, audit, and
-benchmark splits are disjoint at the source-template and semantic-cluster
-levels. The scheduling sets are explicitly treated as training resources:
-repeatedly querying $V^{\mathrm{score}}$ can overfit it, which is why no final
-claim uses that set.
+gate requires differentiability. Real execution requires the score, gate,
+audit, and benchmark partitions to pass closed-world source, template, and
+reviewed-cluster disjointness checks. The scheduling sets are explicitly
+treated as training resources: repeatedly querying $V^{\mathrm{score}}$ can
+overfit it, which is why no final claim uses that set.
+
+\paragraph{Frozen operational capability map.}
+The pilot defines three dataset slices: general instruction, mathematics, and
+code. In the mathematics setting, mathematics is the target and general
+instruction plus code are the two protected slices; in the code setting, code
+is the target and general instruction plus mathematics are protected. Every
+slice has its own score, gate, and untouched audit partition with the same loss
+definition. BigCodeBench is only a secondary code diagnostic and never a
+differentiable gate loss. These labels are operational dataset constructs, not
+complete capabilities. The general slice fixes equal mass on the four admitted
+SmolTalk configurations; the mathematics and code slices use the registered
+OpenR1 default and CommitPackFT Python configurations. Within each partition,
+the loss is a uniform row mean of per-row response-token-mean NLL. Candidate
+source mass is one third per slice.
+
+The contract requires split assignment before losses are computed. Each complete reviewed
+semantic-near-duplicate cluster is hashed with the source key, pinned source
+revision, semantic-audit hash, and sorted member record identifiers.
+Within source, clusters are sorted by assignment hash and apportioned
+$80/5/10/5$ by Hamilton largest remainder with a fixed partition tie order.
+These are exact cluster counts, not row proportions. An empty required source
+partition blocks the pilot; no boundary moves after labels or content are
+inspected. This gives
+reproducible cluster-preserving assignment, not evidence that the reviewed
+clusters capture every semantic overlap.
 
 \subsection{Implementation}
 
@@ -346,7 +384,8 @@ $\overline q_t=\widehat q_t+e_t^q$. The ideal round-level decision is
 \overline C_t^{\mathrm{all}}(B,\pi)\le B_t^{\mathrm{rem}},\nonumber\\
 &N_{\min}\le N_B\le N_{\max},\quad
 |\operatorname{range}(\pi)|\le P,\nonumber\\
-&\text{\cref{eq:packing} and source-coverage constraints hold.}\nonumber
+&\text{\cref{eq:packing} holds,}\nonumber\\
+&\text{and source-coverage constraints hold.}\nonumber
 \end{align}
 Here $\overline q_t$ estimates a trust-radius bound on
 $\|\widetilde\Delta_t\|^2$, $\tau_{c,t}$ is an allowed one-step reference-loss
@@ -382,9 +421,11 @@ D_{c,j}(\alpha)=
 \phi_c(z_j;\theta_t).
 \end{equation}
 Here $\phi_c$ is example-average NLL clipped to $[0,M_\phi]$ solely for the
-gate. One fresh IID block is drawn for each $(c,t)$ before inspecting any
-scale, and that same paired block evaluates every $\alpha\in\mathcal A$. With
-$n_c$ examples per block and at most $T_{\max}$ rounds, define
+gate. For each protected slice $c$, one fresh block is drawn with replacement
+from its frozen gate law before inspecting any scale. Blocks are independent
+across slices and rounds, while every $\alpha\in\mathcal A$ shares the same
+paired block within $(c,t)$. With $n_c$ examples per block and at most
+$T_{\max}$ rounds, define
 \begin{equation}
 U_{c,t}(\alpha)=\overline D_{c,t}(\alpha)+
 M_\phi\sqrt{\frac{2\log(C|\mathcal A|T_{\max}/\delta_g)}{n_c}}.
@@ -412,9 +453,11 @@ remains an empirical endpoint, not a consequence of the gate.
 \STATE Build feasible isolated pack plans with beam search.
 \STATE Re-score a fixed shortlist on independent references and select.
 \STATE Compute its exact gradient, moments, and scaled AdamW candidates.
-\STATE Draw one fresh protected block and freeze it across all scales.
+\FOR{$c=1,\ldots,C$}
+  \STATE Draw a fresh protected block $Z_{c,t}$; freeze it across scales.
+\ENDFOR
 \FOR{$\alpha\in\mathcal A$ from largest to smallest}
-  \STATE Evaluate protected losses on the frozen round block.
+  \STATE Evaluate protected losses on all frozen round blocks.
   \IF{all upper statistics are below their tolerances}
     \STATE Commit $\Delta_t(\alpha)$ and optimizer state; \textbf{break}.
   \ENDIF
@@ -461,8 +504,10 @@ Only the exploratory H1 mechanism factorial is frozen in the committed pilot;
 H2, H3, and every confirmatory acceptance threshold remain planned rather than
 predeclared.
 The primary statistic is the paired difference in dominated hypervolume over a
-fixed tolerance and budget grid with a fixed reference box. H1 succeeds only
-if its simultaneous 95\% lower bound exceeds zero. H3 compares protected
+fixed tolerance and budget grid with a fixed reference box. A future
+confirmatory replacement preregistration is intended to require a simultaneous
+95\% lower bound above zero; the committed exploratory pilot cannot declare
+H1 success. H3 compares protected
 regression at a planned noninferior target-NLL change so that shrinking all
 updates cannot win trivially.
 
@@ -484,7 +529,9 @@ pre-compute pilot, not the $B_{50M}$ confirmatory design. Its gate uses 512
 with-replacement draws per protected slice and a frozen empirical margin, with
 $\sum_t\tau_{c,t}\le0.2$; it makes no population-coverage claim. A formal use
 of \cref{eq:gate} requires a separately feasible $T_{\max}$ and recomputed
-sample count.
+sample count. Its factorial uses the pinned Qwen 1.5B checkpoint and five
+seeds. The pinned SmolLM checkpoint is an untouched transfer diagnostic, not
+an additional seed or model selected after the factorial.
 
 Let $B_{50M}$ be the measured accelerator cost of random, isolated,
 best-fit-packed SFT on 50 million response tokens. We evaluate total budgets
@@ -518,13 +565,14 @@ L_c^{\mathrm{audit}}(\theta_0)\right],
 end-to-end allocated accelerator-seconds, CPU resource-seconds, wall time, and
 packing throughput. Downstream benchmarks
 are secondary because they are not optimized by the gate. We use five
-development seeds and five confirmatory seeds, report paired differences with
-95\% intervals, and retain every run rather than selecting the best seed.
+exploratory pilot seeds and retain every run rather than selecting the best
+seed. Confirmatory seed count, acceptance thresholds, and model crossing
+remain unfrozen.
 
 \subsection{Main Results}
 
 \begin{table*}[t]
-\caption{Confirmatory matched-budget endpoints. Lower target NLL, protected
+\caption{Planned confirmatory matched-budget endpoints. Lower target NLL, protected
 regression, and cost are better; higher throughput is better. Dashes are
 intentional: no measurements had been run when this draft was written.}
 \label{tab:main}
@@ -532,8 +580,10 @@ intentional: no measurements had been run when this draft was written.}
 \begin{small}
 \begin{tabular}{lcccc}
 \toprule
-Method & Target audit NLL & Worst protected $\Delta$NLL
-& Accelerator-seconds & Packed tokens/s \\
+Method & \shortstack{Target audit\\NLL}
+& \shortstack{Worst protected\\$\Delta$NLL}
+& \shortstack{Accelerator-\\seconds}
+& \shortstack{Packed\\tokens/s} \\
 \midrule
 Random + best-fit packing & -- & -- & -- & -- \\
 Representation similarity + best-fit & -- & -- & -- & -- \\
@@ -599,9 +649,11 @@ The method may spend more compute scoring and gating than it saves in training.
 Its pack heuristic is neither optimal nor approximation-guaranteed. Frozen
 Adam geometry can rank windows incorrectly, while computing individual
 gradients may dominate runtime. Reference losses are incomplete proxies for
-capabilities and can themselves be gamed; repeated score queries make them
-training data. A gate based on finite fresh samples can miss rare regressions,
-and formal simultaneous coverage may be too conservative to be useful.
+capabilities and can themselves be gamed; the three source slices have limited
+construct validity, and repeated score queries make them training data. A gate
+based on finite fresh samples can miss rare regressions, and formal
+simultaneous coverage may be too conservative to be useful. Repository
+manifests do not enforce OS-level audit-file isolation.
 
 The conditional bound is a standard local smoothness consequence, not a safety
 theorem. It applies only to the measured trainable subspace and one actual
@@ -715,6 +767,58 @@ role-specific files, and verifies their artifact hashes. Its committed
 synthetic fixture contains within-role and cross-role duplicates and succeeds
 only when the former is collapsed and the latter is quarantined; it downloads
 no public rows and is not experimental evidence.
+\texttt{scripts/run\_content\_gates.py} additionally binds
+\texttt{experiments/content\_gates.json} to those artifacts and fails closed on
+retained named PII/secret patterns or lexical near-duplicates. Its exhaustive
+small-artifact path can pass; the non-recall-complete MinHash-LSH path for
+larger artifacts is inconclusive by itself.
+\texttt{scripts/validate\_external\_overlap\_audit.py} now defines the only
+large-artifact completion route: records are ordered by identifier, unordered
+pairs receive row-major upper-triangle ordinals, and contiguous shard ranges
+must cover exactly $n(n-1)/2$ comparisons without gaps or overlaps. Each shard
+binds the materialization, gate specification, reviewed engine source, runtime
+image, and review record; approximation, early termination, shard errors, or
+any qualifying pair blocks the ledger. Reported pair identities, roles,
+thresholds, and scores are independently checked without persisting matched
+text. A temporary disk-backed exact join also enumerates every pair sharing a
+5-gram and rejects omitted findings; this is recall-complete for the positive
+frozen Jaccard thresholds because any qualifying pair must share a gram. Shard
+coverage is therefore an engine-governance attestation, whereas readiness
+depends on reproducing the complete qualifying-pair set. The committed engine
+hashes remain null blockers, so this contract is executable only as a generated
+software self-test and no large real artifact currently passes. Neither lexical
+route is evidence of semantic independence or completed manual review.
+Moreover, this external contract indexes record pairs, not canonical field
+segments. It cannot clear a multi-field export even after its engine fields are
+filled; a reviewed successor must cover the complete cross-record segment-pair
+space.
+\texttt{experiments/overlap\_projection\_contract.json} now enumerates every
+pilot source/role and requires separate model-input, training-target,
+protected-input, and protected-target slots as applicable. Its validator binds
+each inventory to source revision, configuration, split, exporter, canonical
+field paths, and a review-artifact hash. Runtime enumeration requires every
+textual leaf path to be projected or explicitly excluded; generated
+attestations cannot be relabeled as real. The generated two-field fixture is
+only a schema audit. All eight real
+field inventories and review records remain null, so concatenating one
+convenient text field cannot clear the overlap gate.
+The separate \texttt{experiments/sft\_reference\_contract.json} fixes the
+capability map and domain-separated cluster-hash split. The process-stage
+validator loads the hash-bound semantic-audit artifact, requires every retained
+candidate record exactly once, checks source/configuration/role provenance,
+reproduces hash-sorted cluster ranks and largest-remainder assignments, and
+requires exact equality with partition JSONL. Its generated self-test rejects
+a wrong partition, duplicate cluster, stale contract, omitted retained
+cluster, and generated identifiers relabeled as real; 19/20/21-cluster
+boundary allocations are also fixed. The self-test contains identifiers only
+and is not empirical evidence.
+The shared acquisition-to-retention validator now recomputes row identifiers,
+raw and projected-content hashes, canonical duplicate representatives, and
+every retained/suppressed/quarantined disposition from acquisition bytes.
+Real execution nevertheless remains blocked on reviewed source-specific
+multi-field inventories, train-ledger-to-endpoint aggregation, and a
+site-local sealed-resource access attestation. Declarative stage checks do not
+count as execution evidence.
 With \texttt{--execute --synthetic-audit --commands
 experiments/synthetic\_commands.json}, a
 CPU-only audit exactly enumerates packings for two length-10 packs under a

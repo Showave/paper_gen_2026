@@ -13,7 +13,7 @@
       "inputs": [
         "Approved entries and exact revisions from experiments/public_source_registry.json",
         "Frozen rl section of experiments/pilot_preregistration.json",
-        "Verified preflight data/content manifests and retained role-file hashes from hash-pinned local JSONL exports",
+        "Verified preflight data/content manifests, passing content-readiness ledger, and retained role-file hashes from hash-pinned local JSONL exports",
         "Versioned mathematics prompt identifiers with known target masses",
         "Current-policy, stale-policy, tokenizer, and decoder revisions",
         "Public mathematics verifier source hash"
@@ -24,6 +24,7 @@
       "checks": [
         "Prompt support is finite, normalized, and reconstructible",
         "Stable row, raw-content, and normalized-content hashes are recorded before partitioning",
+        "The frozen PII, secret, and lexical near-duplicate gates report no retained-content finding; passing is not represented as semantic or privacy clearance",
         "The acquisition manifest embeds the preflight manifest and retained role-file hashes",
         "Licenses and verifier requirements are recorded"
       ],
@@ -40,13 +41,19 @@
         "acquire/data_manifest.json",
         "Temperature-softmax decoder specification and maximum response length",
         "Deterministic allowed-vocabulary rule with no top-k, top-p, repetition, minimum-length, or forced-token processor",
-        "Parser, timeout, sandbox-error, EOS, and truncation reward rules"
+        "Parser, timeout, sandbox-error, EOS, and truncation reward rules",
+        "Frozen experiments/content_gates.json, its hash-bound ledger, and a reviewed hidden-evaluator semantic-overlap audit",
+        "Frozen experiments/overlap_projection_contract.json plus reviewed prompt and protected-answer field inventories",
+        "For more than 4096 retained rows, a frozen reviewed segment-pair engine and hash-bound shards covering the complete cross-record field-segment pair space"
       ],
       "artifacts": [
         "process/trajectory_schema.json"
       ],
       "checks": [
         "Every retained duplicate cluster is assigned wholly to nuisance-fit, alpha-selection, or confirmation",
+        "The record-pair external audit remains blocking for a multi-field export; a reviewed successor must cover the full cross-record segment-pair space and independently reproduce every qualifying segment pair",
+        "The trajectory schema embeds the passing content-readiness ledger hash and accounts for every scanned record with an included partition or explicit exclusion reason",
+        "Prompt and protected verifier/reference fields reproduce from a reviewed multi-field projection attestation; generated or null inventories cannot clear real execution",
         "Sampler frequencies agree with scored masses in finite-vocabulary conformance tests",
         "Current and stale sampler/scorer pairs agree on normalized masses, EOS-at-limit, and truncation semantics",
         "Prompt and sequence mixture masses normalize in high precision",
@@ -64,7 +71,7 @@
       "objective": "Construct policy, stale actor, frozen reward/length predictors, prompt baseline, and adaptive proposal.",
       "inputs": [
         "process/trajectory_schema.json",
-        "Exact finite-law Gate 0 oracle, ratio fault injections, and 1e-12 identity tolerance",
+        "Exact finite-law Gate 0 oracle, implemented omitted-prompt-ratio and clipped-weight fault injections, and 1e-12 identity tolerance",
         "Frozen alpha grid, per-alpha stratum counts, and proposal support floor",
         "Projection, nuisance-training, and stale-KL configurations"
       ],
@@ -75,7 +82,8 @@
         "Nuisance and proposal models use only prior-iteration disjoint data",
         "Current and behavior scorers share tokenizer, masks, and decoder semantics",
         "Policy and nuisance tensor hashes are frozen before each audit",
-        "Gate 0 reproduces target gradient, mixture normalization, weight bound, and implemented-weight bias identities"
+        "Gate 0 reproduces target gradient, mixture normalization, weight bound, and implemented-weight bias identities",
+        "Base-versus-decoder scoring, focal-nuisance fitting, and policy-data-reuse injections remain blocking pending validators before Phase A"
       ],
       "costs": [
         "cpu_seconds",
@@ -98,6 +106,8 @@
       "checks": [
         "Every theorem-facing trajectory is generated after iteration choices freeze and has use_count one",
         "Every theorem-facing draw reaches a scored outcome; an infrastructure-failed replication is retained but cannot enter a success-conditioned estimator claim",
+        "Each successful current, stale, R1, and R2 row declares the exact projected-term semantics and every attempted row retains allocated accelerator-seconds",
+        "Projected terms are intermediate only; real execution remains blocked until U, h, w, A, and B are reconstructed from raw hash-bound trajectory fields",
         "The numerical mixture-weight bound and source-specific ESS are checked",
         "The exploratory alpha-allocation coupling is logged as a design restriction rather than an unbiasedness requirement",
         "Generated-token, verifier-call, and added-scoring counters retain aborted candidates"
@@ -117,6 +127,7 @@
       "inputs": [
         "train/trajectory_ledger.jsonl",
         "Frozen projection, confirmation replications, independent R1/R2 reference pairs, and seed pairing",
+        "Pinned NumPy 2.5.3 PCG64 bootstrap engine, chunk size 32, and nearest-rank interval rule",
         "Omitted-prompt-ratio and clipped-weight fault injections"
       ],
       "artifacts": [
@@ -124,8 +135,14 @@
       ],
       "checks": [
         "Projected MSE uses the cross-reference product (g_hat - R1)^T(g_hat - R2)",
+        "aggregate_rl_estimator.py reconstructs mean(A_current)+(1-alpha)*mean(B_stale), cell cost, the selection argmin, and untouched-confirmation MSE directly from the hash-bound trajectory ledger",
+        "The same aggregator jointly resamples paired candidate replication IDs across cells, independently resamples R1 and R2 trajectories, and exactly reproduces cell MSE/cost/risk intervals plus selected-minus-control confirmation intervals",
+        "Chunked exact multinomial sufficient statistics reproduce the full 64-coordinate, 250-replication, 2048-reference-row, 2000-bootstrap selection-law fixture without materializing resampled trajectory tensors",
+        "Selection retains negative raw cross-MSE but uses max(raw MSE,0) times cost; untouched confirmation contains the selected cell and alpha=1 control plus their contrast",
+        "Reference-generation accelerator cost remains in the summary separately rather than disappearing into a shared constant",
         "Selection targets D_select and confirmation targets the separately normalized D_confirm",
         "The selected alpha is evaluated once on untouched confirmation replications",
+        "Any infrastructure failure blocks estimator-claim eligibility instead of producing a success-conditioned MSE; eligibility is distinct from the H1 estimate and result",
         "Every seed, parser failure, support failure, and negative result is retained"
       ],
       "costs": [

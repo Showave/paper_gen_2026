@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "frozen_at_utc": "2026-09-04T01:57:10Z",
+  "frozen_at_utc": "2026-09-22T00:02:00Z",
   "evidence_status": "Preregistered pilot configuration only; no experiment or human study has been run.",
   "source_registry": "experiments/public_source_registry.json",
   "sft": {
@@ -11,10 +11,68 @@
       "commitpackft-sft",
       "bigcodebench-eval"
     ],
+    "content_readiness": {
+      "specification_path": "experiments/content_gates.json",
+      "specification_sha256": "a5707ec56091d3d9dd7f13ce9ec1bfb29c809be3dcd653bcc82461446da1e535",
+      "implementation_path": "scripts/run_content_gates.py",
+      "implementation_sha256": "3fa01df16e84c23cfbb1e6229e884d643cb48e3eab36fabafff25b0f7ecd5d6a",
+      "required_status": "pass",
+      "required_partitions": [
+        "candidate",
+        "score",
+        "gate",
+        "audit",
+        "sealed-benchmark"
+      ],
+      "allowed_exclusion_reasons": [
+        "semantic-overlap",
+        "privacy-or-secret",
+        "license-or-terms",
+        "schema-invalid",
+        "preregistered-quality-filter"
+      ],
+      "interpretation": "A passing deterministic lexical and pattern-based preflight is required but does not establish semantic independence, privacy clearance, or manual approval."
+    },
+    "overlap_projection_contract": {
+      "specification_path": "experiments/overlap_projection_contract.json",
+      "specification_sha256": "63db1f33b4ad130565e57e20249e689432305386a8b1da5b4ed5e58d92517fc5",
+      "validator_path": "scripts/validate_overlap_projection_contract.py",
+      "validator_sha256": "930832d696b2d6a440d75fbc5ff6757992b5b81ee8761fa7b04b434d60b54ce7",
+      "required_status": "reviewed_pass",
+      "current_status": "unfrozen_review_blocker",
+      "interpretation": "Every model-visible, optimization-visible, and protected textual field needs a source/revision/role-specific reviewed inventory. Generated attestations are software tests only."
+    },
+    "reference_contract": {
+      "specification_path": "experiments/sft_reference_contract.json",
+      "specification_sha256": "05231a8aa85e0ae83e0fe26fcfc904402d0144d174051607107fa365ed0a73a4",
+      "validator_path": "scripts/validate_sft_reference_contract.py",
+      "validator_sha256": "7fd4561e8b5c9b4922a6c964573c7127b2d5b52e0f3689d9ee4e5d031bed35d2",
+      "required_manifest_artifact": "process/splits_manifest.json",
+      "required_status": "pass",
+      "interpretation": "The map fixes one target and two protected operational capability slices per setting. Closed-world hash-sorted semantic-cluster apportionment prevents outcome-dependent split movement but does not establish construct validity or semantic independence."
+    },
+    "artifact_integrity_gate": {
+      "status": "unfrozen_blocker",
+      "validator_interface": "paper-artifact-integrity-cli-v1",
+      "validator_timeout_seconds": 300,
+      "validator_dependencies": [],
+      "blocking_gaps": [
+        "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
+        "factorial endpoint rows are not yet closed against train-ledger records and a common split-manifest hash",
+        "site-local sealed-resource access isolation is required but not enforced by the repository runner"
+      ],
+      "required_before_freezing": [
+        "reviewed overlap inventories covering every model-visible and protected textual field plus a segment-pair exact engine for artifacts above the exhaustive limit",
+        "endpoint aggregator integrated into the real runner and recomputed from train-ledger-bound rows",
+        "site-local isolation attestation defining which stages can read score, gate, audit, and benchmark bytes"
+      ]
+    },
     "development_model_keys": [
       "qwen25-instruct-1p5b",
       "smollm2-instruct-1p7b"
     ],
+    "primary_factorial_model_key": "qwen25-instruct-1p5b",
+    "held_out_transfer_model_key": "smollm2-instruct-1p7b",
     "seeds": [
       2026090301,
       2026090302,
@@ -65,7 +123,7 @@
       "code_target": "commitpackft-sft",
       "general_protected": "smoltalk-sft",
       "sealed_code_benchmark": "bigcodebench-eval",
-      "split_rule": "Within each candidate source, sort SHA-256(source revision || stable row id): first 80% candidate, next 5% score, next 10% gate, final 5% audit. Sealed benchmarks never enter this split.",
+      "split_rule": "Use experiments/sft_reference_contract.json: derive each complete reviewed semantic-cluster UID from the semantic-audit hash and sorted member record IDs, derive a source/revision/cluster assignment digest, sort by that digest within source, and apportion cluster counts 80/5/10/5 by Hamilton largest remainder with the frozen partition tie order. Empty required partitions block rather than moving a boundary. Sealed benchmarks never enter this split.",
       "clipping_timing": "Compute response-token-average NLL per example, then clip for gate use only.",
       "source_coverage_floor": 0.1
     },
@@ -170,6 +228,51 @@
     "source_keys": [
       "dapo-math-rl"
     ],
+    "content_readiness": {
+      "specification_path": "experiments/content_gates.json",
+      "specification_sha256": "a5707ec56091d3d9dd7f13ce9ec1bfb29c809be3dcd653bcc82461446da1e535",
+      "implementation_path": "scripts/run_content_gates.py",
+      "implementation_sha256": "3fa01df16e84c23cfbb1e6229e884d643cb48e3eab36fabafff25b0f7ecd5d6a",
+      "required_status": "pass",
+      "required_partitions": [
+        "nuisance-fit",
+        "alpha-selection",
+        "confirmation"
+      ],
+      "allowed_exclusion_reasons": [
+        "semantic-overlap",
+        "privacy-or-secret",
+        "license-or-terms",
+        "schema-invalid",
+        "preregistered-quality-filter"
+      ],
+      "interpretation": "A passing deterministic lexical and pattern-based preflight is required but does not establish semantic independence, privacy clearance, or manual approval."
+    },
+    "overlap_projection_contract": {
+      "specification_path": "experiments/overlap_projection_contract.json",
+      "specification_sha256": "63db1f33b4ad130565e57e20249e689432305386a8b1da5b4ed5e58d92517fc5",
+      "validator_path": "scripts/validate_overlap_projection_contract.py",
+      "validator_sha256": "930832d696b2d6a440d75fbc5ff6757992b5b81ee8761fa7b04b434d60b54ce7",
+      "required_status": "reviewed_pass",
+      "current_status": "unfrozen_review_blocker",
+      "interpretation": "Every model-visible, optimization-visible, and protected textual field needs a source/revision/role-specific reviewed inventory. Generated attestations are software tests only."
+    },
+    "artifact_integrity_gate": {
+      "status": "unfrozen_blocker",
+      "validator_interface": "paper-artifact-integrity-cli-v1",
+      "validator_timeout_seconds": 300,
+      "validator_dependencies": [],
+      "blocking_gaps": [
+        "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
+        "the estimator aggregator consumes self-declared projected terms rather than reconstructing them from probabilities, rewards, costs, nuisance predictions, and projected scores",
+        "base-versus-decoder scoring, focal-nuisance fitting, and consumed-trajectory reuse fault injections remain unimplemented"
+      ],
+      "required_before_freezing": [
+        "reviewed overlap inventories and a segment-pair large-artifact engine plus a hash-frozen raw trajectory reconstruction and cost-ledger validator shared by golden and real execution classes",
+        "selection manifest binding and raw-field reconstruction of the selected-versus-on-policy confirmation contrast",
+        "all remaining ratio/decoder/reuse fault injections"
+      ]
+    },
     "development_model_key": "qwen25-math-1p5b",
     "seeds": [
       2026090311,
@@ -234,26 +337,49 @@
           "stale": 0
         }
       ],
-      "projection_dimension": 256,
+      "projection_dimension": 64,
       "projection_seed": 2026090391,
-      "projection_distribution": "independent Rademacher entries scaled by 1/sqrt(256), generated in row-major order",
+      "projection_distribution": "independent Rademacher entries scaled by 1/sqrt(64), generated in row-major order",
       "parameter_order": "lexicographic fully qualified names of trainable LoRA tensors, each flattened in contiguous row-major order",
+      "audit_lambda": 0.0,
+      "response_token_cost": "C includes every sampled response token through and including EOS; a no-EOS response includes every token through the fixed truncation limit",
       "nuisance_fit_prompt_fraction": 0.5,
       "alpha_selection_prompt_fraction": 0.25,
       "untouched_confirmation_prompt_fraction": 0.25,
-      "selection_replications": 2000,
-      "confirmation_replications": 2000,
+      "selection_replications": 250,
+      "confirmation_replications": 250,
       "reference_replicas_per_target_law": 2,
-      "reference_current_policy_trajectories_per_replica": 16384,
+      "reference_current_policy_trajectories_per_replica": 2048,
       "reference_independence": "For each of D_select and D_confirm, R1 and R2 are mutually independent and independent of every candidate replication.",
       "reference_storage": "retain every per-trajectory projected gradient and trajectory id separately for R1 and R2",
       "projected_mse_estimator": "(g_hat - R1)^T (g_hat - R2), averaged over paired replications; individual values may be negative",
-      "mse_interval": "three-way nonparametric bootstrap: independently resample candidate replications, R1 trajectories, and R2 trajectories; 10000 replicates with seed 2026090392",
-      "mse_bootstrap_replicates": 10000,
+      "mse_interval": "three-way nonparametric bootstrap: jointly resample paired candidate replication IDs across cells and independently resample R1 and R2 trajectories; recompute raw MSE, measured cost, nonnegative MSE-cost risk, and selected-minus-control contrasts; 2000 replicates with seed 2026090392, exact multinomial sufficient statistics, and nearest-rank 0.025/0.975 quantiles",
+      "mse_bootstrap_replicates": 2000,
       "mse_bootstrap_seed": 2026090392,
-      "selection_rule": "At a fixed 64-trajectory and verifier-call budget, minimize projected MSE times measured accelerator-seconds; ties choose larger alpha.",
+      "mse_bootstrap_chunk_size": 32,
+      "mse_bootstrap_numpy_version": "2.5.3",
+      "mse_bootstrap_rng": "numpy.random.PCG64",
+      "candidate_replication_pairing": "Within each target law, replication_id denotes a common predeclared seed block across every candidate cell. One multinomial replication-weight vector is shared across cells in each bootstrap draw; selection and confirmation laws use separate streams.",
+      "bootstrap_resource_bound": "At most 32 bootstrap draws are resident per source/cell. With 64 projected coordinates, 2048 rows per reference sample, 250 candidate replications per cell, and 2000 bootstrap draws, the vectorized sufficient-statistic implementation avoids materializing resampled trajectory tensors.",
+      "selection_rule": "At fixed 64-trajectory and verifier-call counts, minimize max(raw cross-reference projected MSE, 0) times mean complete-replication allocated accelerator-seconds. The unclipped raw MSE is always retained. Ties choose lower measured cost, then larger alpha, then lexicographic allocation_id.",
+      "confirmation_required_cells": "Evaluate the selected cell and the alpha=1 on-policy control on untouched D_confirm replications; if alpha=1 is selected these are one cell.",
+      "confirmation_primary_contrast": "selected minus alpha=1 difference in raw projected MSE and nonnegative MSE-cost selection risk under D_confirm, each with a jointly paired three-way bootstrap interval; estimator-claim eligibility is reported separately from this contrast",
       "allocation_restriction_mode": "alpha_equals_sampling_fraction",
-      "allocation_restriction": "For this exploratory grid only, alpha equals n_current/(n_current+n_stale). This is not required for unbiasedness; confirmation must cross mixture mass with source allocation."
+      "allocation_restriction": "For this exploratory grid only, alpha equals n_current/(n_current+n_stale). This is not required for unbiasedness; confirmation must cross mixture mass with source allocation.",
+      "artifact_contract": {
+        "aggregator_path": "scripts/aggregate_rl_estimator.py",
+        "aggregator_sha256": "fce892826a2b53359bd0ff756cb67978039330ff4d82e0fe95932e6e8f6df78f",
+        "current_candidate_term": "A=(h-b)s+alpha*w*(U-h)s",
+        "stale_candidate_term": "B=w*(U-h)s",
+        "reference_term": "target=U*s",
+        "candidate_estimate": "mean(A_current)+(1-alpha)*mean(B_stale)",
+        "cost_unit": "allocated accelerator-seconds recorded on every attempted trajectory; candidate-cell cost is the mean complete replication sum and reference cost is retained separately",
+        "failure_rule": "Any infrastructure failure blocks estimator-claim eligibility and confirmatory comparison; no success-conditioned MSE or selected alpha is reported.",
+        "summary_binding": "evaluate/summary.json records the exact train/trajectory_ledger.jsonl SHA-256; point MSE, nonnegative selection risk, cell cost, selection argmin, selected and alpha=1 untouched confirmation cells, and their contrast are recomputed from that ledger.",
+        "three_way_bootstrap": "Jointly resample complete paired candidate replication IDs across cells and independently resample R1 trajectories and R2 trajectories within each target law; use chunked exact multinomial weights and projected sufficient statistics to recompute MSE, cost, risk, and selected-minus-control percentile intervals rather than accepting reported bounds.",
+        "bootstrap_seed_schedule": "For each target law, initialize NumPy 2.5.3 PCG64 from the first 64 bits of SHA-256('rl-three-way-bootstrap-v1' | base seed | target law); use nearest-rank 0.025 and 0.975 quantiles.",
+        "fixture_status": "The generated self-test uses hand-computed two-dimensional vectors, reports empirical_evidence=false, and cannot populate paper result cells."
+      }
     },
     "proposal": {
       "support_floor_epsilon": 0.2,
@@ -353,6 +479,49 @@
   },
   "eval": {
     "execution_status": "blocked_unfrozen_estimand_generation",
+    "content_readiness": {
+      "specification_path": "experiments/content_gates.json",
+      "specification_sha256": "a5707ec56091d3d9dd7f13ce9ec1bfb29c809be3dcd653bcc82461446da1e535",
+      "implementation_path": "scripts/run_content_gates.py",
+      "implementation_sha256": "3fa01df16e84c23cfbb1e6229e884d643cb48e3eab36fabafff25b0f7ecd5d6a",
+      "required_status": "pass",
+      "required_partitions": [
+        "frame"
+      ],
+      "allowed_exclusion_reasons": [
+        "semantic-overlap",
+        "privacy-or-secret",
+        "license-or-terms",
+        "schema-invalid",
+        "preregistered-quality-filter"
+      ],
+      "interpretation": "A passing deterministic lexical and pattern-based preflight is required but does not establish semantic independence, privacy clearance, or manual approval."
+    },
+    "overlap_projection_contract": {
+      "specification_path": "experiments/overlap_projection_contract.json",
+      "specification_sha256": "63db1f33b4ad130565e57e20249e689432305386a8b1da5b4ed5e58d92517fc5",
+      "validator_path": "scripts/validate_overlap_projection_contract.py",
+      "validator_sha256": "930832d696b2d6a440d75fbc5ff6757992b5b81ee8761fa7b04b434d60b54ce7",
+      "required_status": "reviewed_pass",
+      "current_status": "unfrozen_review_blocker",
+      "interpretation": "Every model-visible, optimization-visible, and protected textual field needs a source/revision/role-specific reviewed inventory. Generated attestations are software tests only."
+    },
+    "artifact_integrity_gate": {
+      "status": "unfrozen_blocker",
+      "validator_interface": "paper-artifact-integrity-cli-v1",
+      "validator_timeout_seconds": 300,
+      "validator_dependencies": [],
+      "blocking_gaps": [
+        "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
+        "root ranks, prompt cells, batch probabilities, sequential contributions, missingness bounds, and terminal actions are not yet recomputed by one real/golden validator",
+        "site-local sealed audit access isolation is required but not enforced by the repository runner"
+      ],
+      "required_before_freezing": [
+        "reviewed overlap inventories and a segment-pair large-artifact engine plus a hash-frozen real/golden bundle validator with exact rational generated fixtures and mutation tests",
+        "recomputed frame/cell cardinalities, predictable probabilities, estimator, variance, tie rate, ESS, bounds, and action",
+        "site-local audit isolation and one-time-open attestation"
+      ]
+    },
     "frozen_artifact_hashes": {
       "prompt_generator_sha256": null,
       "rendered_prompt_bundle_sha256": null,
@@ -395,6 +564,9 @@
       "prompt_variants_per_root": 2,
       "response_draws_per_variant": 1,
       "display_orders": 2,
+      "root_prompt_order_cells": 2112,
+      "human_target_units": 168960,
+      "model_jury_calls": 8448,
       "root_selection_rule": "retain all 200 reasoning roots, take the first 200 math roots after sorting SHA-256(dataset revision || question_id), and retain all 128 coding roots",
       "target_root_mass": "one third per source and uniform within source, so each root has mass 1/(3*n_source)",
       "frame_interpretation": "weighted public LiveBench frame only; not a product-domain or deployment-population sample",
@@ -440,10 +612,21 @@
       "annotation_cost_units": {
         "all_registered_units": 1.0
       },
-      "uniform_pilot_attempts": 200,
+      "target_random_pilot_attempts": 200,
       "adaptive_attempts": 800,
       "sealed_target_random_audit_attempts": 200,
       "adaptive_fixed_budget_attempts": 1000,
+      "evi_candidate_multiset_size": 256,
+      "evi_candidate_law": "Draw 256 IID target units with replacement from pi at each adaptive batch start before computing EVI.",
+      "evi_candidate_multiplicity_rule": "For multiplicity n_C(x), r_C(x)=n_C(x)*exp(g(x))/sum_u n_C(u)*exp(g(u)); units absent from the multiset receive r_C(x)=0.",
+      "evi_candidate_seed_rule": "SHA-256 domain-separated stream keyed by preregistration hash, batch index, and base seed 2026090322",
+      "evi_logsumexp": "subtract the maximum finite g over the candidate multiset before exponentiation; duplicate units are represented by log multiplicity",
+      "evi_resource_ceiling": {
+        "adaptive_batches": 40,
+        "hypothetical_newton_updates": 30720,
+        "posterior_draw_evaluations": 125829120,
+        "failure_rule": "If the ceiling is exceeded or a registered batch cannot finish, retain the failure and do not collect that batch's human outcomes."
+      },
       "optional_stopping": false,
       "replacement_of_nonresponses": false,
       "fixed_slot_rule": "All 1000 assignment slots remain in the ledger. Unavailability, withdrawal, quota binding, or nonresponse records R_t=0 in the original slot; no replacement occurs and later slots continue."
@@ -507,8 +690,20 @@
       ]
     },
     "simulation": {
-      "execution_status": "unfrozen_blocker",
-      "required_before_execution": "Executable DGP equations, factor crossing or fractional design, missingness laws, common-random-number schedule, and faithful Active Testing/CVE/PPAT/Neyman/EVI implementations must be hashed in a replacement preregistration.",
+      "execution_status": "unfrozen_dgp_blocker",
+      "required_before_execution": "The fractional screening layout is frozen, but executable DGP equations, missingness laws, resource/restart plan, and faithful Active Testing/CVE/PPAT/Neyman/EVI implementations must be hashed in a replacement preregistration.",
+      "screening_design": {
+        "path": "experiments/eval_simulation_design.json",
+        "sha256": "1352a484cc90ef0ccf08b6bfbbe7079f1d8909b0dbb70032f51d4d2d057dd0fc",
+        "validator_path": "scripts/validate_eval_simulation_design.py",
+        "validator_sha256": "64226f821b036e232c6248a24454c1b4f4224e9d684b32bbaac2a97389a2b95b",
+        "rows_path": "experiments/eval_simulation_conditions.json",
+        "rows_sha256": "69b3934bad87cde46410a2d3f6a98a9415a3d2f331e8d89cd2607bc5f374ad68",
+        "fractional_rows": 16,
+        "conditions": 189,
+        "main_to_two_factor_aliases": 0,
+        "interpretation": "The 16-row fraction is crossed with decision-boundary effects and three working-model regimes, with center-point local alternatives. It replaces the infeasible full Cartesian crossing; aliased two-factor interactions require targeted follow-up."
+      },
       "trials_per_condition": 2000,
       "seed": 2026090321,
       "coverage_boundary_values": [

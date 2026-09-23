@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "artifact_type": "evaluation_fractional_simulation_design",
+  "design_status": "frozen_screening_layout",
+  "execution_status": "unfrozen_dgp_blocker",
+  "evidence_status": "Preregistered simulation layout and software-audit contract only; no human labels or empirical model outputs have been collected.",
+  "decision": {
+    "practical_margin": 0.05,
+    "fixed_budget_attempts": 1000,
+    "boundary_effects": [
+      -0.05,
+      0.0,
+      0.05
+    ],
+    "local_alternative_c": [
+      0.5,
+      1.0,
+      2.0
+    ],
+    "local_alternative_formula": "sign*practical_margin + direction*c/sqrt(fixed_budget_attempts), for sign and direction in {-1,+1}"
+  },
+  "fractional_screen": {
+    "base_factors": [
+      "A",
+      "B",
+      "C",
+      "D"
+    ],
+    "generators": {
+      "E": [
+        "A",
+        "B",
+        "C"
+      ],
+      "F": [
+        "A",
+        "B",
+        "D"
+      ],
+      "G": [
+        "A",
+        "C",
+        "D"
+      ],
+      "H": [
+        "B",
+        "C",
+        "D"
+      ]
+    },
+    "resolution_requirement": "No main-effect column may equal the intercept, another main-effect column, or any two-factor interaction column.",
+    "factors": [
+      {
+        "column": "A",
+        "name": "tie_prevalence",
+        "low": 0.1,
+        "high": 0.5
+      },
+      {
+        "column": "B",
+        "name": "item_correlation",
+        "low": 0.0,
+        "high": 0.6
+      },
+      {
+        "column": "C",
+        "name": "judge_family_correlation",
+        "low": 0.0,
+        "high": 0.6
+      },
+      {
+        "column": "D",
+        "name": "repeated_rater_standard_deviation",
+        "low": 0.0,
+        "high": 0.5
+      },
+      {
+        "column": "E",
+        "name": "nonresponse_rate",
+        "low": 0.0,
+        "high": 0.3
+      },
+      {
+        "column": "F",
+        "name": "rare_stratum_mass",
+        "low": 0.01,
+        "high": 0.05
+      },
+      {
+        "column": "G",
+        "name": "exploration_epsilon",
+        "low": 0.05,
+        "high": 0.2
+      },
+      {
+        "column": "H",
+        "name": "temporal_drift_gamma",
+        "low": 0.0,
+        "high": 0.05
+      }
+    ]
+  },
+  "center_condition": {
+    "tie_prevalence": 0.3,
+    "item_correlation": 0.3,
+    "judge_family_correlation": 0.3,
+    "repeated_rater_standard_deviation": 0.25,
+    "nonresponse_rate": 0.0,
+    "rare_stratum_mass": 0.05,
+    "exploration_epsilon": 0.2,
+    "temporal_drift_gamma": 0.0
+  },
+  "model_regimes": [
+    "correct_working_model",
+    "omitted_interactions",
+    "anticorrelated_predictions"
+  ],
+  "condition_construction": {
+    "screening_block": "Cross all 16 fractional rows, three boundary effects, and three model regimes.",
+    "center_boundary_block": "Cross the center condition, three boundary effects, and three model regimes.",
+    "local_alternative_block": "Cross the center condition, all 12 signed local alternatives, and three model regimes.",
+    "full_cartesian_product": false,
+    "expected_fractional_rows": 16,
+    "expected_conditions": 189
+  },
+  "acquisition_policies": [
+    "target-random",
+    "static-calibration",
+    "active-testing",
+    "control-variate-evaluation",
+    "ppat-style-residual",
+    "variance-optimal-residual",
+    "pure-uncertainty",
+    "decision-evi"
+  ],
+  "common_estimator": "Every acquisition policy uses the same prequential augmented Hansen--Hurwitz estimator; estimator augmentation is then ablated at fixed policy.",
+  "monte_carlo": {
+    "trials_per_condition": 2000,
+    "base_seed": 2026090321,
+    "condition_seed": "first 64 bits of sha256(canonical-json(condition)) xor base_seed",
+    "pairing": "Within condition and trial, every acquisition policy receives the same latent frame and complete potential-outcome stream; policy randomization uses a separate policy-keyed seed.",
+    "reporting": "Report Monte Carlo standard errors for bias, coverage, false decisions, abstention, realized loss, interval width, maximum weight, and effective sample size."
+  },
+  "blocking_requirements": [
+    "Executable DGP equations for all three model regimes",
+    "Explicit MCAR, rater-dependent, and outcome-dependent missingness laws without claiming MAR for the latter",
+    "Hash-frozen implementations of every acquisition policy and the common estimator",
+    "Resource estimate and deterministic restart/checkpoint rule",
+    "Independent review of the EVI implementation and terminal-action comparison"
+  ],
+  "limitations": [
+    "A resolution-IV-style screening layout estimates main effects without main--two-factor aliasing, but two-factor interactions remain aliased and require targeted follow-up.",
+    "The fractional design is a preregistered stress screen, not a substitute for application-specific power analysis.",
+    "Freezing the layout does not make the simulation executable while its DGP and policy implementations remain unfrozen."
+  ]
+}

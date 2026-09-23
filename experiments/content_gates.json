@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "artifact_type": "content_readiness_gate_specification",
+  "evidence_status": "Frozen software-audit configuration only; passing does not establish semantic independence, privacy clearance, or experimental validity.",
+  "normalization": "unicode-nfkc-casefold-whitespace-v1",
+  "similarity": {
+    "method": "character_5gram_jaccard",
+    "comparison_unit": "canonical_field_segment",
+    "record_candidate_signature": "union of per-segment character 5-grams; exhaustive mode evaluates every cross-record segment pair",
+    "pair_identity": "sha256(canonical-json({left_record_id,left_slot,right_record_id,right_slot}))",
+    "minimum_normalized_characters": 5,
+    "within_role_threshold": 0.85,
+    "cross_role_threshold": 0.8,
+    "training_protected_threshold": 0.75,
+    "candidate_generation": {
+      "method": "exhaustive_then_deterministic_one_permutation_minhash_lsh",
+      "exhaustive_max_rows": 4096,
+      "minhash_permutations": 64,
+      "lsh_bands": 16,
+      "rows_per_band": 4,
+      "maximum_candidate_pairs": 10000000,
+      "seed": "paper-content-readiness-v1"
+    }
+  },
+  "sensitive_content": {
+    "implementation": "named-regex-detectors-v1",
+    "pii_detectors": [
+      "email",
+      "e164_phone",
+      "us_ssn"
+    ],
+    "secret_detectors": [
+      "aws_access_key_id",
+      "github_token",
+      "huggingface_token",
+      "private_key_header",
+      "sk_style_api_key"
+    ]
+  },
+  "role_classes": {
+    "training": [
+      "candidate-general",
+      "candidate-math",
+      "candidate-code",
+      "prompt-train"
+    ],
+    "protected": [
+      "sealed-code-benchmark",
+      "hidden-code-evaluator",
+      "sealed-root-frame"
+    ]
+  },
+  "external_overlap_audit": {
+    "bundle_path": "process/external_overlap_audit",
+    "contract_path": "experiments/external_overlap_audit.json",
+    "contract_sha256": "51c19c946cb5f4aaaccfd2c87a87f3d14f16516589179340361908a78b4b312e",
+    "validator_path": "scripts/validate_external_overlap_audit.py",
+    "validator_sha256": "f6db8180baddd363434de59d0eb07a71054a4b03d12bf0f986fc56044887b2d4"
+  },
+  "failure_policy": {
+    "pii_in_retained_content": "block",
+    "secret_in_retained_content": "block",
+    "text_too_short_for_similarity": "block",
+    "within_role_near_duplicate": "block",
+    "cross_role_near_duplicate": "block",
+    "training_protected_near_duplicate": "block",
+    "approximate_candidate_generation": "block"
+  },
+  "limitations": [
+    "Character n-gram similarity is a deterministic lexical heuristic, not a semantic-independence certificate.",
+    "MinHash LSH candidate generation above the exhaustive limit can miss qualifying pairs, so it is inconclusive unless a frozen reviewed exact engine supplies a hash-bound, gap-free audit of all n*(n-1)/2 pairs.",
+    "The current external exact-engine contract is record-pair v1 and cannot clear a multi-field artifact; a reviewed segment-pair sharding contract is required before large real exports can pass.",
+    "The detectors do not cover multilingual paraphrase, images, audio, or legal and human-subjects review.",
+    "A passing ledger cannot approve a pending manual review in the public-source registry."
+  ]
+}

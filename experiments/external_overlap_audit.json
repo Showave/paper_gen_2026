@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "artifact_type": "recall_complete_external_overlap_audit_contract",
+  "execution_status": "unfrozen_blocker",
+  "evidence_status": "Software and artifact contract only; no large public artifact has been audited.",
+  "normalization": "unicode-nfkc-casefold-whitespace-v1",
+  "similarity_method": "character_5gram_jaccard",
+  "pair_order": "record_id_ascending_row_major_upper_triangle_v1",
+  "sharding": {
+    "method": "contiguous_pair_ordinal_ranges_v1",
+    "range_semantics": "zero-based half-open",
+    "required_coverage": "exactly [0, n*(n-1)/2) with no gap or overlap"
+  },
+  "independent_verification": {
+    "method": "disk_backed_complete_shared_5gram_join_v1",
+    "proof_obligation": "Every pair at positive Jaccard similarity shares at least one 5-gram; exact enumeration of all shared-gram pairs is therefore recall-complete for every frozen positive threshold.",
+    "reported_score_rule": "exact Jaccard rounded to 12 decimal places"
+  },
+  "engine": {
+    "implementation_sha256": null,
+    "runtime_image_digest": null,
+    "review_record": null,
+    "required_before_freezing": [
+      "Independent review that the engine enumerates every pair ordinal in each assigned range",
+      "Conformance tests against exhaustive character-5-gram Jaccard on adversarial small fixtures",
+      "Failure injection for missing, duplicated, overlapping, truncated, and early-terminated shards",
+      "A site-local resource plan that does not place private text or matched spans in the audit bundle"
+    ]
+  },
+  "required_attestations": {
+    "all_pairs_enumerated": true,
+    "approximation_used": false,
+    "early_termination": false,
+    "matched_text_persisted": false
+  },
+  "failure_policy": {
+    "unfrozen_engine": "block",
+    "input_binding_mismatch": "block",
+    "missing_or_overlapping_pair_range": "block",
+    "approximation_or_early_termination": "block",
+    "shard_error": "block",
+    "qualifying_pair": "block"
+  },
+  "limitations": [
+    "This contract validates immutable inputs, exact pair-space coverage, shard hashes, and reported findings, then independently enumerates all positive-similarity candidates with a disk-backed complete shared-5-gram join; it does not make lexical similarity a semantic-independence test.",
+    "The engine implementation and runtime image must be independently reviewed and frozen before an external bundle can change an inconclusive large-artifact gate into a pass.",
+    "A passing external bundle cannot approve source, privacy, legal, leakage, or human-subjects reviews."
+  ]
+}
