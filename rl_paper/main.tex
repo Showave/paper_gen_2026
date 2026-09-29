@@ -152,6 +152,11 @@ Direct replay studies optimize the generation--staleness--diversity trade-off
 decoupled off-policy correction \cite{mao2026popo}. Both are stronger practical
 comparators than naive reuse. Their empirical utility does not imply the
 conditional unbiasedness claimed for our newly sampled, single-use design.
+AR3PO reuses earlier correct responses either through reward information only
+or with token probabilities recomputed under the current policy
+\cite{zhang2025ar3po}. Recomputation changes the ratio but not the dependence
+of reused data on the current policy; \cref{app:gate0} gives an exact
+counterexample.
 Asynchronous RLHF separates generation from learning on lagged policies
 \cite{noukhovitch2025async}; it motivates the stale-actor systems layout but
 does not provide our conditional estimator identity. VCPO instead diagnoses
@@ -476,7 +481,9 @@ relying on a broad ``doubly robust replay'' label.
 current component of $M_t$ is no longer the target policy, the
 $1/\alpha$ bound need not hold, and the same data influenced the updated
 policy. Multiple epochs, ratio recomputation, or small KL do not restore the
-theorem. Optimizer momentum and clipping may still be useful, but the theorem
+theorem: in the exact four-cell law of \cref{app:gate0}, reusing the batch that
+formed $\theta_t$ with a recomputed ratio remains biased although the
+post-update KL is below $0.01$. Optimizer momentum and clipping may still be useful, but the theorem
 is about the raw estimator rather than the transformed displacement or
 monotonic improvement.
 
@@ -530,10 +537,12 @@ bias, variance, MSE, interval coverage, residual-weight ESS by source, and
 compute. Fault injection deliberately omits prompt ratios, uses base-model
 rather than decoder probabilities, fits the focal nuisance outcome, clips
 weights, and reuses data that formed the target policy.
-The committed finite-law Gate~0 currently executes the omitted-prompt-ratio
-and clipping cases. Base-versus-decoder scoring, focal nuisance fitting, and
-reuse are pending executable validators and must pass before Phase~A; listing
-them here is a test plan, not evidence that they have run.
+The committed finite-law Gate~0 executes all five injections by exact
+enumeration (\cref{app:gate0}). Each fault must be detected, its positive
+control must reproduce the target to $10^{-12}$, and its null-fault control
+must silence the detector. These are software checks on a generated law. Before
+Phase~A they must also be replayed through a raw trajectory reconstruction
+validator, which does not yet exist.
 The committed public-data configuration is a one-family mathematics pre-pilot
 for H1 only. It uses disjoint normalized laws $D_{\rm fit}$,
 $D_{\rm select}$, and $D_{\rm confirm}$; selection MSE is not described as an
@@ -822,8 +831,39 @@ and incomplete source strata must fail; infrastructure failure must block
 estimator-claim eligibility. The fixture is marked non-empirical and cannot
 populate any result cell. The script still consumes projected terms
 rather than reconstructing $U,h,w,A,$ and $B$ from raw probabilities and
-outcomes; that raw-field gap, the unreviewed field inventory, and three pending
-fault injections keep the artifact-integrity gate closed.
+outcomes. That raw-field gap, the unreviewed field inventory, and the missing
+replay of the Gate~0 fault injections through raw reconstruction keep the
+artifact-integrity gate closed.
+
+\subsection{Exact Gate 0 Fault Injections}
+\label{app:gate0}
+\texttt{scripts/rl\_gate0\_fault\_injections.py} uses the same four-cell law
+as Gate~0: two prompts, a binary response, the scalar decoder-logit shift
+$\theta$ with score $y-\pi_x(\theta)$, $\alpha=1/2$, and the frozen $h$ and
+prompt baseline. Every expectation is an exhaustive sum over the joint sample
+space. The runner executes it and checks its hash before any stage.
+\emph{Base-versus-decoder scoring} generates the current law with decoder
+temperature $T_d=0.7$ and scores it with temperature-one base logits in both
+$w$ and $M$. The total-variation distance between the two current laws is
+$0.058$. The exact decoder route reproduces the target, whereas the
+base-scored estimator has bias $1.43\times10^{-3}$. That bias equals the
+common implemented-weight identity \cref{eq:bias} to $10^{-12}$.
+\emph{Focal nuisance fitting} refits $h$ on the focal batch ($n_P=n_G=2$,
+$256$ joint batches) as a pooled per-prompt outcome mean. Its bias is
+$4.93\times10^{-3}$. A frozen $h$ and an $h$ fitted on an independent prior
+current-policy batch ($4{,}096$ joint configurations) are both exact.
+\emph{Consumed-trajectory reuse} forms $\theta_t$ by one REINFORCE step
+($\eta=1/2$) on two current-policy draws and then reuses those draws at
+$\theta_t$. The target is the expected post-update gradient
+$\mathbb E[\nabla\mathcal L(\theta_t)]$. Fresh draws at $\theta_t$
+reproduce it exactly. Reuse has bias $1.97\times10^{-4}$ without a ratio and
+$-2.53\times10^{-4}$ with the recomputed ratio
+$P_{\theta_t}/P_{\theta_{t-1}}$, although the largest post-update KL is only
+$0.0074$. The detection threshold is $10^{-6}$. Setting $T_d=1$, keeping $h$
+frozen in the focal route, or taking a zero step must each silence its
+detector, so a detector that always fires fails. These are exact properties of
+a constructed law, not estimates of language-model bias magnitudes. They show
+that the listed exclusions are necessary, not merely conservative.
 
 \subsection{Optional Prefix Gate}
 Prefix continuation is excluded from the core experiments. A later extension
