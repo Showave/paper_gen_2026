@@ -9,7 +9,7 @@ STYLE_FILES := \
 	template/preamble.tex
 BUILD := scripts/latex_build.sh
 
-.PHONY: all clean check-deps pdf-check source-audit provenance-audit content-gates-audit external-overlap-audit overlap-projection-audit sft-reference-audit sft-factorial-audit rl-estimator-audit eval-simulation-design-audit design-audits protocol-audits
+.PHONY: all clean check-deps pdf-check source-audit provenance-audit content-gates-audit external-overlap-audit overlap-projection-audit sft-reference-audit sft-factorial-audit sft-ledger-audit rl-estimator-audit rl-fault-injection-audit eval-simulation-design-audit eval-bundle-audit design-audits protocol-audits
 
 all: $(PDFS)
 
@@ -48,13 +48,22 @@ sft-reference-audit:
 sft-factorial-audit:
 	python3 scripts/aggregate_sft_factorial.py --self-test
 
+sft-ledger-audit:
+	python3 scripts/validate_sft_train_ledger.py --self-test
+
 rl-estimator-audit:
 	python3 scripts/aggregate_rl_estimator.py --self-test
+
+rl-fault-injection-audit:
+	python3 scripts/rl_gate0_fault_injections.py --self-test
 
 eval-simulation-design-audit:
 	python3 scripts/validate_eval_simulation_design.py --self-test
 
-design-audits: overlap-projection-audit sft-reference-audit sft-factorial-audit rl-estimator-audit eval-simulation-design-audit
+eval-bundle-audit:
+	python3 scripts/validate_eval_sequential_bundle.py --self-test
+
+design-audits: overlap-projection-audit sft-reference-audit sft-factorial-audit sft-ledger-audit rl-estimator-audit rl-fault-injection-audit eval-simulation-design-audit eval-bundle-audit
 
 protocol-audits:
 	@for paper in $(PAPERS); do \

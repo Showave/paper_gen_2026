@@ -102,7 +102,11 @@ multi-field inventory attestations; its eight real source inventories remain
 explicitly unreviewed blockers. The remaining design audits reproduce the SFT
 capability/cluster split contract, the RL estimator, cost aggregation, and
 three-way reference bootstrap from a generated trajectory ledger, and the
-evaluation paper's 189-condition fractional simulation layout. All use
+evaluation paper's 189-condition fractional simulation layout. They also
+replay SFT endpoint rows against hash-bound train ledgers, run the exact RL
+Gate 0 base-versus-decoder, focal-nuisance, and reuse fault injections, and
+recompute the evaluation paper's sequential decision bundle from exact
+rational golden fixtures. All use
 generated identifiers or vectors and set `empirical_evidence` to false.
 The ignored protocol artifacts are
 synthetic software checks, not paper results. See `experiments/README.md` for

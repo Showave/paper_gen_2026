@@ -58,12 +58,12 @@
       "validator_dependencies": [],
       "blocking_gaps": [
         "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
-        "factorial endpoint rows are not yet closed against train-ledger records and a common split-manifest hash",
+        "factorial endpoint rows close against hash-bound train ledgers, but target and protected audit NLLs are still declared rather than recomputed from per-example audit-loss records, and the real runner does not yet invoke the aggregator",
         "site-local sealed-resource access isolation is required but not enforced by the repository runner"
       ],
       "required_before_freezing": [
         "reviewed overlap inventories covering every model-visible and protected textual field plus a segment-pair exact engine for artifacts above the exhaustive limit",
-        "endpoint aggregator integrated into the real runner and recomputed from train-ledger-bound rows",
+        "endpoint aggregator integrated into the real runner, with audit NLLs recomputed from hash-bound per-example audit-loss records evaluated on the ledger's final state",
         "site-local isolation attestation defining which stages can read score, gate, audit, and benchmark bytes"
       ]
     },
@@ -221,6 +221,30 @@
       "multiplicity": "max-statistic across budgets and target settings",
       "missing_run_rule": "retain failure and assign the worst endpoint in the frozen reference box; also report complete cases",
       "infeasible_plan_rule": "record the null action with its charged search cost; never repair a cell using another cell's packing algorithm"
+    },
+    "train_ledger_contract": {
+      "validator_path": "scripts/validate_sft_train_ledger.py",
+      "validator_sha256": "bd0c6f7147edeab54bfb898bac024fda7443eb3d7fc1655fd5c7d6642ad17011",
+      "aggregator_path": "scripts/aggregate_sft_factorial.py",
+      "aggregator_sha256": "a2048eb3c0488fe9ab7344424d81fdfbb8d158163d4c1fceba32e45f10eaef8e",
+      "required_status": "pass",
+      "current_status": "generated_fixture_only",
+      "charge_components": [
+        "packing",
+        "reference_gradients",
+        "candidate_scoring",
+        "solving",
+        "gate_forwards",
+        "training",
+        "rejected_update"
+      ],
+      "terminal_reasons": [
+        "maximum_rounds",
+        "reserve_exhausted",
+        "protocol_failure"
+      ],
+      "pairing_rule": "all factorial rows share one split-manifest hash; rows share the reference cost within a target setting and the initial state within seed and target setting",
+      "interpretation": "Endpoint rows are replayed against hash-bound per-round ledgers: state and optimizer-step chain, reserve admission, complete charging, stop rule, gate blocks, largest passing scale, tolerance ledger, and final-state audit endpoint. Audit NLL values remain declared by the evaluation stage."
     }
   },
   "rl": {
@@ -265,12 +289,12 @@
       "blocking_gaps": [
         "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
         "the estimator aggregator consumes self-declared projected terms rather than reconstructing them from probabilities, rewards, costs, nuisance predictions, and projected scores",
-        "base-versus-decoder scoring, focal-nuisance fitting, and consumed-trajectory reuse fault injections remain unimplemented"
+        "the five finite-law fault injections are not yet replayed against a raw language-model trajectory reconstruction validator"
       ],
       "required_before_freezing": [
         "reviewed overlap inventories and a segment-pair large-artifact engine plus a hash-frozen raw trajectory reconstruction and cost-ledger validator shared by golden and real execution classes",
         "selection manifest binding and raw-field reconstruction of the selected-versus-on-policy confirmation contrast",
-        "all remaining ratio/decoder/reuse fault injections"
+        "ratio, clipping, decoder, focal-nuisance, and reuse fault injections replayed through the raw trajectory reconstruction validator"
       ]
     },
     "development_model_key": "qwen25-math-1p5b",
@@ -475,6 +499,22 @@
         0.1
       ],
       "generation_and_rescoring_costs_charged": true
+    },
+    "gate0_fault_injections": {
+      "validator_path": "scripts/rl_gate0_fault_injections.py",
+      "validator_sha256": "a7f026b4ff48e69cbeb52473beb8128259dfa9fa09efc7762d8b4d875167f1e9",
+      "required_status": "pass",
+      "implemented": [
+        "omitted prompt ratio (run_synthetic_experiment.py)",
+        "weight clipping (run_synthetic_experiment.py)",
+        "base-versus-decoder current-policy scoring with the common implemented-weight bias identity",
+        "focal nuisance fitting against frozen-h and independent-prior-fit positive controls",
+        "consumed-trajectory reuse with and without ratio recomputation against fresh post-update draws"
+      ],
+      "identity_tolerance": 1e-12,
+      "detection_threshold": 1e-06,
+      "null_fault_controls": "temperature one, frozen focal fit, and zero step size must silence the respective detectors",
+      "interpretation": "Exact enumeration on the generated four-cell law; software evidence only."
     }
   },
   "eval": {
@@ -513,12 +553,12 @@
       "validator_dependencies": [],
       "blocking_gaps": [
         "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
-        "root ranks, prompt cells, batch probabilities, sequential contributions, missingness bounds, and terminal actions are not yet recomputed by one real/golden validator",
+        "batch probabilities, sequential contributions, missingness bounds, and terminal actions are recomputed by the hash-bound bundle validator, but root ranks, prompt cells, and EVI values from the frozen Laplace posterior are not yet recomputed",
         "site-local sealed audit access isolation is required but not enforced by the repository runner"
       ],
       "required_before_freezing": [
         "reviewed overlap inventories and a segment-pair large-artifact engine plus a hash-frozen real/golden bundle validator with exact rational generated fixtures and mutation tests",
-        "recomputed frame/cell cardinalities, predictable probabilities, estimator, variance, tie rate, ESS, bounds, and action",
+        "recomputed frame/cell cardinalities and EVI values from the hash-frozen posterior, Newton update, and frame functional, feeding the sequential bundle validator",
         "site-local audit isolation and one-time-open attestation"
       ]
     },
@@ -754,6 +794,23 @@
         0.02,
         0.05
       ]
+    },
+    "sequential_bundle_contract": {
+      "validator_path": "scripts/validate_eval_sequential_bundle.py",
+      "validator_sha256": "7c6522ebf8e33697eb43f0074c5eb621a49b74c033209ee08dce28d919e94126",
+      "required_status": "pass",
+      "current_status": "golden_fixture_only",
+      "recomputed_fields": [
+        "batch candidate-mixture draw probabilities from committed multisets, EVI values, costs, and temperature",
+        "batch commitment hashes and strictly earlier predictor fit slots",
+        "sequential augmented Hansen--Hurwitz and tie-rate contributions",
+        "worst-case nonresponse endpoints and martingale--Hoeffding interval",
+        "complete-outcome studentized interval, response-drift widenings, and terminal action",
+        "maximum weight and effective sample size"
+      ],
+      "golden_fixture": "exp(g) values are integers so draw probabilities are exact rationals; the float recomputation must match an independent Fraction computation",
+      "real_execution_rule": "real bundles are rejected while any frozen_artifact_hashes entry is null or the bundle config differs from this section",
+      "interpretation": "Generated golden bundles only; no human outcome exists."
     }
   }
 }

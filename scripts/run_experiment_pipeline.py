@@ -40,6 +40,7 @@ from validate_eval_simulation_design import (
     validate_condition_manifest as validate_eval_condition_manifest,
     validate_design as validate_eval_simulation_design,
 )
+from rl_gate0_fault_injections import run_all as run_rl_gate0_fault_injections
 from validate_overlap_projection_contract import (
     ProjectionContractError,
     validate_contract as validate_overlap_projection_contract,
@@ -208,6 +209,22 @@ def referenced_registry_keys(section: dict[str, Any]) -> set[str]:
     return references
 
 
+def require_bound_files(
+    contract: Any, prefixes: tuple[str, ...], label: str, repo: Path
+) -> None:
+    if not isinstance(contract, dict) or contract.get("required_status") != "pass":
+        fail(f"{label} contract must require a passing status")
+    for prefix in prefixes:
+        declared_path = Path(str(contract.get(f"{prefix}_path", "")))
+        if (
+            not declared_path.parts
+            or declared_path.is_absolute()
+            or ".." in declared_path.parts
+            or digest_file(repo / declared_path) != contract.get(f"{prefix}_sha256")
+        ):
+            fail(f"{label} {prefix} hash does not match")
+
+
 def validate_preregistration_section(
     section: dict[str, Any],
     paper: str,
@@ -352,6 +369,12 @@ def validate_preregistration_section(
             )
         except SFTReferenceContractError as exc:
             fail(f"invalid SFT reference contract: {exc}")
+        require_bound_files(
+            section.get("train_ledger_contract"),
+            ("validator", "aggregator"),
+            "SFT train-ledger closure",
+            repo,
+        )
         window = nested(section, "optimizer_window")
         if window["physical_packs_per_update"] != window["microbatches_per_update"]:
             fail("SFT packs and microbatches per update must match")
@@ -539,7 +562,25 @@ def validate_preregistration_section(
             or "alpha=1" not in audit["confirmation_required_cells"]
         ):
             fail("RL audit must freeze lambda, EOS cost, and on-policy confirmation")
+        require_bound_files(
+            section.get("gate0_fault_injections"),
+            ("validator",),
+            "RL Gate 0 fault-injection",
+            repo,
+        )
+        gate0 = run_rl_gate0_fault_injections()
+        if gate0["status"] != "pass" or gate0["empirical_evidence"] is not False:
+            fail(
+                "RL Gate 0 fault injections failed: "
+                + ", ".join(gate0["failed_checks"])
+            )
     else:
+        require_bound_files(
+            section.get("sequential_bundle_contract"),
+            ("validator",),
+            "evaluation sequential-bundle",
+            repo,
+        )
         acquisition = nested(section, "acquisition")
         epsilon = acquisition["exploration_epsilon"]
         if not isinstance(epsilon, (int, float)) or not 0 < epsilon <= 1:

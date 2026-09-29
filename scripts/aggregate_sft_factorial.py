@@ -2,7 +2,10 @@
 """Aggregate the frozen SFT 2x2 factorial without filling paper tables.
 
 Input is one JSONL endpoint per seed, target, budget, cell, and tolerance.
-Failed or missing runs receive the frozen hypervolume reference point.  The
+Every row must close against its run manifest and hash-bound train ledger
+(validate_sft_train_ledger.py); paired rows must share split, reference-cost,
+and initial-state hashes.  Failed or missing runs receive the frozen
+hypervolume reference point.  The
 script computes lower-is-better dominated hypervolume, the paired
 difference-in-differences, and a simultaneous max-t bootstrap interval across
 target-by-budget contrasts.
@@ -19,6 +22,14 @@ import tempfile
 from pathlib import Path
 from statistics import mean, stdev
 from typing import Any
+
+from validate_sft_train_ledger import (
+    LedgerError,
+    build_fixture_run,
+    check_pairing,
+    protected_slices,
+    validate_run,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -141,6 +152,8 @@ def aggregate(
         "empirical_evidence",
     }
     indexed: dict[tuple[Any, ...], dict[str, Any]] = {}
+    slices_by_setting = protected_slices(ROOT, section)
+    closures: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for row in rows:
         if not required_fields.issubset(row):
             fail("endpoint row is missing required fields")
@@ -188,7 +201,23 @@ def aggregate(
             fail("real aggregation cannot consume non-empirical endpoints")
         if execution_class == "fixture" and row["empirical_evidence"] is not False:
             fail("fixture aggregation accepts only non-empirical endpoints")
+        try:
+            closures.append(
+                (
+                    row,
+                    validate_run(
+                        run_manifest, manifest_root, row, section, slices_by_setting
+                    ),
+                )
+            )
+        except (LedgerError, KeyError, TypeError) as exc:
+            fail(f"endpoint {key} does not close against its train ledger: {exc}")
         indexed[key] = row
+    try:
+        if closures:
+            check_pairing(closures)
+    except LedgerError as exc:
+        fail(f"factorial rows are not paired: {exc}")
 
     hypervolumes: dict[tuple[int, str, float, str], float] = {}
     missing = 0
@@ -276,6 +305,7 @@ def aggregate(
         "empirical_evidence": execution_class == "real",
         "preregistration_section_sha256": canonical_digest(section),
         "input_rows": len(rows),
+        "ledger_closed_rows": len(closures),
         "failed_or_missing_cells": missing,
         "hypervolume_reference_box": list(reference),
         "bootstrap_replicates": factorial["bootstrap_replicates"],
@@ -290,15 +320,7 @@ def self_test() -> None:
     section = preregistration["sft"]
     with tempfile.TemporaryDirectory(prefix="sft-factorial-") as directory:
         manifest_root = Path(directory)
-        run_manifest_path = manifest_root / "fixture-run-manifest.json"
-        write_json(
-            run_manifest_path,
-            {
-                "preregistration_sha256": canonical_digest(section),
-                "synthetic_audit": True,
-            },
-        )
-        run_manifest_sha256 = file_digest(run_manifest_path)
+        slices_by_setting = protected_slices(ROOT, section)
         rows = []
         for seed_index, seed in enumerate(section["seeds"]):
             for target in ("math", "code"):
@@ -309,29 +331,21 @@ def self_test() -> None:
                         for tolerance in section["primary_factorial"][
                             "protected_tolerance_grid"
                         ]:
-                            rows.append(
+                            _, _, row = build_fixture_run(
+                                manifest_root,
+                                section,
+                                slices_by_setting,
                                 {
                                     "seed": seed,
                                     "target_setting": target,
                                     "budget_fraction": budget,
                                     "cell": cell,
                                     "protected_tolerance": tolerance,
-                                    "status": "completed",
-                                    "target_delta_nll": (
-                                        0.8
-                                        - 0.05 * cell_index
-                                        - 0.01 * seed_index
-                                    ),
-                                    "protected_delta_nll": (
-                                        0.15 - 0.01 * cell_index + tolerance
-                                    ),
-                                    "run_manifest_path": (
-                                        "fixture-run-manifest.json"
-                                    ),
-                                    "run_manifest_sha256": run_manifest_sha256,
-                                    "empirical_evidence": False,
-                                }
+                                },
+                                0.8 - 0.05 * cell_index - 0.01 * seed_index,
+                                0.15 - 0.01 * cell_index + tolerance,
                             )
+                            rows.append(row)
         summary = aggregate(
             rows,
             preregistration,
@@ -342,12 +356,15 @@ def self_test() -> None:
         if (
             len(summary["contrasts"]) != 6
             or summary["failed_or_missing_cells"] != 0
+            or summary["ledger_closed_rows"] != len(rows)
         ):
             fail("factorial fixture did not produce six complete contrasts")
         output = Path(directory) / "summary.json"
         write_json(output, summary)
         load_json(output)
-    print("validated SFT hypervolume, paired DID, and max-t aggregation")
+    print(
+        "validated SFT ledger-closed hypervolume, paired DID, and max-t aggregation"
+    )
 
 
 def parse_args() -> argparse.Namespace:

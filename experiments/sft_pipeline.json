@@ -134,6 +134,8 @@
       "checks": [
         "Every table cell resolves to immutable run identifiers",
         "aggregate_sft_factorial.py reproduces every cell hypervolume and the registered cost-by-packer difference-in-differences",
+        "validate_sft_train_ledger.py closes every endpoint row against its hash-bound run manifest and per-round ledger: state and optimizer-step chain, reserve admission, complete charging, stop rule, fresh gate blocks, largest passing scale, tolerance ledger, and final-state audit endpoint",
+        "Paired rows share one split-manifest hash, the reference cost within a target setting, and the initial state within seed and target setting; declared audit NLLs remain a blocker until recomputed from per-example audit-loss records",
         "Exploratory paired max-t interval resamples complete seed blocks and is not used for confirmatory hypothesis acceptance",
         "Negative results, every seed, and score-to-audit gaps are retained"
       ],

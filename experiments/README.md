@@ -225,6 +225,26 @@ difference-in-differences, and forms simultaneous max-$t$ intervals by
 resampling complete seed blocks. Fixture endpoints cannot be consumed in
 `real` mode.
 
+Every endpoint row must also close against its training record:
+
+```bash
+make sft-ledger-audit
+```
+
+`scripts/validate_sft_train_ledger.py` replays the run manifest's hash-bound
+per-round train ledger. It checks the parameter-state and optimizer-step chain,
+with one step per accepted update and none for a rejected update or null
+action. It checks reserve admission before every round, complete charging of
+seven cost components, and the stop rule (maximum rounds, exhausted reserve,
+or a retained overrun marked as a protocol failure). Gate evidence must use a
+fresh block per protected slice and round, the heuristic upper statistic must
+reproduce, the committed scale must be the largest passing one, and the
+cumulative tolerance ledger must hold. The audit endpoint must be evaluated on
+the final ledger state. The aggregator calls this closure for every row and
+requires paired rows to share the split-manifest hash, reference cost, and
+initial state. Audit NLLs are still declared by the evaluation stage and are
+not recomputed from per-example audit-loss records.
+
 ## Paper-specific design contracts
 
 The SFT capability and split contract is independently auditable:
@@ -275,6 +295,22 @@ probability/outcome reconstruction is still an unfrozen blocker. Any
 infrastructure failure disables estimator-claim eligibility; it cannot yield a
 success-conditioned MSE.
 
+The Gate 0 fault injections run by exact enumeration:
+
+```bash
+make rl-fault-injection-audit
+```
+
+`scripts/rl_gate0_fault_injections.py` covers base-versus-decoder scoring,
+focal nuisance fitting, and consumed-trajectory reuse with and without ratio
+recomputation on the four-cell Gate 0 law. Each fault must be detected, and
+the base-scoring bias must equal the common implemented-weight identity. The
+frozen-h, independent-prior-fit, and fresh-draw positive controls must be
+exact, and each detector must stay silent under its null-fault control. The
+runner hash-checks and executes it on every plan load. It is a software check;
+replaying the same faults through a raw trajectory reconstruction validator
+remains a blocker.
+
 The evaluation simulation layout is executable as a design audit:
 
 ```bash
@@ -290,6 +326,21 @@ uniqueness, and deterministic seeds against the exact committed rows in
 and resource/restart implementations remain blocked and unfrozen. Human EVI
 uses a separate 256-unit IID target candidate multiset per batch, preserving
 the exploration floor while capping hypothetical updates.
+
+The sequential decision bundle has a shared real/golden validator:
+
+```bash
+make eval-bundle-audit
+```
+
+`scripts/validate_eval_sequential_bundle.py` recomputes every batch draw law
+from its commitment, checks commitment hashes and strictly earlier fit slots,
+and requires all fixed slots exactly once. It reproduces the sequential
+contributions, worst-case nonresponse bounds, intervals, drift widenings,
+terminal action, maximum weight, and ESS. Golden bundles have exact rational
+draw probabilities and are checked against an independent `Fraction`
+computation; twelve mutations must fail. Real bundles are refused while any
+estimand-defining artifact hash in the preregistration is null.
 
 The shared materialization validator recomputes each provenance record from
 raw materialized rows and requires a bijection into canonical retained,

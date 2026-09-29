@@ -142,6 +142,7 @@
       ],
       "checks": [
         "Estimator, martingale variance, maximum weight, and ESS reproduce from the ledger",
+        "validate_eval_sequential_bundle.py recomputes every batch draw law from its committed candidate multiset, EVI values, costs, and temperature; rejects commitment-hash mismatches and non-predictable fit slots; and reproduces contributions, worst-case bounds, intervals, drift widenings, and the terminal action",
         "Any nonresponse switches the primary decision to the two one-sided martingale-Hoeffding endpoint bounds",
         "All 200 audit slots remain; audit nonresponses use the frozen -1/+1 endpoint means and Hoeffding radius",
         "Adaptive-minus-audit uncertainty includes shared-rater covariance",
