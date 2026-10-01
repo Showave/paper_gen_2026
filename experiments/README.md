@@ -387,6 +387,31 @@ draw probabilities and are checked against an independent `Fraction`
 computation; twelve mutations must fail. Real bundles are refused while any
 estimand-defining artifact hash in the preregistration is null.
 
+Committed EVI values are recomputed from the frozen working posterior:
+
+```bash
+make eval-evi-audit
+```
+
+`scripts/recompute_eval_evi.py` reads `train/evi_posteriors.json`, which
+holds one mode and precision per adaptive batch plus the frame design. Each
+posterior must carry its batch commitment hash. The mode must be stationary
+for the Gaussian-prior Davidson log posterior on the observed outcomes in the
+batch's strictly earlier fit slots. The precision must equal prior precision
+plus observed information. The script then recomputes `Q_b`, the posterior
+predictive, and the registered damped Newton update for each hypothetical
+outcome, using the frozen 4,096 common normals (seed 2026090322), ridge,
+damping, and jitter ladder. Every committed EVI must reproduce within 1e-9.
+Draws within 1e-9 of the margin fail closed. Only the fixed-discrimination
+working model, with Davidson natural parameters linear in the coefficients,
+is recomputable; an estimated log-discrimination is rejected. The golden
+bundle is checked against an independent pure-Python implementation, and nine
+mutations must fail. The self-test also reports EVI ranges and the maximum
+softmax tilt `exp(lambda_E * (max EVI - min EVI))` across five generated
+fit sizes. In a real evaluation train stage, the runner executes both this
+recomputation and the sequential bundle validator on
+`train/sequential_bundle.json`.
+
 The shared materialization validator recomputes each provenance record from
 raw materialized rows and requires a bijection into canonical retained,
 suppressed, or quarantined dispositions; rehashed orphan, omission, forged-ID,

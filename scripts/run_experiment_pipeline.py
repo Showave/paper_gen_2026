@@ -47,6 +47,16 @@ from reconstruct_rl_trajectories import (
     self_test as run_rl_raw_reconstruction_self_test,
     verify_work_dir as verify_rl_raw_reconstruction,
 )
+from validate_eval_sequential_bundle import (
+    BundleError as EvalBundleError,
+    validate_bundle as validate_eval_sequential_bundle,
+)
+from recompute_eval_evi import (
+    EVIError,
+    config_from_section as eval_evi_config,
+    self_test as run_eval_evi_self_test,
+    validate_bundle_evi as validate_eval_bundle_evi,
+)
 from validate_overlap_projection_contract import (
     ProjectionContractError,
     validate_contract as validate_overlap_projection_contract,
@@ -602,6 +612,18 @@ def validate_preregistration_section(
             "evaluation sequential-bundle",
             repo,
         )
+        require_bound_files(
+            section.get("evi_recomputation_contract"),
+            ("validator",),
+            "evaluation EVI recomputation",
+            repo,
+        )
+        try:
+            evi_audit = run_eval_evi_self_test(section)
+        except EVIError as exc:
+            fail(f"evaluation EVI recomputation self-test failed: {exc}")
+        if evi_audit["status"] != "pass" or evi_audit["empirical_evidence"] is not False:
+            fail("evaluation EVI recomputation self-test did not pass")
         acquisition = nested(section, "acquisition")
         epsilon = acquisition["exploration_epsilon"]
         if not isinstance(epsilon, (int, float)) or not 0 < epsilon <= 1:
@@ -1470,10 +1492,28 @@ def validate_real_stage_semantics(
         ):
             fail("evaluation acquisition ledger violates the fixed-slot contract")
         missing = sum(not row["response_observed"] for row in rows)
+        bundle_path = work_dir / "train" / "sequential_bundle.json"
+        posterior_path = work_dir / "train" / "evi_posteriors.json"
+        for path in (bundle_path, posterior_path):
+            if not path.is_file() or path.is_symlink():
+                fail(f"real evaluation train stage needs {path.relative_to(work_dir)}")
+        bundle = load_json(bundle_path)
+        try:
+            bundle_validation = validate_eval_sequential_bundle(bundle, {"eval": section})
+            evi_validation = validate_eval_bundle_evi(
+                bundle, load_json(posterior_path), eval_evi_config(section)
+            )
+        except (EvalBundleError, EVIError, KeyError, TypeError, ValueError) as exc:
+            fail(f"evaluation sequential bundle or EVI does not reproduce: {exc}")
+        if bundle_validation["slots"] != expected_slots:
+            fail("evaluation sequential bundle does not cover the fixed slots")
         return {
             **content_validation,
             "fixed_slots": expected_slots,
             "nonresponses": missing,
+            "sequential_bundle_sha256": bundle_validation["bundle_sha256"],
+            "evi_posteriors_sha256": digest_file(posterior_path),
+            "evi_batches_recomputed": evi_validation["evi_batches_recomputed"],
         }
 
     if paper == "eval" and stage_name == "evaluate":

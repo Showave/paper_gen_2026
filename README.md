@@ -103,10 +103,13 @@ explicitly unreviewed blockers. The remaining design audits reproduce the SFT
 capability/cluster split contract, the RL estimator, cost aggregation, and
 three-way reference bootstrap from a generated trajectory ledger, and the
 evaluation paper's 189-condition fractional simulation layout. They also
-replay SFT endpoint rows against hash-bound train ledgers, run the exact RL
-Gate 0 base-versus-decoder, focal-nuisance, and reuse fault injections, and
+replay SFT endpoint rows against hash-bound train ledgers and recompute audit
+NLLs from per-example loss records, and run the exact RL Gate 0 base-versus-decoder, focal-nuisance, and
+reuse fault injections. They rebuild RL projected terms from raw trajectory
+fields and replay all five Gate 0 faults through that reconstruction. They
 recompute the evaluation paper's sequential decision bundle from exact
-rational golden fixtures. All use
+rational golden fixtures, and they recompute committed EVI values from the
+frozen Laplace posterior (`make eval-evi-audit`, `make rl-reconstruction-audit`). All use
 generated identifiers or vectors and set `empirical_evidence` to false.
 The ignored protocol artifacts are
 synthetic software checks, not paper results. See `experiments/README.md` for

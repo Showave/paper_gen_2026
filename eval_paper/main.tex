@@ -179,6 +179,12 @@ AURA adaptively prioritizes uncertain pairwise judge decisions for human
 verification \cite{zhang2026aura}. It targets refinement of latent judge trust;
 our target is instead a prespecified weighted human-panel mean, with the
 acquisition model allowed to be wrong.
+For reward learning, near-tie pairs are the most informative queries, and
+instance-dependent designs exploit this to achieve nearly optimal label
+complexity \cite{zhao2026activepref}. Our acquisition targets a different
+quantity. EVI rewards a label only if it can change the four-way action on
+$\Delta_F$, and logged probabilities keep the design-based estimator valid
+even when the working model is wrong.
 
 \section{Evaluation Goal and Desiderata}
 \label{sec:goal}
@@ -479,6 +485,18 @@ implemented finite-temperature candidate-mixture policy has no such
 optimality claim, finite-horizon guarantee, or general regret bound. It scores approximate Bayesian risk
 reduction, whereas the terminal action uses a confidence set; their alignment
 is a required simulation diagnostic, not an identity.
+Exact preposterior EVI is nonnegative, but the one-step Laplace update is not
+a martingale for $Q_b$, so the implemented score can be negative. The design
+also caps how much EVI can matter: with costs $k_x=1$, the softmax tilt between
+any two candidates is $\exp\{\lambda_E(\operatorname{EVI}_{\max}
+-\operatorname{EVI}_{\min})\}$. On the generated golden law of
+\cref{app:datasheet}, the registered $\lambda_E=2$ gives a tilt of at most
+$1.11$ after 20 fit outcomes and at most $1.008$ from 40 to 200 outcomes.
+One-step EVI is negative for every unit at 40 and 120 fit outcomes. These are
+properties of a constructed three-parameter law, not pilot estimates. They
+show that the simulation study must report whether the adaptive arm differs
+materially from target-random sampling with candidate multiplicities before
+any efficiency gain is attributed to EVI.
 
 \section{Validation}
 \label{sec:validation}
@@ -891,8 +909,32 @@ mutations fail, including a tampered $p_t$, EVI edited after commitment, a
 predictor fit on its own batch, a dropped or replacement slot, an outcome on a
 missing slot, and a complete-case interval reported despite missingness. A
 real bundle is refused while any estimand-defining artifact hash is null or
-its configuration differs from the preregistration. Root ranks, prompt cells,
-and EVI values from the frozen Laplace posterior are not yet recomputed. The
+its configuration differs from the preregistration.
+\texttt{scripts/recompute\_eval\_evi.py} now recomputes every committed EVI
+value. Each adaptive batch's posterior artifact must carry the batch
+commitment hash and a frame design covering exactly the bundle frame. The
+validator then closes the posterior against the observed outcomes in that
+batch's strictly earlier fit slots. The mode must be stationary for the
+Gaussian-prior Davidson log posterior, and the precision must equal prior
+precision plus observed information at the mode. Next it redraws the 4,096
+common standard normals with seed 2026090322. It recomputes $Q_b$ and the
+posterior predictive, applies the registered damped Newton update with ridge
+$10^{-4}$, damping $10^{-3}$, and the fixed jitter ladder for each
+hypothetical outcome, and requires every committed EVI to reproduce within
+$10^{-9}$. Any draw within $10^{-9}$ of $\pm\delta$ fails closed. On a
+generated three-parameter golden bundle with 79 observed fit outcomes, a
+pure-Python implementation that shares only the normal draws agrees with the
+numpy recomputation to $10^{-12}$. Nine mutations fail: EVI set to zero, EVI
+assigned to the wrong unit, EVI from unregistered draws, a posterior fitted on
+its own batch, a precision without the prior, a stale commitment, a missing
+frame unit, an unregistered prior scale, and an estimated-discrimination
+working model. That last case makes $\eta$ bilinear and is rejected rather than
+approximated. The same self-test reports the EVI range, the count of negative
+values, and the maximum softmax tilt after 20, 40, 80, 120, and 200 generated
+fit outcomes; \cref{sec:method} quotes these design diagnostics. In a real
+train stage the runner now executes both the bundle
+validator and this EVI recomputation. Root ranks, prompt cells, and the
+estimated-discrimination Jacobian are still not recomputed. The
 artifact-integrity gate therefore still blocks all real response generation
 and human acquisition even if source reviews later pass.
 

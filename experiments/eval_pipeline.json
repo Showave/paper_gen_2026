@@ -109,6 +109,7 @@
       ],
       "checks": [
         "Each draw logs pi, p_t, model revision, EVI, outcome, and pre-outcome timestamp",
+        "The runner validates train/sequential_bundle.json and recomputes every committed EVI from train/evi_posteriors.json with recompute_eval_evi.py: commitment binding, Laplace stationarity and precision closure on strictly earlier observed fit slots, and the registered damped Newton update on the frozen common normals",
         "The first 200 human attempts are IID target-random pilot draws from pi; no unbudgeted human baseline arm is inferred from them",
         "validate_eval_simulation_design.py reproduces the 16 orthogonal main-effect rows, zero main--two-factor aliases, center/local-alternative blocks, 189 unique conditions, and condition seeds",
         "Executable DGPs, missingness laws, baseline policies, and estimator implementations match replacement-preregistration hashes; the frozen layout alone does not clear this blocker",
