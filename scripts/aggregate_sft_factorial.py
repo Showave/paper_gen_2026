@@ -2,9 +2,12 @@
 """Aggregate the frozen SFT 2x2 factorial without filling paper tables.
 
 Input is one JSONL endpoint per seed, target, budget, cell, and tolerance.
-Every row must close against its run manifest and hash-bound train ledger
-(validate_sft_train_ledger.py); paired rows must share split, reference-cost,
-and initial-state hashes.  Failed or missing runs receive the frozen
+Every row must close against its run manifest, hash-bound train ledger, and
+per-example audit-loss records (validate_sft_train_ledger.py); paired rows must
+share split, reference-cost, initial-state, initial-audit, and audit-partition
+identities.  The real pipeline runner re-executes this aggregation over the
+hash-bound endpoint file and requires exact equality with the evaluation
+summary.  Failed or missing runs receive the frozen
 hypervolume reference point.  The
 script computes lower-is-better dominated hypervolume, the paired
 difference-in-differences, and a simultaneous max-t bootstrap interval across
@@ -401,6 +404,7 @@ def main() -> None:
         args.execution_class,
         (args.manifest_root or args.input.parent).resolve(),
     )
+    summary["input_sha256"] = file_digest(args.input)
     write_json(args.output, summary)
     print(f"wrote {args.output} with {len(summary['contrasts'])} contrasts")
 

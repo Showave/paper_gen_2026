@@ -224,9 +224,9 @@
     },
     "train_ledger_contract": {
       "validator_path": "scripts/validate_sft_train_ledger.py",
-      "validator_sha256": "bd0c6f7147edeab54bfb898bac024fda7443eb3d7fc1655fd5c7d6642ad17011",
+      "validator_sha256": "ac39d0c5de495ad640ac635f8fcd6ae8fe3d783ecbaa94ad93ce7f5511d602f6",
       "aggregator_path": "scripts/aggregate_sft_factorial.py",
-      "aggregator_sha256": "a2048eb3c0488fe9ab7344424d81fdfbb8d158163d4c1fceba32e45f10eaef8e",
+      "aggregator_sha256": "9c45ba798479dde41c23254c293f93ba27392b9fbd3b5c7bd97f6ed020d797ee",
       "required_status": "pass",
       "current_status": "generated_fixture_only",
       "charge_components": [
@@ -243,8 +243,8 @@
         "reserve_exhausted",
         "protocol_failure"
       ],
-      "pairing_rule": "all factorial rows share one split-manifest hash; rows share the reference cost within a target setting and the initial state within seed and target setting",
-      "interpretation": "Endpoint rows are replayed against hash-bound per-round ledgers: state and optimizer-step chain, reserve admission, complete charging, stop rule, gate blocks, largest passing scale, tolerance ledger, and final-state audit endpoint. Audit NLL values remain declared by the evaluation stage."
+      "pairing_rule": "all factorial rows share one split-manifest hash and one audit-partition hash per slice; rows share the reference cost within a target setting and the initial state and initial audit NLLs within seed and target setting",
+      "interpretation": "Endpoint rows are replayed against hash-bound per-round ledgers: state and optimizer-step chain, reserve admission, complete charging, stop rule, gate blocks, largest passing scale, tolerance ledger, and final-state audit endpoint. Every declared initial and final audit NLL is recomputed from hash-bound per-example loss records as the row-uniform mean of response-token-mean NLL, evaluated on the exact initial and final states over exactly the identified audit partition; protocol-failure runs keep audits sealed. The real runner re-executes the aggregation over evaluate/endpoints.jsonl and requires exact equality with evaluate/summary.json. Per-example forward passes remain site-local measurements."
     }
   },
   "rl": {

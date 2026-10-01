@@ -240,10 +240,25 @@ or a retained overrun marked as a protocol failure). Gate evidence must use a
 fresh block per protected slice and round, the heuristic upper statistic must
 reproduce, the committed scale must be the largest passing one, and the
 cumulative tolerance ledger must hold. The audit endpoint must be evaluated on
-the final ledger state. The aggregator calls this closure for every row and
-requires paired rows to share the split-manifest hash, reference cost, and
-initial state. Audit NLLs are still declared by the evaluation stage and are
-not recomputed from per-example audit-loss records.
+the final ledger state. Each declared initial and final audit NLL is
+recomputed from hash-bound per-example records (`example_id`, `slice`,
+`evaluated_state_sha256`, `response_tokens`, `nll_sum`) as the frozen
+row-uniform mean of response-token-mean NLL. Records must be evaluated on the
+exact initial and final states, repeat no example, and cover exactly the
+audit partition identified by the SHA-256 of its sorted identifiers. A
+protocol-failure run must leave its sealed audits unopened. The aggregator
+calls this closure for every row and requires paired rows to share the
+split-manifest hash, one audit partition per slice, reference cost, initial
+state, and initial audit NLLs. Twenty-two generated mutations fail, including
+a token-weighted instead of row-uniform mean, a dropped audit example, and a
+final record evaluated on the initial state.
+
+In a real run, `aggregate_sft_factorial.py` writes `input_sha256` for its
+endpoint file. The pipeline runner requires `evaluate/endpoints.jsonl` to
+match that hash. It requires every endpoint run manifest under `train/` to
+bind the processed `process/splits_manifest.json`. It then re-executes the
+aggregation and requires exact equality with `evaluate/summary.json`. The
+per-example forward passes themselves remain site-local measurements.
 
 ## Paper-specific design contracts
 

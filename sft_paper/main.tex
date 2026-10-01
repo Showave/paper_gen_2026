@@ -614,7 +614,8 @@ Joint scheduler with gate & -- & -- & -- & -- \\
 
 No ranking is inferred from \cref{tab:main}. Before values are inserted, each
 cell must link to a run manifest whose per-round train ledger replays to the
-reported endpoint, and to the aggregation script. The primary
+reported endpoint, whose audit NLLs reproduce from per-example loss records on
+the final ledger state, and to the aggregation script. The primary
 comparison is a paired frontier contrast between score-then-pack and joint
 scheduling, not the single best endpoint.
 
@@ -840,18 +841,28 @@ the observed mean plus the frozen empirical margin, and the committed scale
 must be the largest passing one. The cumulative tolerance ledger is also
 checked. Finally, the audit endpoint must be evaluated on the ledger's final
 state, from which the row's target and worst-protected NLL changes are
-recomputed. Paired rows must share one split-manifest hash, the reference cost
-within a target setting, and the initial state within seed and target setting.
-Thirteen generated mutations fail, including a hidden charge, a rejected
-update that advances the optimizer, a smaller-than-largest passing scale, a
-reused gate block, a dropped round, an endpoint on a non-final state, and an
-unmarked overrun. The fixtures are non-empirical. The audit NLLs remain
-declared by the evaluation stage rather than recomputed from per-example
-audit-loss records, and the real runner does not yet invoke the aggregator.
-Real execution therefore remains blocked on those two gaps, reviewed
-source-specific multi-field inventories, and a site-local sealed-resource
-access attestation. Declarative stage checks do not count as execution
-evidence.
+recomputed. Each declared audit NLL is itself recomputed from hash-bound
+per-example records carrying the example identifier, slice, evaluated state
+hash, response-token count, and summed NLL. The validator applies the frozen
+estimand, a row-uniform mean of per-example response-token-mean NLL, and
+requires initial and final records to be evaluated on the exact initial and
+final states and to cover exactly the audit partition named by the hash of its
+sorted identifiers. A protocol-failure run must leave its sealed audits
+unopened. Paired rows must share one split-manifest hash and audit partition
+per slice, the reference cost within a target setting, and the initial state
+and initial audit NLLs within seed and target setting. Twenty-two generated
+mutations fail, including a hidden charge, a rejected update that advances the
+optimizer, a smaller-than-largest passing scale, a reused gate block, a
+dropped round, an unmarked overrun, a final audit record evaluated on the
+initial state, a dropped or duplicated audit example, a failed run that opens
+its audit, and a token-weighted rather than row-uniform mean. The real runner
+now re-executes the aggregator over the hash-bound endpoint file, requires
+every run manifest to bind the processed split manifest, and demands exact
+equality with the evaluation summary. The fixtures are non-empirical, and the
+per-example forward passes remain site-local measurements. Real execution
+remains blocked on reviewed source-specific multi-field inventories and a
+site-local sealed-resource access attestation. Declarative stage checks do
+not count as execution evidence.
 With \texttt{--execute --synthetic-audit --commands
 experiments/synthetic\_commands.json}, a
 CPU-only audit exactly enumerates packings for two length-10 packs under a

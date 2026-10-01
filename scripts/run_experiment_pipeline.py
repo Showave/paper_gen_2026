@@ -41,6 +41,7 @@ from validate_eval_simulation_design import (
     validate_design as validate_eval_simulation_design,
 )
 from rl_gate0_fault_injections import run_all as run_rl_gate0_fault_injections
+from aggregate_sft_factorial import aggregate as aggregate_sft_factorial
 from validate_overlap_projection_contract import (
     ProjectionContractError,
     validate_contract as validate_overlap_projection_contract,
@@ -937,26 +938,26 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def confined_work_path(work_dir: Path, declared: Any) -> Path:
+def confined_work_path(work_dir: Path, declared: Any, stage: str = "process") -> Path:
     if not isinstance(declared, str) or not declared:
-        fail("process artifact path must be a nonempty string")
+        fail(f"{stage} artifact path must be a nonempty string")
     relative = Path(declared)
     if (
         relative.is_absolute()
         or ".." in relative.parts
         or not relative.parts
-        or relative.parts[0] != "process"
+        or relative.parts[0] != stage
     ):
-        fail(f"process artifact path must stay under process/: {declared!r}")
+        fail(f"{stage} artifact path must stay under {stage}/: {declared!r}")
     root = work_dir.resolve()
     current = root
     for part in relative.parts:
         current = current / part
         if current.is_symlink():
-            fail(f"process artifact path traverses a symlink: {declared!r}")
+            fail(f"{stage} artifact path traverses a symlink: {declared!r}")
     resolved = current.resolve()
     if root not in resolved.parents:
-        fail(f"process artifact path escapes the work directory: {declared!r}")
+        fail(f"{stage} artifact path escapes the work directory: {declared!r}")
     return resolved
 
 
@@ -1318,9 +1319,39 @@ def validate_real_stage_semantics(
             or len(summary["contrasts"]) != 6
         ):
             fail("SFT summary does not match the frozen factorial aggregation")
+        endpoints_path = work_dir / "evaluate" / "endpoints.jsonl"
+        if not endpoints_path.is_file() or summary.get("input_sha256") != digest_file(
+            endpoints_path
+        ):
+            fail("SFT summary is not bound to the evaluate/endpoints.jsonl rows")
+        endpoint_rows = load_jsonl(endpoints_path)
+        split_digest = digest_file(work_dir / "process" / "splits_manifest.json")
+        for endpoint_row in endpoint_rows:
+            manifest_relative = endpoint_row.get("run_manifest_path")
+            run_path = confined_work_path(work_dir, manifest_relative, "train")
+            if (
+                not run_path.is_file()
+                or load_json(run_path).get("split_manifest_sha256") != split_digest
+            ):
+                fail("SFT endpoint run manifest does not bind the processed split manifest")
+        try:
+            recomputed = aggregate_sft_factorial(
+                endpoint_rows,
+                {"sft": section},
+                list(factorial["target_settings"]),
+                "real",
+                work_dir.resolve(),
+            )
+        except SystemExit as exc:
+            fail(f"SFT factorial aggregation does not reproduce: {exc}")
+        recomputed["input_sha256"] = summary["input_sha256"]
+        if canonical_digest(recomputed) != canonical_digest(summary):
+            fail("SFT evaluation summary differs from the re-executed aggregation")
         return {
             **content_validation,
             "factorial_contrasts": 6,
+            "ledger_closed_rows": recomputed["ledger_closed_rows"],
+            "endpoints_sha256": summary["input_sha256"],
             "execution_class": "real",
         }
 

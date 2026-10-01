@@ -16,12 +16,18 @@ validator replays the ledger under the frozen SFT preregistration and requires
   blocks, the heuristic upper statistic, largest-passing-scale commitment, and
   the cumulative protected-tolerance ledger;
 * audit endpoints evaluated on the final ledger state, from which the row's
-  target and worst-protected NLL changes are recomputed.
+  target and worst-protected NLL changes are recomputed;
+* every declared initial and final audit NLL recomputed from hash-bound
+  per-example loss records as the frozen row-uniform mean of per-example
+  response-token-mean NLL, with records evaluated on the exact initial and
+  final states and covering exactly the hash-identified audit partition;
+* sealed audits for protocol-failure runs, which enter only as failures.
 
 Across rows, paired runs must share the split-manifest hash, the reference
-cost per target setting, and the initial state per seed and target setting.
-The audit NLL values themselves remain declared by the evaluation stage; this
-closes their binding to training, not their measurement.
+cost per target setting, the initial state and initial audit NLLs per seed and
+target setting, and one audit-partition identity per slice.  The per-example
+NLLs themselves are still produced by the evaluation stage; this closes their
+aggregation and binding, not the forward pass that measured them.
 """
 
 from __future__ import annotations
@@ -91,6 +97,15 @@ def protected_slices(repo: Path, section: dict[str, Any]) -> dict[str, list[str]
     }
 
 
+def target_slices(repo: Path, section: dict[str, Any]) -> dict[str, str]:
+    contract_path = repo / section["reference_contract"]["specification_path"]
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    return {
+        setting["setting_id"]: setting["target_capability"]
+        for setting in contract["target_settings"]
+    }
+
+
 def safe_child(root: Path, relative: Any) -> Path:
     require(isinstance(relative, str), "ledger path must be a string")
     path = Path(relative)
@@ -101,12 +116,14 @@ def safe_child(root: Path, relative: Any) -> Path:
     return root / path
 
 
-def load_ledger(path: Path, expected_sha256: str) -> list[dict[str, Any]]:
-    require(path.is_file(), f"train ledger not found: {path}")
+def load_ledger(
+    path: Path, expected_sha256: str, kind: str = "train ledger"
+) -> list[dict[str, Any]]:
+    require(path.is_file(), f"{kind} not found: {path}")
     payload = path.read_bytes()
     require(
         hashlib.sha256(payload).hexdigest() == expected_sha256,
-        f"train ledger hash mismatch: {path}",
+        f"{kind} hash mismatch: {path}",
     )
     rows = []
     for line_number, line in enumerate(payload.decode("utf-8").splitlines(), start=1):
@@ -308,13 +325,106 @@ def replay_ledger(
     }
 
 
+def recompute_audit_slice(
+    entry: Any,
+    name: str,
+    manifest_root: Path,
+    states: dict[str, str],
+) -> tuple[dict[str, float], str]:
+    """Return recomputed initial/final audit NLLs and the partition hash."""
+    require(isinstance(entry, dict), f"audit endpoint for {name} must be an object")
+    partition = entry.get("audit_partition_sha256")
+    require(is_sha256(partition), f"audit endpoint for {name} needs a partition hash")
+    bindings = entry.get("loss_records")
+    require(
+        isinstance(bindings, dict) and set(bindings) == set(states),
+        f"audit endpoint for {name} must bind initial and final loss records",
+    )
+    recomputed: dict[str, float] = {}
+    example_sets: dict[str, list[str]] = {}
+    for phase, state in states.items():
+        binding = bindings[phase]
+        require(
+            isinstance(binding, dict) and is_sha256(binding.get("sha256")),
+            f"{name} {phase} loss records need a SHA-256 binding",
+        )
+        records = load_ledger(
+            safe_child(manifest_root, binding.get("path")),
+            binding["sha256"],
+            f"{name} {phase} audit-loss records",
+        )
+        require(records, f"{name} {phase} audit-loss records are empty")
+        identifiers: list[str] = []
+        per_example: list[float] = []
+        for index, record in enumerate(records):
+            label = f"{name} {phase} audit record {index}"
+            require(
+                set(record)
+                == {
+                    "example_id",
+                    "slice",
+                    "evaluated_state_sha256",
+                    "response_tokens",
+                    "nll_sum",
+                },
+                f"{label} has an unexpected schema",
+            )
+            require(
+                isinstance(record["example_id"], str) and record["example_id"],
+                f"{label} needs an example identifier",
+            )
+            require(record["slice"] == name, f"{label} belongs to another slice")
+            require(
+                record["evaluated_state_sha256"] == state,
+                f"{label} was not evaluated on the {phase} state",
+            )
+            tokens = record["response_tokens"]
+            require(
+                isinstance(tokens, int) and not isinstance(tokens, bool) and tokens > 0,
+                f"{label} needs a positive response-token count",
+            )
+            nll = record["nll_sum"]
+            require(
+                isinstance(nll, (int, float))
+                and not isinstance(nll, bool)
+                and math.isfinite(nll)
+                and nll >= 0,
+                f"{label} needs a finite nonnegative summed NLL",
+            )
+            identifiers.append(record["example_id"])
+            per_example.append(nll / tokens)
+        require(
+            len(set(identifiers)) == len(identifiers),
+            f"{name} {phase} audit-loss records repeat an example",
+        )
+        example_sets[phase] = sorted(identifiers)
+        recomputed[phase] = math.fsum(per_example) / len(per_example)
+        declared = entry.get(phase)
+        require(
+            close(declared, recomputed[phase]),
+            f"{name} {phase} audit NLL does not reproduce from per-example records",
+        )
+    require(
+        example_sets["initial"] == example_sets["final"],
+        f"{name} initial and final audits cover different examples",
+    )
+    require(
+        canonical_digest(example_sets["initial"]) == partition,
+        f"{name} audit records do not cover exactly the declared partition",
+    )
+    return recomputed, partition
+
+
 def validate_run(
     manifest: dict[str, Any],
     manifest_root: Path,
     row: dict[str, Any],
     section: dict[str, Any],
     slices_by_setting: dict[str, list[str]],
+    targets_by_setting: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    if targets_by_setting is None:
+        targets_by_setting = target_slices(ROOT, section)
     require(manifest.get("schema_version") == 1, "unsupported run-manifest schema")
     identity = manifest.get("run_identity")
     expected_identity = {
@@ -354,26 +464,43 @@ def validate_run(
         "manifest charged accelerator-seconds do not reproduce",
     )
     endpoint = manifest.get("audit_endpoint")
-    require(isinstance(endpoint, dict), "run manifest needs an audit endpoint")
-    require(
-        endpoint.get("evaluated_state_sha256") == closure["final_state_sha256"],
-        "audit endpoint was not evaluated on the final ledger state",
-    )
-    protected = endpoint.get("protected_audit_nll")
-    require(
-        isinstance(protected, dict) and set(protected) == set(slices),
-        "audit endpoint must cover exactly the protected slices",
-    )
+    audit_nll: dict[str, dict[str, float]] = {}
+    partitions: dict[str, str] = {}
     if closure["protocol_failure"]:
         require(row["status"] == "failed", "a protocol-failure run must enter as failed")
+        require(
+            endpoint is None,
+            "sealed audits must remain closed for a protocol-failure run",
+        )
     else:
         require(row["status"] == "completed", "a closed run must enter as completed")
-        target = endpoint.get("target_audit_nll", {})
+        require(isinstance(endpoint, dict), "run manifest needs an audit endpoint")
+        require(
+            endpoint.get("evaluated_state_sha256") == closure["final_state_sha256"],
+            "audit endpoint was not evaluated on the final ledger state",
+        )
+        protected = endpoint.get("protected_audit_nll")
+        require(
+            isinstance(protected, dict) and set(protected) == set(slices),
+            "audit endpoint must cover exactly the protected slices",
+        )
+        states = {
+            "initial": manifest["initial_state_sha256"],
+            "final": closure["final_state_sha256"],
+        }
+        target_name = targets_by_setting[row["target_setting"]]
+        require(target_name not in slices, "target slice cannot also be protected")
+        entries = {target_name: endpoint.get("target_audit_nll"), **protected}
+        for name, entry in entries.items():
+            audit_nll[name], partitions[name] = recompute_audit_slice(
+                entry, name, manifest_root, states
+            )
+        target = audit_nll[target_name]
         require(
             close(row["target_delta_nll"], target["final"] - target["initial"]),
             "endpoint target NLL change does not reproduce",
         )
-        worst = max(protected[s]["final"] - protected[s]["initial"] for s in slices)
+        worst = max(audit_nll[s]["final"] - audit_nll[s]["initial"] for s in slices)
         require(
             close(row["protected_delta_nll"], worst),
             "endpoint worst protected NLL change does not reproduce",
@@ -383,6 +510,8 @@ def validate_run(
         "split_manifest_sha256": manifest["split_manifest_sha256"],
         "initial_state_sha256": manifest["initial_state_sha256"],
         "reference_cost_accelerator_seconds": reference,
+        "initial_audit_nll": {name: value["initial"] for name, value in audit_nll.items()},
+        "audit_partitions": partitions,
     }
 
 
@@ -391,6 +520,8 @@ def check_pairing(closures: list[tuple[dict[str, Any], dict[str, Any]]]) -> None
     require(len(splits) == 1, "factorial rows do not share one split-manifest hash")
     reference: dict[str, float] = {}
     initial: dict[tuple[Any, str], str] = {}
+    partitions: dict[str, str] = {}
+    initial_nll: dict[tuple[tuple[Any, str], str], float] = {}
     for row, closure in closures:
         setting = row["target_setting"]
         cost = reference.setdefault(setting, closure["reference_cost_accelerator_seconds"])
@@ -402,10 +533,67 @@ def check_pairing(closures: list[tuple[dict[str, Any], dict[str, Any]]]) -> None
         require(state == closure["initial_state_sha256"], (
             f"paired runs for {key} do not share an initial state"
         ))
+        for name, partition in closure.get("audit_partitions", {}).items():
+            shared = partitions.setdefault(name, partition)
+            require(shared == partition, f"audit partition for {name} differs across rows")
+        for name, value in closure.get("initial_audit_nll", {}).items():
+            shared_nll = initial_nll.setdefault((key, name), value)
+            require(close(value, shared_nll), (
+                f"paired runs for {key} report different initial {name} audit NLLs"
+            ))
 
 
 def fake_hash(*parts: Any) -> str:
     return hashlib.sha256("|".join(map(str, parts)).encode()).hexdigest()
+
+
+FIXTURE_AUDIT_TOKENS = (17, 40, 64, 9, 128, 33, 72, 21)
+FIXTURE_AUDIT_OFFSETS = (0.3, -0.3, 0.15, -0.15, 0.05, -0.05, 0.2, -0.2)
+
+
+def fixture_audit_ids(name: str) -> list[str]:
+    return [f"{name}-audit-{index}" for index in range(len(FIXTURE_AUDIT_TOKENS))]
+
+
+def write_audit_records(
+    directory: Path, run_key: str, name: str, phase: str, state: str, value: float
+) -> dict[str, str]:
+    """Write generated per-example records whose row-uniform mean is ``value``."""
+    records = [
+        {
+            "example_id": example_id,
+            "slice": name,
+            "evaluated_state_sha256": state,
+            "response_tokens": tokens,
+            "nll_sum": (value + offset) * tokens,
+        }
+        for example_id, tokens, offset in zip(
+            fixture_audit_ids(name), FIXTURE_AUDIT_TOKENS, FIXTURE_AUDIT_OFFSETS
+        )
+    ]
+    relative = f"{run_key}-audit-{name}-{phase}.jsonl"
+    payload = "".join(
+        json.dumps(record, sort_keys=True, allow_nan=False) + "\n" for record in records
+    ).encode()
+    (directory / relative).write_bytes(payload)
+    return {"path": relative, "sha256": hashlib.sha256(payload).hexdigest()}
+
+
+def fixture_audit_entry(
+    directory: Path,
+    run_key: str,
+    name: str,
+    states: dict[str, str],
+    values: dict[str, float],
+) -> dict[str, Any]:
+    return {
+        **values,
+        "audit_partition_sha256": canonical_digest(sorted(fixture_audit_ids(name))),
+        "loss_records": {
+            phase: write_audit_records(directory, run_key, name, phase, states[phase], values[phase])
+            for phase in ("initial", "final")
+        },
+    }
 
 
 def build_fixture_run(
@@ -416,14 +604,19 @@ def build_fixture_run(
     target_delta: float,
     protected_delta: float,
     overrun: bool = False,
+    path_prefix: str = "",
 ) -> tuple[str, str, dict[str, Any]]:
-    """Write a generated, closed run and return (path, sha256, endpoint row)."""
+    """Write a generated, closed run and return (path, sha256, endpoint row).
+
+    Every written path is ``path_prefix`` plus a run-specific file name, so a
+    caller can place a run under a stage directory such as ``train/``.
+    """
     gate = section["actual_update_gate"]
     scales = gate["scale_grid"]
     slices = slices_by_setting[identity["target_setting"]]
     reference = 1000.0
     budget = identity["budget_fraction"] * reference
-    run_key = canonical_digest(identity)[:16]
+    run_key = path_prefix + canonical_digest(identity)[:16]
     initial = fake_hash("initial", identity["seed"], identity["target_setting"])
     state = initial
     step = 0
@@ -463,7 +656,7 @@ def build_fixture_run(
                     for k in range(len(scales))
                 ]
                 row["gate"][name] = {
-                    "block_id": f"{run_key}-{round_index}-{name}",
+                    "block_id": f"{run_key[len(path_prefix):]}-{round_index}-{name}",
                     "samples": gate["samples_per_slice_round"],
                     "mean_change": means,
                     "upper": [m + gate["empirical_margin"] for m in means],
@@ -501,6 +694,33 @@ def build_fixture_run(
     (directory / ledger_name).write_bytes(ledger_bytes)
     target_initial = 2.0
     protected_initial = {name: 1.5 + 0.1 * i for i, name in enumerate(slices)}
+    target_name = target_slices(ROOT, section)[identity["target_setting"]]
+    phase_states = {"initial": initial, "final": state}
+    audit_endpoint = None
+    if not overrun:
+        audit_endpoint = {
+            "evaluated_state_sha256": state,
+            "target_audit_nll": fixture_audit_entry(
+                directory,
+                run_key,
+                target_name,
+                phase_states,
+                {"initial": target_initial, "final": target_initial + target_delta},
+            ),
+            "protected_audit_nll": {
+                name: fixture_audit_entry(
+                    directory,
+                    run_key,
+                    name,
+                    phase_states,
+                    {
+                        "initial": protected_initial[name],
+                        "final": protected_initial[name] + protected_delta - 0.01 * i,
+                    },
+                )
+                for i, name in enumerate(slices)
+            },
+        }
     manifest = {
         "schema_version": 1,
         "preregistration_sha256": canonical_digest(section),
@@ -523,20 +743,7 @@ def build_fixture_run(
             "final_state_sha256": state,
             "final_optimizer_step": step,
         },
-        "audit_endpoint": {
-            "evaluated_state_sha256": state,
-            "target_audit_nll": {
-                "initial": target_initial,
-                "final": target_initial + target_delta,
-            },
-            "protected_audit_nll": {
-                name: {
-                    "initial": protected_initial[name],
-                    "final": protected_initial[name] + protected_delta - 0.01 * i,
-                }
-                for i, name in enumerate(slices)
-            },
-        },
+        "audit_endpoint": audit_endpoint,
     }
     manifest_name = f"{run_key}-manifest.json"
     manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
@@ -545,10 +752,10 @@ def build_fixture_run(
     row = {
         **identity,
         "status": "failed" if overrun else "completed",
-        "target_delta_nll": (
+        "target_delta_nll": None if overrun else (
             endpoint["target_audit_nll"]["final"] - endpoint["target_audit_nll"]["initial"]
         ),
-        "protected_delta_nll": max(
+        "protected_delta_nll": None if overrun else max(
             v["final"] - v["initial"] for v in endpoint["protected_audit_nll"].values()
         ),
         "run_manifest_path": manifest_name,
@@ -693,6 +900,93 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
 
         mutate("response_tokens_outside_window", tokens_outside)
 
+        target_name = target_slices(ROOT, section)[identity["target_setting"]]
+        protected_name = slices_by_setting[identity["target_setting"]][1]
+
+        def entry_for(m: dict, name: str) -> dict:
+            endpoint = m["audit_endpoint"]
+            if name == target_name:
+                return endpoint["target_audit_nll"]
+            return endpoint["protected_audit_nll"][name]
+
+        def edit_records(m: dict, name: str, phase: str, change) -> list[dict]:
+            binding = entry_for(m, name)["loss_records"][phase]
+            records = load_ledger(directory / binding["path"], binding["sha256"])
+            change(records)
+            payload = "".join(json.dumps(x, sort_keys=True) + "\n" for x in records).encode()
+            (directory / binding["path"]).write_bytes(payload)
+            binding["sha256"] = hashlib.sha256(payload).hexdigest()
+            return records
+
+        def row_mean(records: list[dict]) -> float:
+            return math.fsum(x["nll_sum"] / x["response_tokens"] for x in records) / len(records)
+
+        def tampered_records(r, m, l):
+            binding = entry_for(m, target_name)["loss_records"]["final"]
+            path = directory / binding["path"]
+            path.write_bytes(path.read_bytes().replace(b'"nll_sum": ', b'"nll_sum": 1'))
+
+        mutate("audit_record_bytes_changed", tampered_records)
+
+        def declared_not_reproduced(r, m, l):
+            entry_for(m, target_name)["final"] += 0.01
+            r["target_delta_nll"] += 0.01
+
+        mutate("declared_audit_nll_not_reproduced", declared_not_reproduced)
+
+        def wrong_state(r, m, l):
+            def change(records):
+                records[0]["evaluated_state_sha256"] = m["initial_state_sha256"]
+            edit_records(m, protected_name, "final", change)
+
+        mutate("audit_record_on_non_final_state", wrong_state)
+
+        def dropped_example(r, m, l):
+            entry = entry_for(m, protected_name)
+            for phase in ("initial", "final"):
+                records = edit_records(m, protected_name, phase, lambda x: x.pop(3))
+                entry[phase] = row_mean(records)
+
+        mutate("audit_example_dropped_from_partition", dropped_example)
+
+        def duplicated_example(r, m, l):
+            def change(records):
+                records[1]["example_id"] = records[0]["example_id"]
+            for phase in ("initial", "final"):
+                edit_records(m, protected_name, phase, change)
+
+        mutate("duplicate_audit_example", duplicated_example)
+
+        def token_weighted(r, m, l):
+            entry = entry_for(m, target_name)
+            for phase in ("initial", "final"):
+                binding = entry["loss_records"][phase]
+                records = load_ledger(directory / binding["path"], binding["sha256"])
+                entry[phase] = math.fsum(x["nll_sum"] for x in records) / sum(
+                    x["response_tokens"] for x in records
+                )
+            r["target_delta_nll"] = entry["final"] - entry["initial"]
+
+        mutate("token_weighted_instead_of_row_uniform_mean", token_weighted)
+
+        _, _, failed_row = build_fixture_run(
+            directory,
+            section,
+            slices_by_setting,
+            {**identity, "protected_tolerance": 0.0},
+            -0.2,
+            0.03,
+            overrun=True,
+        )
+        failed_manifest, _ = load(failed_row)
+        failed_manifest["audit_endpoint"] = load(base_row)[0]["audit_endpoint"]
+        try:
+            validate_run(failed_manifest, directory, failed_row, section, slices_by_setting)
+        except LedgerError:
+            mutations["protocol_failure_opens_sealed_audit"] = "rejected"
+        else:
+            raise LedgerError("a protocol-failure run opened its sealed audit")
+
         pairing_failure = dict(closures["maximum_rounds"][1])
         pairing_failure["initial_state_sha256"] = fake_hash("other-initial")
         try:
@@ -701,6 +995,18 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
             mutations["unpaired_initial_state"] = "rejected"
         else:
             raise LedgerError("unpaired initial state was accepted")
+        for label, field, value in (
+            ("unpaired_audit_partition", "audit_partitions", fake_hash("other-partition")),
+            ("unpaired_initial_audit_nll", "initial_audit_nll", 9.0),
+        ):
+            altered = dict(closures["maximum_rounds"][1])
+            altered[field] = {key: value for key in altered[field]}
+            try:
+                check_pairing([closures["reserve_exhausted"], (base_row, altered)])
+            except LedgerError:
+                mutations[label] = "rejected"
+            else:
+                raise LedgerError(f"{label} was accepted")
     return {
         "schema_version": 1,
         "audit_type": "sft_train_ledger_endpoint_closure",
