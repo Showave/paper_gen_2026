@@ -84,7 +84,7 @@
         "Policy and nuisance tensor hashes are frozen before each audit",
         "Gate 0 reproduces target gradient, mixture normalization, weight bound, and implemented-weight bias identities",
         "rl_gate0_fault_injections.py detects base-versus-decoder scoring, focal-nuisance fitting, and consumed-trajectory reuse by exact enumeration, reproduces frozen-h, independent-prior-fit, and fresh-draw positive controls, and silences each detector under its null-fault control",
-        "The five finite-law fault injections remain blocking until they are replayed through a raw trajectory reconstruction validator before Phase A"
+        "reconstruct_rl_trajectories.py replays omitted-prompt-ratio, weight-clipping, base-versus-decoder, focal-nuisance, and consumed-trajectory-reuse faults through raw trajectory reconstruction on the golden four-cell law; each must be rejected and each null control must pass"
       ],
       "costs": [
         "cpu_seconds",
@@ -108,7 +108,7 @@
         "Every theorem-facing trajectory is generated after iteration choices freeze and has use_count one",
         "Every theorem-facing draw reaches a scored outcome; an infrastructure-failed replication is retained but cannot enter a success-conditioned estimator claim",
         "Each successful current, stale, R1, and R2 row declares the exact projected-term semantics and every attempted row retains allocated accelerator-seconds",
-        "Projected terms are intermediate only; real execution remains blocked until U, h, w, A, and B are reconstructed from raw hash-bound trajectory fields",
+        "train/trajectory_ledger.jsonl must equal the row-for-row reconstruction of U, h, w, A, B, and U*s from train/raw_trajectory_header.json and train/raw_trajectory_ledger.jsonl by reconstruct_rl_trajectories.py, which fails closed while the frozen policy tensor hashes are null",
         "The numerical mixture-weight bound and source-specific ESS are checked",
         "The exploratory alpha-allocation coupling is logged as a design restriction rather than an unbiasedness requirement",
         "Generated-token, verifier-call, and added-scoring counters retain aborted candidates"

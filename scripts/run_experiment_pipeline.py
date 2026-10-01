@@ -42,6 +42,11 @@ from validate_eval_simulation_design import (
 )
 from rl_gate0_fault_injections import run_all as run_rl_gate0_fault_injections
 from aggregate_sft_factorial import aggregate as aggregate_sft_factorial
+from reconstruct_rl_trajectories import (
+    ReconstructionError as RLReconstructionError,
+    self_test as run_rl_raw_reconstruction_self_test,
+    verify_work_dir as verify_rl_raw_reconstruction,
+)
 from validate_overlap_projection_contract import (
     ProjectionContractError,
     validate_contract as validate_overlap_projection_contract,
@@ -575,6 +580,21 @@ def validate_preregistration_section(
                 "RL Gate 0 fault injections failed: "
                 + ", ".join(gate0["failed_checks"])
             )
+        require_bound_files(
+            section.get("raw_reconstruction_contract"),
+            ("validator",),
+            "RL raw trajectory reconstruction",
+            repo,
+        )
+        try:
+            reconstruction = run_rl_raw_reconstruction_self_test()
+        except RLReconstructionError as exc:
+            fail(f"RL raw trajectory reconstruction self-test failed: {exc}")
+        if (
+            reconstruction["status"] != "pass"
+            or reconstruction["empirical_evidence"] is not False
+        ):
+            fail("RL raw trajectory reconstruction self-test did not pass")
     else:
         require_bound_files(
             section.get("sequential_bundle_contract"),
@@ -1674,8 +1694,13 @@ def validate_real_stage_semantics(
                     0,
                 ) != stale:
                     fail("RL confirmation candidate allocation is incomplete")
+        try:
+            raw_validation = verify_rl_raw_reconstruction(work_dir, section, rows)
+        except (RLReconstructionError, KeyError, TypeError, ValueError) as exc:
+            fail(f"RL trajectory ledger does not reproduce from raw fields: {exc}")
         return {
             **content_validation,
+            **raw_validation,
             "attempts": len(rows),
             "infrastructure_failures": failures,
             "trajectory_ids_disjoint": True,

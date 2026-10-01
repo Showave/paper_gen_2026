@@ -305,10 +305,41 @@ and 2,000 bootstrap draws. NumPy 2.5.3 PCG64 generates exact multinomial
 weights in chunks of 32; projected means and squared norms are sufficient, so
 the implementation never materializes resampled trajectory tensors. The
 self-test executes this full selection-law shape in addition to the
-hand-computed fixture. The projected terms remain self-declared: raw
-probability/outcome reconstruction is still an unfrozen blocker. Any
-infrastructure failure disables estimator-claim eligibility; it cannot yield a
-success-conditioned MSE.
+hand-computed fixture. Any infrastructure failure disables estimator-claim
+eligibility; it cannot yield a success-conditioned MSE.
+
+The projected terms are no longer trusted as declared:
+
+```bash
+make rl-reconstruction-audit
+```
+
+`scripts/reconstruct_rl_trajectories.py` rebuilds every projected row from
+`train/raw_trajectory_header.json` and `train/raw_trajectory_ledger.jsonl`.
+The header carries the frozen policy pair, decoder temperature, lambda,
+support floor, nuisance model, freeze record, normalized select/confirm prompt
+laws, and nuisance training prompts. Rows carry prompt IDs, generator hash,
+scoring policies and temperature, both sequence log-probabilities, reward,
+response tokens, termination, nuisance predictions, prior use count, and the
+projected score. The validator recomputes `w=P/M` in log space from header
+prompt masses and both log-probabilities, then `U`, `h`, and the `A`, `B`, or
+`U*s` term. It requires zero prior uses, the frozen generator and scorer pair,
+the frozen nuisance model, training prompts disjoint from audited prompts, one
+baseline per prompt, `q>=epsilon*d`, and consistent truncation. In a real
+train stage, the runner requires `train/trajectory_ledger.jsonl` to equal the
+reconstruction row for row. That check currently fails closed because the
+policy tensor hashes are null.
+
+The self-test builds a golden raw ledger on the exact four-cell Gate 0 law.
+By enumeration, the alpha=1/2 cell, the alpha=1 cell, and the reference rows
+are unbiased to 1e-12, and the reconstructed weights normalize under `M`.
+Five faults are replayed: omitted prompt ratio, weight clipping below the
+largest weight, base-versus-decoder scoring, focal nuisance fitting, and
+consumed-trajectory reuse. Each is rejected and each null control passes. The
+reconstructed base-scoring bias equals the Gate 0 module's exact value. A
+producer that records the frozen temperature while scoring with other logits
+cannot be detected from the ledger; that remains the job of the sampler-scorer
+conformance test.
 
 The Gate 0 fault injections run by exact enumeration:
 
@@ -322,9 +353,8 @@ recomputation on the four-cell Gate 0 law. Each fault must be detected, and
 the base-scoring bias must equal the common implemented-weight identity. The
 frozen-h, independent-prior-fit, and fresh-draw positive controls must be
 exact, and each detector must stay silent under its null-fault control. The
-runner hash-checks and executes it on every plan load. It is a software check;
-replaying the same faults through a raw trajectory reconstruction validator
-remains a blocker.
+runner hash-checks and executes it, together with the raw reconstruction
+self-test above, on every plan load. Both are software checks.
 
 The evaluation simulation layout is executable as a design audit:
 

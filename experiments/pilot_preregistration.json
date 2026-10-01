@@ -288,13 +288,13 @@
       "validator_dependencies": [],
       "blocking_gaps": [
         "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
-        "the estimator aggregator consumes self-declared projected terms rather than reconstructing them from probabilities, rewards, costs, nuisance predictions, and projected scores",
-        "the five finite-law fault injections are not yet replayed against a raw language-model trajectory reconstruction validator"
+        "the raw trajectory reconstruction validator is executed by the runner but fails closed until the current and behavior policy tensor hashes, decoder specification, and verifier revision are frozen",
+        "the cost ledger is not yet reconstructed from raw generated-token, verifier-call, and added-score counts"
       ],
       "required_before_freezing": [
-        "reviewed overlap inventories and a segment-pair large-artifact engine plus a hash-frozen raw trajectory reconstruction and cost-ledger validator shared by golden and real execution classes",
-        "selection manifest binding and raw-field reconstruction of the selected-versus-on-policy confirmation contrast",
-        "ratio, clipping, decoder, focal-nuisance, and reuse fault injections replayed through the raw trajectory reconstruction validator"
+        "reviewed overlap inventories and a segment-pair large-artifact engine",
+        "frozen policy-pair, decoder, and verifier records so raw reconstruction can run on a real ledger",
+        "raw reconstruction of the K_gen, K_ver, and K_score cost ledger shared by golden and real execution classes"
       ]
     },
     "development_model_key": "qwen25-math-1p5b",
@@ -515,6 +515,36 @@
       "detection_threshold": 1e-06,
       "null_fault_controls": "temperature one, frozen focal fit, and zero step size must silence the respective detectors",
       "interpretation": "Exact enumeration on the generated four-cell law; software evidence only."
+    },
+    "raw_reconstruction_contract": {
+      "validator_path": "scripts/reconstruct_rl_trajectories.py",
+      "validator_sha256": "e1c200f143d2e0ca3fa9955f69aa484ff09ea4831e45220471ff00ee9b85adfc",
+      "required_status": "pass",
+      "current_status": "golden_fixture_only",
+      "raw_artifacts": [
+        "train/raw_trajectory_header.json",
+        "train/raw_trajectory_ledger.jsonl"
+      ],
+      "reconstructed_terms": "log P=log d(x)+log pi(y|x); log G=log q(x)+log mu(y|x); w=P/(alpha P+(1-alpha)G); U=R-lambda C; h=h^R-lambda h^C; current A=(h-b)s+alpha*w*(U-h)s, stale B=w*(U-h)s, reference U*s",
+      "raw_field_detectors": [
+        "both sequence log-probabilities scored by the frozen current and behavior tensors under the frozen decoder temperature",
+        "generator equals the frozen current tensor for current rows and the frozen behavior tensor for stale rows",
+        "zero prior uses and the frozen iteration freeze record",
+        "nuisance predictions from the frozen nuisance model whose training prompts are disjoint from every audited prompt",
+        "one prompt-only baseline per prompt",
+        "header prompt masses normalized per law with the proposal support floor q>=epsilon d",
+        "termination consistent with the response-token count"
+      ],
+      "replayed_faults": [
+        "omitted prompt ratio",
+        "weight clipping below 1/alpha",
+        "base-versus-decoder scoring",
+        "focal nuisance fitting",
+        "consumed-trajectory reuse with and without a recomputed ratio"
+      ],
+      "term_relative_tolerance": 1e-09,
+      "real_execution_rule": "The train stage passes only if train/trajectory_ledger.jsonl equals the reconstruction row for row; reconstruction fails closed while the frozen current or behavior tensor hash is null.",
+      "interpretation": "Golden four-cell Gate 0 law with exact enumeration; software evidence only. A producer that records the frozen temperature while scoring with other logits is not detectable from the ledger and remains the job of the sampler-scorer conformance test."
     }
   },
   "eval": {
