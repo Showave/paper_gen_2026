@@ -302,9 +302,11 @@ python3 scripts/aggregate_rl_estimator.py \
 
 Current candidate rows store projected
 `A=(h-b)s+alpha*w*(U-h)s`, stale rows store `B=w*(U-h)s`, and reference rows
-store `target=U*s`. Every attempted row retains allocated accelerator-seconds.
+store `target=U*s`. Every attempted row retains allocated accelerator-seconds,
+`generated_tokens`, `verifier_calls`, and `added_score_tokens`.
 The aggregator reconstructs the stratified estimate, cross-reference MSE,
-mean complete-replication cost, selection argmin, and untouched-confirmation
+mean complete-replication cost, candidate/reference/aborted `K_gen`, `K_ver`,
+and `K_score` cost buckets, selection argmin, and untouched-confirmation
 results from the ledger hash. It retains negative raw cross-MSE, uses the
 nonnegative MSE--cost transform only for selection, and requires the selected
 plus alpha=1 confirmation cells. It now jointly resamples paired candidate
@@ -318,27 +320,39 @@ weights in chunks of 32; projected means and squared norms are sufficient, so
 the implementation never materializes resampled trajectory tensors. The
 self-test executes this full selection-law shape in addition to the
 hand-computed fixture. Any infrastructure failure disables estimator-claim
-eligibility; it cannot yield a success-conditioned MSE.
+eligibility while still requiring the summary to reproduce the incurred
+`K_gen`, `K_ver`, `K_score`, and accelerator-seconds cost ledger; it cannot
+yield a success-conditioned MSE.
 
-The projected terms are no longer trusted as declared:
+The projected terms and cost counters are no longer trusted as declared:
 
 ```bash
 make rl-reconstruction-audit
 ```
 
-`scripts/reconstruct_rl_trajectories.py` rebuilds every projected row from
+`scripts/reconstruct_rl_trajectories.py` rebuilds every projected row and the
+complete `K_gen`/`K_ver`/`K_score` cost ledger from
 `train/raw_trajectory_header.json` and `train/raw_trajectory_ledger.jsonl`.
 The header carries the frozen policy pair, decoder temperature, lambda,
 support floor, nuisance model, freeze record, normalized select/confirm prompt
-laws, and nuisance training prompts. Rows carry prompt IDs, generator hash,
+laws, nuisance training prompts, and the declared cost ledger. Every attempted
+row—including infrastructure-failed/aborted attempts—carries `response_tokens`,
+`verifier_called`, `added_score_passes` (`1` for `alpha<1` mixture candidates
+and `0` for `alpha=1` and reference rows), and `allocated_accelerator_seconds`;
+successful rows also carry prompt IDs, generator hash,
 scoring policies and temperature, both sequence log-probabilities, reward,
-response tokens, termination, nuisance predictions, prior use count, and the
+termination, nuisance predictions, prior use count, and the
 projected score. The validator recomputes `w=P/M` in log space from header
 prompt masses and both log-probabilities, then `U`, `h`, and the `A`, `B`, or
-`U*s` term. It requires zero prior uses, the frozen generator and scorer pair,
+`U*s` term, plus per-attempt `generated_tokens`, `verifier_calls`, and
+`added_score_tokens = response_tokens * added_score_passes`. It requires zero
+prior uses, the frozen generator and scorer pair,
 the frozen nuisance model, training prompts disjoint from audited prompts, one
-baseline per prompt, `q>=epsilon*d`, and consistent truncation. In a real
-train stage, the runner requires `train/trajectory_ledger.jsonl` to equal the
+baseline per prompt, `q>=epsilon*d`, consistent truncation, and exact agreement
+with the header's candidate, reference, aborted, per-cell, and total cost
+buckets. In a real
+train stage, the runner requires `train/trajectory_ledger.jsonl` and
+`train/costs.json` to equal the
 reconstruction row for row. That check currently fails closed because the
 policy tensor hashes are null.
 

@@ -10,7 +10,12 @@ trusting the producer:
 * ``w = P / (alpha P + (1 - alpha) G)`` is recomputed in log space;
 * ``U = R - lambda C`` and ``h = h^R - lambda h^C`` use the frozen lambda;
 * current rows give ``A=(h-b)s+alpha*w*(U-h)s``, stale rows ``B=w*(U-h)s``,
-  and reference rows ``U*s``.
+  and reference rows ``U*s``;
+* every attempted row, including infrastructure-failed/aborted attempts,
+  carries raw ``response_tokens``, ``verifier_called``, and
+  ``added_score_passes``, from which per-attempt and stage-level
+  ``K_gen``, ``K_ver``, ``K_score``, and ``allocated_accelerator_seconds``
+  counters are reconstructed so no cost disappears when an attempt fails.
 
 Raw rows must also carry the frozen decoder temperature for both scored
 policies, the frozen current or behavior tensor hash as generator, zero prior
@@ -54,6 +59,9 @@ COMMON_FIELDS = (
     "source_component",
     "infrastructure_failure",
     "allocated_accelerator_seconds",
+    "response_tokens",
+    "verifier_called",
+    "added_score_passes",
 )
 CANDIDATE_FIELDS = ("alpha", "allocation_id", "replication_id")
 TRAJECTORY_FIELDS = (
@@ -64,7 +72,6 @@ TRAJECTORY_FIELDS = (
     "current_sequence_log_prob",
     "behavior_sequence_log_prob",
     "reward",
-    "response_tokens",
     "termination",
     "nuisance",
     "prior_use_count",
@@ -246,6 +253,116 @@ def mixture_weight(log_p: float, log_g: float, alpha: float) -> float:
     return 1.0 / (alpha + (1.0 - alpha) * math.exp(log_g - log_p))
 
 
+def empty_cost_bucket() -> dict[str, Any]:
+    return {
+        "attempts": 0,
+        "aborted_attempts": 0,
+        "k_gen": 0,
+        "k_ver": 0,
+        "k_score": 0,
+        "accelerator_seconds": 0.0,
+    }
+
+
+def add_cost_bucket(
+    bucket: dict[str, Any],
+    *,
+    failed: bool,
+    k_gen: int,
+    k_ver: int,
+    k_score: int,
+    acc_sec: float,
+) -> None:
+    bucket["attempts"] += 1
+    if failed:
+        bucket["aborted_attempts"] += 1
+    bucket["k_gen"] += k_gen
+    bucket["k_ver"] += k_ver
+    bucket["k_score"] += k_score
+    bucket["accelerator_seconds"] = math.fsum([bucket["accelerator_seconds"], acc_sec])
+
+
+def reconstruct_cost_ledger(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Reconstruct K_gen, K_ver, K_score, and accelerator-seconds across all attempts."""
+    candidate = empty_cost_bucket()
+    reference = empty_cost_bucket()
+    aborted = empty_cost_bucket()
+    total = empty_cost_bucket()
+    by_cell: dict[str, dict[str, Any]] = {}
+    for row in sorted(rows, key=lambda item: item["attempt_id"]):
+        failed = bool(row["infrastructure_failure"])
+        k_gen = int(row["generated_tokens"])
+        k_ver = int(row["verifier_calls"])
+        k_score = int(row["added_score_tokens"])
+        acc = float(row["allocated_accelerator_seconds"])
+        add_cost_bucket(
+            total, failed=failed, k_gen=k_gen, k_ver=k_ver, k_score=k_score, acc_sec=acc
+        )
+        if failed:
+            add_cost_bucket(
+                aborted, failed=True, k_gen=k_gen, k_ver=k_ver, k_score=k_score, acc_sec=acc
+            )
+        if row["estimator_role"] == "candidate":
+            add_cost_bucket(
+                candidate, failed=failed, k_gen=k_gen, k_ver=k_ver, k_score=k_score, acc_sec=acc
+            )
+            cell_key = f"{row['target_law']}|{float(row['alpha'])}|{row['allocation_id']}"
+            cell_bucket = by_cell.setdefault(cell_key, empty_cost_bucket())
+            add_cost_bucket(
+                cell_bucket, failed=failed, k_gen=k_gen, k_ver=k_ver, k_score=k_score, acc_sec=acc
+            )
+        else:
+            add_cost_bucket(
+                reference, failed=failed, k_gen=k_gen, k_ver=k_ver, k_score=k_score, acc_sec=acc
+            )
+    return {
+        "candidate": candidate,
+        "reference": reference,
+        "aborted": aborted,
+        "total": total,
+        "by_cell": dict(sorted(by_cell.items())),
+    }
+
+
+def compare_cost_bucket(observed: Any, expected: dict[str, Any], label: str) -> None:
+    require(
+        isinstance(observed, dict) and set(observed) == set(expected),
+        f"{label} cost bucket has unexpected keys",
+    )
+    for key in ("attempts", "aborted_attempts", "k_gen", "k_ver", "k_score"):
+        require(
+            isinstance(observed[key], int)
+            and not isinstance(observed[key], bool)
+            and observed[key] == expected[key],
+            f"{label} {key} does not reproduce from raw attempts",
+        )
+    require(
+        is_number(observed["accelerator_seconds"])
+        and abs(float(observed["accelerator_seconds"]) - expected["accelerator_seconds"])
+        <= MASS_TOLERANCE * max(1.0, expected["accelerator_seconds"]),
+        f"{label} accelerator_seconds does not reproduce from raw attempts",
+    )
+
+
+def compare_cost_ledger(observed: Any, expected: dict[str, Any]) -> None:
+    require(
+        isinstance(observed, dict)
+        and set(observed) == {"candidate", "reference", "aborted", "total", "by_cell"},
+        "raw trajectory header must declare a complete cost_ledger",
+    )
+    for section_name in ("candidate", "reference", "aborted", "total"):
+        compare_cost_bucket(
+            observed[section_name], expected[section_name], f"cost_ledger.{section_name}"
+        )
+    by_cell = observed["by_cell"]
+    require(
+        isinstance(by_cell, dict) and set(by_cell) == set(expected["by_cell"]),
+        "cost_ledger.by_cell keys do not reproduce",
+    )
+    for cell_key, expected_bucket in expected["by_cell"].items():
+        compare_cost_bucket(by_cell[cell_key], expected_bucket, f"cost_ledger.by_cell[{cell_key}]")
+
+
 def reconstruct(
     header: Any, raw_rows: list[dict[str, Any]], frozen: dict[str, Any]
 ) -> dict[str, Any]:
@@ -255,6 +372,7 @@ def reconstruct(
     low, high = checked["reward_range"]
     dimension = declared["projection_dimension"]
     lam = declared["lambda"]
+    maximum = declared["maximum_response_tokens"]
     cells = {(float(alpha), allocation) for alpha, allocation in frozen["cells"]}
     attempt_ids: set[str] = set()
     trajectory_ids: set[str] = set()
@@ -299,18 +417,67 @@ def reconstruct(
                 not (alpha == 1 and source == "stale"),
                 f"{label} places a stale trajectory in the alpha=1 cell",
             )
+            expected_added_passes = 0 if float(alpha) == 1.0 else 1
         else:
             require(source == "current", f"{label} reference rows must be current-policy draws")
-        row = {key: raw[key] for key in COMMON_FIELDS}
+            expected_added_passes = 0
+
+        tokens = raw.get("response_tokens")
+        verifier_called = raw.get("verifier_called")
+        added_score_passes = raw.get("added_score_passes")
+        require(
+            isinstance(tokens, int)
+            and not isinstance(tokens, bool)
+            and isinstance(verifier_called, bool)
+            and isinstance(added_score_passes, int)
+            and not isinstance(added_score_passes, bool),
+            f"{label} needs integer response_tokens/added_score_passes and boolean verifier_called",
+        )
+        row = {
+            "attempt_id": attempt_id,
+            "target_law": law,
+            "estimator_role": role,
+            "source_component": source,
+            "infrastructure_failure": failed,
+            "allocated_accelerator_seconds": float(cost),
+            "generated_tokens": tokens,
+            "verifier_calls": int(verifier_called),
+            "added_score_tokens": tokens * added_score_passes,
+        }
         if role == "candidate":
             row.update({key: raw[key] for key in CANDIDATE_FIELDS})
         if failed:
             require(set(raw) == expected_keys, f"{label} failed attempt carries trajectory fields")
+            require(
+                0 <= tokens <= maximum,
+                f"{label} failed attempt response-token count lies outside [0, maximum]",
+            )
+            require(
+                0 <= added_score_passes <= expected_added_passes,
+                f"{label} failed attempt has invalid added_score_passes",
+            )
+            if tokens == 0:
+                require(
+                    not verifier_called and added_score_passes == 0,
+                    f"{label} zero-token failed attempt cannot call verifier or score tokens",
+                )
             rows.append(row)
             continue
         require(
             set(raw) == expected_keys | set(TRAJECTORY_FIELDS),
             f"{label} has an unexpected raw trajectory schema",
+        )
+        require(
+            1 <= tokens <= maximum,
+            f"{label} response-token count lies outside [1, maximum]",
+        )
+        require(
+            verifier_called is True,
+            f"{label} successful trajectory must record verifier_called=True",
+        )
+        require(
+            added_score_passes == expected_added_passes,
+            f"{label} added_score_passes does not match its cell or role",
         )
         trajectory_id = raw["trajectory_id"]
         require(
@@ -357,12 +524,6 @@ def reconstruct(
         )
         reward = raw["reward"]
         require(is_number(reward) and low <= reward <= high, f"{label} reward lies outside its range")
-        tokens = raw["response_tokens"]
-        maximum = declared["maximum_response_tokens"]
-        require(
-            isinstance(tokens, int) and not isinstance(tokens, bool) and 1 <= tokens <= maximum,
-            f"{label} response-token count lies outside [1, maximum]",
-        )
         require(
             raw["termination"] == "eos"
             or (raw["termination"] == "truncated" and tokens == maximum),
@@ -410,11 +571,14 @@ def reconstruct(
         )
         rows.append(row)
     require(max_alpha_weight <= 1.0 + MASS_TOLERANCE, "a mixture weight exceeds 1/alpha")
+    cost_ledger = reconstruct_cost_ledger(rows)
+    compare_cost_ledger(header.get("cost_ledger"), cost_ledger)
     return {
         "rows": rows,
         "attempts": len(rows),
         "successful_trajectories": len(trajectory_ids),
         "maximum_alpha_times_weight": max_alpha_weight,
+        "cost_ledger": cost_ledger,
     }
 
 
@@ -487,6 +651,7 @@ def verify_work_dir(
         "raw_header_sha256": hashlib.sha256(header_path.read_bytes()).hexdigest(),
         "raw_ledger_sha256": hashlib.sha256(ledger_path.read_bytes()).hexdigest(),
         "raw_reconstructed_attempts": result["attempts"],
+        "cost_ledger": result["cost_ledger"],
     }
 
 
@@ -516,10 +681,66 @@ def golden_frozen(temperature: float = gate0.DECODER_TEMPERATURE) -> dict[str, A
     }
 
 
+def golden_cost_ledger() -> dict[str, Any]:
+    return {
+        "candidate": {
+            "attempts": 12,
+            "aborted_attempts": 0,
+            "k_gen": 24,
+            "k_ver": 12,
+            "k_score": 16,
+            "accelerator_seconds": 12.0,
+        },
+        "reference": {
+            "attempts": 4,
+            "aborted_attempts": 0,
+            "k_gen": 8,
+            "k_ver": 4,
+            "k_score": 0,
+            "accelerator_seconds": 4.0,
+        },
+        "aborted": {
+            "attempts": 0,
+            "aborted_attempts": 0,
+            "k_gen": 0,
+            "k_ver": 0,
+            "k_score": 0,
+            "accelerator_seconds": 0.0,
+        },
+        "total": {
+            "attempts": 16,
+            "aborted_attempts": 0,
+            "k_gen": 32,
+            "k_ver": 16,
+            "k_score": 16,
+            "accelerator_seconds": 16.0,
+        },
+        "by_cell": {
+            "select|0.5|half": {
+                "attempts": 8,
+                "aborted_attempts": 0,
+                "k_gen": 16,
+                "k_ver": 8,
+                "k_score": 16,
+                "accelerator_seconds": 8.0,
+            },
+            "select|1.0|on-policy": {
+                "attempts": 4,
+                "aborted_attempts": 0,
+                "k_gen": 8,
+                "k_ver": 4,
+                "k_score": 0,
+                "accelerator_seconds": 4.0,
+            },
+        },
+    }
+
+
 def golden_header(
     frozen: dict[str, Any],
     proposal: tuple[float, float] = gate0.STALE_PROMPT_MASS,
     training_ids: tuple[str, ...] = ("fit-0", "fit-1"),
+    cost_ledger: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     prompts = {
         f"p{x}": {"target_mass": gate0.PROMPT_MASS[x], "proposal_mass": proposal[x]}
@@ -540,6 +761,7 @@ def golden_header(
             "confirm": {"c0": {"target_mass": 1.0, "proposal_mass": 1.0}},
         },
         "nuisance_training_prompt_ids": list(training_ids),
+        "cost_ledger": copy.deepcopy(cost_ledger) if cost_ledger is not None else golden_cost_ledger(),
     }
 
 
@@ -566,6 +788,7 @@ def golden_raw_row(
 ) -> dict[str, Any]:
     tokens = 1 + y + x
     h = gate0.frozen_h(x, y)
+    added_passes = 1 if (role == "candidate" and cell is not None and cell[0] < 1.0) else 0
     row: dict[str, Any] = {
         "attempt_id": attempt,
         "target_law": "select",
@@ -573,6 +796,9 @@ def golden_raw_row(
         "source_component": source,
         "infrastructure_failure": False,
         "allocated_accelerator_seconds": 1.0,
+        "response_tokens": tokens,
+        "verifier_called": True,
+        "added_score_passes": added_passes,
         "trajectory_id": f"trajectory-{attempt}",
         "prompt_id": f"p{x}",
         "generating_policy_sha256": GOLDEN_CURRENT if source == "current" else GOLDEN_BEHAVIOR,
@@ -584,7 +810,6 @@ def golden_raw_row(
         "current_sequence_log_prob": log_mass(current_success, x, y),
         "behavior_sequence_log_prob": log_mass(gate0.STALE_SUCCESS, x, y),
         "reward": float(y if x == 0 else 1 - y),
-        "response_tokens": tokens,
         "termination": "truncated" if tokens == frozen["maximum_response_tokens"] else "eos",
         "nuisance": {
             "model_sha256": GOLDEN_NUISANCE,
@@ -656,18 +881,19 @@ def independent_projected_ledger(
 
     for x, y in gate0.CELLS:
         z = f"{x}{y}"
+        tokens = 1 + y + x
         u = gate0.utility(x, y)
         h = gate0.frozen_h(x, y)
         b = gate0.prompt_baseline(0.0, x)
         s = gate0.score(0.0, x, y)
         w = weight(x, y)
         terms = (
-            (f"half-current-{z}", "candidate", "current", HALF_CELL, (h - b) * s + gate0.ALPHA * w * (u - h) * s, "A=(h-b)s+alpha*w*(U-h)s"),
-            (f"half-stale-{z}", "candidate", "stale", HALF_CELL, w * (u - h) * s, "B=w*(U-h)s"),
-            (f"on-policy-{z}", "candidate", "current", ON_POLICY_CELL, (u - b) * s, "A=(h-b)s+alpha*w*(U-h)s"),
-            (f"reference-{z}", "r1", "current", None, u * s, "target=U*s"),
+            (f"half-current-{z}", "candidate", "current", HALF_CELL, (h - b) * s + gate0.ALPHA * w * (u - h) * s, "A=(h-b)s+alpha*w*(U-h)s", tokens),
+            (f"half-stale-{z}", "candidate", "stale", HALF_CELL, w * (u - h) * s, "B=w*(U-h)s", tokens),
+            (f"on-policy-{z}", "candidate", "current", ON_POLICY_CELL, (u - b) * s, "A=(h-b)s+alpha*w*(U-h)s", 0),
+            (f"reference-{z}", "r1", "current", None, u * s, "target=U*s", 0),
         )
-        for attempt, role, source, cell, value, semantics in terms:
+        for attempt, role, source, cell, value, semantics, added_score_tokens in terms:
             row = {
                 "attempt_id": attempt,
                 "target_law": "select",
@@ -675,6 +901,9 @@ def independent_projected_ledger(
                 "source_component": source,
                 "infrastructure_failure": False,
                 "allocated_accelerator_seconds": 1.0,
+                "generated_tokens": tokens,
+                "verifier_calls": 1,
+                "added_score_tokens": added_score_tokens,
                 "trajectory_id": f"trajectory-{attempt}",
                 "use_count": 1,
                 "scored_outcome": True,
@@ -725,6 +954,8 @@ def self_test() -> dict[str, Any]:
         "reference_unbiased": abs(expectations["reference"] - target) <= IDENTITY_TOLERANCE,
         "mixture_weight_normalizes": abs(weight_mass - 1.0) <= IDENTITY_TOLERANCE,
         "weight_bound_holds": golden["maximum_alpha_times_weight"] <= 1.0 + MASS_TOLERANCE,
+        "cost_ledger_reconstructs": golden["cost_ledger"] == golden_cost_ledger(),
+        "aborted_attempt_costs_retained": aborted_attempt_fixture_passes(frozen),
         "independent_producer_matches": rejected(
             lambda: compare_ledgers(golden["rows"], independent_projected_ledger())
         )
@@ -855,6 +1086,24 @@ def self_test() -> dict[str, Any]:
         "unfrozen_lambda": rejected(
             lambda: reconstruct(header, golden_raw_rows(frozen), {**frozen, "lambda": 0.0})
         ),
+        "aborted_attempt_cost_dropped": rejected(
+            lambda: reconstruct(header, golden_raw_rows(frozen) + [aborted_raw_row()], frozen)
+        ),
+        "failed_attempt_carries_scored_fields": rejected(
+            lambda: reconstruct(*failed_with_scored_fields(frozen), frozen)
+        ),
+        "mixture_row_omits_added_score_pass": rejected(
+            lambda: reconstruct(*miscount_added_score_passes(frozen, "half-current-00", 0), frozen)
+        ),
+        "on_policy_row_claims_added_score_pass": rejected(
+            lambda: reconstruct(*miscount_added_score_passes(frozen, "on-policy-00", 1), frozen)
+        ),
+        "header_cost_ledger_tampered": rejected(
+            lambda: reconstruct(tamper_header_cost(header), golden_raw_rows(frozen), frozen)
+        ),
+        "declared_cost_counter_tampered": rejected(
+            lambda: compare_ledgers(golden["rows"], tamper_declared_cost(golden["rows"]))
+        ),
     }
     require(
         all(isinstance(value, str) for value in mutations.values()),
@@ -867,11 +1116,93 @@ def self_test() -> dict[str, Any]:
         "status": "pass",
         "target_gradient": target,
         "golden_expectations": expectations,
+        "golden_cost_ledger": golden["cost_ledger"],
         "golden_checks": golden_checks,
         "faults": faults,
         "mutations_rejected": len(mutations),
         "mutations": mutations,
     }
+
+
+def aborted_raw_row() -> dict[str, Any]:
+    return {
+        "attempt_id": "half-stale-aborted-00",
+        "target_law": "select",
+        "estimator_role": "candidate",
+        "source_component": "stale",
+        "infrastructure_failure": True,
+        "allocated_accelerator_seconds": 0.75,
+        "response_tokens": 2,
+        "verifier_called": True,
+        "added_score_passes": 1,
+        "alpha": gate0.ALPHA,
+        "allocation_id": "half",
+        "replication_id": 0,
+    }
+
+
+def aborted_attempt_fixture_passes(frozen: dict[str, Any]) -> bool:
+    rows = golden_raw_rows(frozen) + [aborted_raw_row()]
+    ledger = golden_cost_ledger()
+    for section_name in ("candidate", "aborted", "total"):
+        bucket = ledger[section_name]
+        bucket["attempts"] += 1
+        bucket["aborted_attempts"] += 1
+        bucket["k_gen"] += 2
+        bucket["k_ver"] += 1
+        bucket["k_score"] += 2
+        bucket["accelerator_seconds"] += 0.75
+    cell_bucket = ledger["by_cell"]["select|0.5|half"]
+    cell_bucket["attempts"] += 1
+    cell_bucket["aborted_attempts"] += 1
+    cell_bucket["k_gen"] += 2
+    cell_bucket["k_ver"] += 1
+    cell_bucket["k_score"] += 2
+    cell_bucket["accelerator_seconds"] += 0.75
+    result = reconstruct(golden_header(frozen, cost_ledger=ledger), rows, frozen)
+    return (
+        result["attempts"] == 17
+        and result["successful_trajectories"] == 16
+        and result["cost_ledger"]["aborted"]["k_gen"] == 2
+        and result["cost_ledger"]["aborted"]["k_ver"] == 1
+        and result["cost_ledger"]["aborted"]["k_score"] == 2
+    )
+
+
+def failed_with_scored_fields(frozen: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    rows = golden_raw_rows(frozen)
+    rows[0]["infrastructure_failure"] = True
+    return golden_header(frozen), rows
+
+
+def miscount_added_score_passes(
+    frozen: dict[str, Any], attempt_id: str, new_passes: int
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    rows = golden_raw_rows(frozen)
+    for row in rows:
+        if row["attempt_id"] == attempt_id:
+            delta = (new_passes - row["added_score_passes"]) * row["response_tokens"]
+            row["added_score_passes"] = new_passes
+            break
+    ledger = golden_cost_ledger()
+    ledger["candidate"]["k_score"] += delta
+    ledger["total"]["k_score"] += delta
+    cell_key = "select|0.5|half" if attempt_id.startswith("half") else "select|1.0|on-policy"
+    ledger["by_cell"][cell_key]["k_score"] += delta
+    return golden_header(frozen, cost_ledger=ledger), rows
+
+
+def tamper_header_cost(header: dict[str, Any]) -> dict[str, Any]:
+    changed = copy.deepcopy(header)
+    changed["cost_ledger"]["candidate"]["k_score"] -= 1
+    changed["cost_ledger"]["total"]["k_score"] -= 1
+    return changed
+
+
+def tamper_declared_cost(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    changed = copy.deepcopy(rows)
+    changed[0]["added_score_tokens"] -= 1
+    return changed
 
 
 def omitted_with_equal_prompt_law() -> list[dict[str, Any]]:

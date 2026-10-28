@@ -191,6 +191,13 @@ inference and training engines \cite{marek2026centering}. That mismatch is the
 practical form of our base-versus-decoder fault. We exclude it by requiring
 sampler--scorer conformance rather than correcting it, so score centering is
 a practical variant outside the theorem.
+VESPO reshapes sequence-level importance weights through a variance-constrained
+variational kernel without length normalization \cite{shen2026vespo}, while
+GGPO replaces learner-to-behavior ratios with a log-mean-exp contrast of
+KL-adjusted group rewards \cite{zhang2026ggpo}. Both trade exact target-policy
+gradient unbiasedness for stability under severe staleness; our question is
+instead whether a defensive mixture with newly drawn stale trajectories reduces
+variance while keeping the exact one-step expectation.
 These methods target complementary systems and biased-stability trade-offs.
 
 \section{Formal Setting}
@@ -343,11 +350,14 @@ Projected terms are never trusted as declared. A raw-field validator
 recomputes $w$ in log space from frozen header prompt masses and both
 sequence log-probabilities, then $U$, $h$, and $A$, $B$, or $U_\lambda s$ from
 rewards, lengths, the frozen $\lambda$, nuisance predictions, and projected
-scores. The projected ledger must match row for row. The same validator rejects
-rows whose generator or scorer is not the frozen policy pair under the rollout
+scores. The projected ledger must match row for row. The same validator reconstructs
+$K_{\mathrm{gen}}$, $K_{\mathrm{ver}}$, $K_{\mathrm{score}}$, and allocated
+accelerator-seconds across candidate, reference, and aborted attempts, and
+rejects rows whose generator or scorer is not the frozen policy pair under the rollout
 decoder, any reused trajectory, nuisance predictions from an unfrozen model or
-one trained on audited prompts, and an action-dependent baseline
-(\cref{app:gate0}). It fails closed until the policy tensors are frozen.
+one trained on audited prompts, an omitted or spurious added-scoring pass, or
+an action-dependent baseline (\cref{app:gate0}). It fails closed until the
+policy tensors are frozen.
 Before these partitions are formed, every prompt is tied to a pinned source
 revision, export-byte hash, stable upstream identifier, raw-row hash, and
 versioned normalized-content hash. The downstream partitioner assigns every
@@ -840,16 +850,19 @@ feasible shape of 64 projected coordinates, 250 candidate replications per
 cell, 2,048 trajectories per reference sample, and 2,000 bootstrap draws.
 NumPy~2.5.3 PCG64 emits exact multinomial weights in chunks of 32; projected
 means and squared norms avoid materializing resampled trajectory tensors, and
-the self-test executes the full selection-law shape. Tampered MSE or intervals
+the self-test executes the full selection-law shape. Tampered MSE, intervals, or cost counters
 and incomplete source strata must fail; infrastructure failure must block
-estimator-claim eligibility. The fixture is marked non-empirical and cannot
-populate any result cell. Its input ledger is no longer self-declared:
-\texttt{scripts/reconstruct\_rl\_trajectories.py} rebuilds every row from a raw
+estimator-claim eligibility while still requiring the summary to reproduce the
+incurred candidate, reference, and aborted $K_{\mathrm{gen}},K_{\mathrm{ver}},
+K_{\mathrm{score}}$ and accelerator-seconds cost ledger. The fixture is marked non-empirical and cannot
+populate any result cell. Its input ledger and cost counters are no longer self-declared:
+\texttt{scripts/reconstruct\_rl\_trajectories.py} rebuilds every row and the
+complete $K_{\mathrm{gen}},K_{\mathrm{ver}},K_{\mathrm{score}}$ cost ledger from a raw
 header and raw trajectory ledger, and the runner requires exact agreement in
-the real train stage. The unreviewed field inventory, the null policy-pair,
-decoder, and verifier records, and the absence of a raw reconstruction of the
-$K_{\mathrm{gen}},K_{\mathrm{ver}},K_{\mathrm{score}}$ cost ledger keep the
-artifact-integrity gate closed.
+both \texttt{train/trajectory\_ledger.jsonl} and \texttt{train/costs.json}.
+The unreviewed field inventory, the null policy-pair,
+decoder, and verifier records, and the absence of a hash-bound sampler--scorer
+conformance artifact keep the artifact-integrity gate closed.
 
 \subsection{Exact Gate 0 Fault Injections}
 \label{app:gate0}
@@ -884,9 +897,19 @@ that the listed exclusions are necessary, not merely conservative.
 \paragraph{Replay through raw reconstruction.}
 The same law also defines a golden raw ledger. It has one row per cell and
 source for $\alpha=1/2$, the $\alpha=1$ control, and reference rows. Each row
-logs the prompt, both sequence log-probabilities, reward, length, nuisance
+logs the prompt, both sequence log-probabilities, reward, length, verifier
+call, added cross-policy scoring passes ($1$ for $\alpha<1$ mixture candidates
+and $0$ for $\alpha=1$ and reference rows), nuisance
 predictions, and the score. Reconstructed terms are unbiased for the target
-gradient by enumeration in all three groups to $10^{-12}$. They also match an
+gradient by enumeration in all three groups to $10^{-12}$, and the
+reconstructed cost ledger recovers $K_{\mathrm{gen}}=24$,
+$K_{\mathrm{ver}}=12$, and $K_{\mathrm{score}}=16$ for candidates plus
+$K_{\mathrm{gen}}=8$, $K_{\mathrm{ver}}=4$, and $K_{\mathrm{score}}=0$ for
+reference rows; a separate aborted-attempt fixture verifies that failed draws
+retain their incurred token, verifier, and scoring costs without entering any
+gradient estimate. Thirteen raw-ledger and cost-counter mutations fail,
+including dropping an aborted attempt's cost or miscounting added scoring
+passes. They also match an
 independent producer written directly from the Gate~0 functions. All five
 faults are then replayed through the reconstruction. An omitted prompt ratio
 and clipping at $0.9\max w$ change the producer's projected terms, with

@@ -288,13 +288,13 @@
       "validator_dependencies": [],
       "blocking_gaps": [
         "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
-        "the raw trajectory reconstruction validator is executed by the runner but fails closed until the current and behavior policy tensor hashes, decoder specification, and verifier revision are frozen",
-        "the cost ledger is not yet reconstructed from raw generated-token, verifier-call, and added-score counts"
+        "the raw trajectory and K_gen/K_ver/K_score cost-ledger reconstruction validator is executed by the runner but fails closed until the current and behavior policy tensor hashes, decoder specification, and verifier revision are frozen",
+        "sampler-scorer probability conformance on the frozen model pair is not yet bound to an immutable hardware test artifact"
       ],
       "required_before_freezing": [
         "reviewed overlap inventories and a segment-pair large-artifact engine",
-        "frozen policy-pair, decoder, and verifier records so raw reconstruction can run on a real ledger",
-        "raw reconstruction of the K_gen, K_ver, and K_score cost ledger shared by golden and real execution classes"
+        "frozen policy-pair, decoder, and verifier records so raw trajectory and cost-ledger reconstruction can run on a real ledger",
+        "hash-bound sampler-scorer conformance artifact on the frozen current and stale policy checkpoints"
       ]
     },
     "development_model_key": "qwen25-math-1p5b",
@@ -392,14 +392,14 @@
       "allocation_restriction": "For this exploratory grid only, alpha equals n_current/(n_current+n_stale). This is not required for unbiasedness; confirmation must cross mixture mass with source allocation.",
       "artifact_contract": {
         "aggregator_path": "scripts/aggregate_rl_estimator.py",
-        "aggregator_sha256": "fce892826a2b53359bd0ff756cb67978039330ff4d82e0fe95932e6e8f6df78f",
+        "aggregator_sha256": "9ae002f4619a6b011e83cb4653aee76afa230b8bce0fd318a43bb5b336ea9a36",
         "current_candidate_term": "A=(h-b)s+alpha*w*(U-h)s",
         "stale_candidate_term": "B=w*(U-h)s",
         "reference_term": "target=U*s",
         "candidate_estimate": "mean(A_current)+(1-alpha)*mean(B_stale)",
-        "cost_unit": "allocated accelerator-seconds recorded on every attempted trajectory; candidate-cell cost is the mean complete replication sum and reference cost is retained separately",
-        "failure_rule": "Any infrastructure failure blocks estimator-claim eligibility and confirmatory comparison; no success-conditioned MSE or selected alpha is reported.",
-        "summary_binding": "evaluate/summary.json records the exact train/trajectory_ledger.jsonl SHA-256; point MSE, nonnegative selection risk, cell cost, selection argmin, selected and alpha=1 untouched confirmation cells, and their contrast are recomputed from that ledger.",
+        "cost_unit": "allocated accelerator-seconds plus K_gen, K_ver, and K_score recorded on every attempted trajectory; candidate-cell cost is the mean complete replication sum and reference/aborted costs are retained separately",
+        "failure_rule": "Any infrastructure failure blocks estimator-claim eligibility and confirmatory comparison while retaining the incurred K_gen, K_ver, K_score, and accelerator-seconds cost ledger; no success-conditioned MSE or selected alpha is reported.",
+        "summary_binding": "evaluate/summary.json records the exact train/trajectory_ledger.jsonl SHA-256; point MSE, nonnegative selection risk, cell cost, candidate/reference/aborted K_gen/K_ver/K_score cost ledger, selection argmin, selected and alpha=1 untouched confirmation cells, and their contrast are recomputed from that ledger.",
         "three_way_bootstrap": "Jointly resample complete paired candidate replication IDs across cells and independently resample R1 trajectories and R2 trajectories within each target law; use chunked exact multinomial weights and projected sufficient statistics to recompute MSE, cost, risk, and selected-minus-control percentile intervals rather than accepting reported bounds.",
         "bootstrap_seed_schedule": "For each target law, initialize NumPy 2.5.3 PCG64 from the first 64 bits of SHA-256('rl-three-way-bootstrap-v1' | base seed | target law); use nearest-rank 0.025 and 0.975 quantiles.",
         "fixture_status": "The generated self-test uses hand-computed two-dimensional vectors, reports empirical_evidence=false, and cannot populate paper result cells."
@@ -518,14 +518,14 @@
     },
     "raw_reconstruction_contract": {
       "validator_path": "scripts/reconstruct_rl_trajectories.py",
-      "validator_sha256": "e1c200f143d2e0ca3fa9955f69aa484ff09ea4831e45220471ff00ee9b85adfc",
+      "validator_sha256": "88b2bfd830cdb3ac635c663989becd5f3b878c104902bde95902a4ef26a766d2",
       "required_status": "pass",
       "current_status": "golden_fixture_only",
       "raw_artifacts": [
         "train/raw_trajectory_header.json",
         "train/raw_trajectory_ledger.jsonl"
       ],
-      "reconstructed_terms": "log P=log d(x)+log pi(y|x); log G=log q(x)+log mu(y|x); w=P/(alpha P+(1-alpha)G); U=R-lambda C; h=h^R-lambda h^C; current A=(h-b)s+alpha*w*(U-h)s, stale B=w*(U-h)s, reference U*s",
+      "reconstructed_terms": "log P=log d(x)+log pi(y|x); log G=log q(x)+log mu(y|x); w=P/(alpha P+(1-alpha)G); U=R-lambda C; h=h^R-lambda h^C; current A=(h-b)s+alpha*w*(U-h)s, stale B=w*(U-h)s, reference U*s; K_gen=sum C(z), K_ver=sum 1{verifier called}, K_score=sum C(z)*N_added_score(z)",
       "raw_field_detectors": [
         "both sequence log-probabilities scored by the frozen current and behavior tensors under the frozen decoder temperature",
         "generator equals the frozen current tensor for current rows and the frozen behavior tensor for stale rows",
@@ -533,7 +533,8 @@
         "nuisance predictions from the frozen nuisance model whose training prompts are disjoint from every audited prompt",
         "one prompt-only baseline per prompt",
         "header prompt masses normalized per law with the proposal support floor q>=epsilon d",
-        "termination consistent with the response-token count"
+        "termination consistent with the response-token count",
+        "raw response_tokens, verifier_called, and added_score_passes on every attempted row (1 added pass for alpha<1 mixture candidates, 0 for alpha=1 and reference rows), reconstructing candidate, reference, aborted, per-cell, and total K_gen, K_ver, K_score, and accelerator-seconds"
       ],
       "replayed_faults": [
         "omitted prompt ratio",
@@ -543,8 +544,8 @@
         "consumed-trajectory reuse with and without a recomputed ratio"
       ],
       "term_relative_tolerance": 1e-09,
-      "real_execution_rule": "The train stage passes only if train/trajectory_ledger.jsonl equals the reconstruction row for row; reconstruction fails closed while the frozen current or behavior tensor hash is null.",
-      "interpretation": "Golden four-cell Gate 0 law with exact enumeration; software evidence only. A producer that records the frozen temperature while scoring with other logits is not detectable from the ledger and remains the job of the sampler-scorer conformance test."
+      "real_execution_rule": "The train stage passes only if train/trajectory_ledger.jsonl and train/costs.json equal the raw reconstruction of projected terms and the K_gen/K_ver/K_score/accelerator-seconds cost ledger; reconstruction fails closed while the frozen current or behavior tensor hash is null.",
+      "interpretation": "Golden four-cell Gate 0 law with exact enumeration and aborted-attempt cost retention; software evidence only. A producer that records the frozen temperature while scoring with other logits is not detectable from the ledger and remains the job of the sampler-scorer conformance test."
     }
   },
   "eval": {

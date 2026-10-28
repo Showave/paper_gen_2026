@@ -1874,6 +1874,23 @@ def validate_real_stage_semantics(
             raw_validation = verify_rl_raw_reconstruction(work_dir, section, rows)
         except (RLReconstructionError, KeyError, TypeError, ValueError) as exc:
             fail(f"RL trajectory ledger does not reproduce from raw fields: {exc}")
+        train_costs = load_json(work_dir / "train" / "costs.json")
+        total_cost = raw_validation["cost_ledger"]["total"]
+        if (
+            train_costs.get("generated_tokens") != total_cost["k_gen"]
+            or train_costs.get("verifier_calls") != total_cost["k_ver"]
+            or train_costs.get("likelihood_tokens") != total_cost["k_score"]
+            or not math.isclose(
+                float(train_costs.get("accelerator_seconds", -1.0)),
+                total_cost["accelerator_seconds"],
+                rel_tol=1e-9,
+                abs_tol=1e-9,
+            )
+        ):
+            fail(
+                "RL train/costs.json does not match the reconstructed "
+                "K_gen, K_ver, K_score, and accelerator-seconds ledger"
+            )
         return {
             **content_validation,
             **raw_validation,

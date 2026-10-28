@@ -107,11 +107,11 @@
       "checks": [
         "Every theorem-facing trajectory is generated after iteration choices freeze and has use_count one",
         "Every theorem-facing draw reaches a scored outcome; an infrastructure-failed replication is retained but cannot enter a success-conditioned estimator claim",
-        "Each successful current, stale, R1, and R2 row declares the exact projected-term semantics and every attempted row retains allocated accelerator-seconds",
-        "train/trajectory_ledger.jsonl must equal the row-for-row reconstruction of U, h, w, A, B, and U*s from train/raw_trajectory_header.json and train/raw_trajectory_ledger.jsonl by reconstruct_rl_trajectories.py, which fails closed while the frozen policy tensor hashes are null",
+        "Each successful current, stale, R1, and R2 row declares the exact projected-term semantics and every attempted row retains allocated accelerator-seconds, generated_tokens, verifier_calls, and added_score_tokens",
+        "train/trajectory_ledger.jsonl and train/costs.json must equal the row-for-row reconstruction of U, h, w, A, B, U*s, and the candidate/reference/aborted K_gen, K_ver, K_score, and accelerator-seconds cost ledger from train/raw_trajectory_header.json and train/raw_trajectory_ledger.jsonl by reconstruct_rl_trajectories.py, which fails closed while the frozen policy tensor hashes are null",
         "The numerical mixture-weight bound and source-specific ESS are checked",
         "The exploratory alpha-allocation coupling is logged as a design restriction rather than an unbiasedness requirement",
-        "Generated-token, verifier-call, and added-scoring counters retain aborted candidates"
+        "Generated-token, verifier-call, and added-scoring counters retain aborted candidates and are verified by both raw reconstruction and evaluation aggregation"
       ],
       "costs": [
         "cpu_seconds",
@@ -143,7 +143,7 @@
         "Reference-generation accelerator cost remains in the summary separately rather than disappearing into a shared constant",
         "Selection targets D_select and confirmation targets the separately normalized D_confirm",
         "The selected alpha is evaluated once on untouched confirmation replications",
-        "Any infrastructure failure blocks estimator-claim eligibility instead of producing a success-conditioned MSE; eligibility is distinct from the H1 estimate and result",
+        "Any infrastructure failure blocks estimator-claim eligibility instead of producing a success-conditioned MSE while still requiring the summary to reproduce the incurred candidate, reference, and aborted K_gen/K_ver/K_score/accelerator-seconds cost ledger; eligibility is distinct from the H1 estimate and result",
         "Every seed, parser failure, support failure, and negative result is retained"
       ],
       "costs": [
