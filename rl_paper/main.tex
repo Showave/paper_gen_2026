@@ -152,6 +152,11 @@ Direct replay studies optimize the generation--staleness--diversity trade-off
 decoupled off-policy correction \cite{mao2026popo}. Both are stronger practical
 comparators than naive reuse. Their empirical utility does not imply the
 conditional unbiasedness claimed for our newly sampled, single-use design.
+AR3PO reuses earlier correct responses either through reward information only
+or with token probabilities recomputed under the current policy
+\cite{zhang2025ar3po}. Recomputation changes the ratio but not the dependence
+of reused data on the current policy; \cref{app:gate0} gives an exact
+counterexample.
 Asynchronous RLHF separates generation from learning on lagged policies
 \cite{noukhovitch2025async}; it motivates the stale-actor systems layout but
 does not provide our conditional estimator identity. VCPO instead diagnoses
@@ -176,6 +181,23 @@ In its exact-acceptance setting, SPEC-RL uses old trajectories as speculative
 drafts while preserving the current-policy rollout law; its lenient setting
 does not have that exact claim \cite{liu2025specrl}. MinPRO instead replaces exact causal-prefix ratios by a
 stabilized minimum-ratio surrogate under policy lag \cite{lei2026minpro}.
+CTPO uses the cumulative product of per-token ratios. Under a token-level
+policy-gradient objective, this is an unbiased prefix correction with lower
+variance than the full-sequence ratio \cite{zhang2026ctpo}. Our estimand is the
+sequence-level score in \cref{eq:score}, so the exact weight is the joint
+mixture ratio of \cref{eq:weight}, not a per-position product.
+Score centering adds a correction term that cancels persistent drift between
+inference and training engines \cite{marek2026centering}. That mismatch is the
+practical form of our base-versus-decoder fault. We exclude it by requiring
+sampler--scorer conformance rather than correcting it, so score centering is
+a practical variant outside the theorem.
+VESPO reshapes sequence-level importance weights through a variance-constrained
+variational kernel without length normalization \cite{shen2026vespo}, while
+GGPO replaces learner-to-behavior ratios with a log-mean-exp contrast of
+KL-adjusted group rewards \cite{zhang2026ggpo}. Both trade exact target-policy
+gradient unbiasedness for stability under severe staleness; our question is
+instead whether a defensive mixture with newly drawn stale trajectories reduces
+variance while keeping the exact one-step expectation.
 These methods target complementary systems and biased-stability trade-offs.
 
 \section{Formal Setting}
@@ -324,11 +346,18 @@ $\overline A+(1-\alpha)\overline B$; a generic field called ``gradient'' is
 insufficient. Every attempted row also retains allocated accelerator-seconds,
 including failed and reference draws. Any infrastructure failure blocks
 estimator-claim eligibility rather than allowing a success-conditioned MSE.
-This projected-term schema is only an intermediate audit. Real execution
-remains blocked until a reviewed validator reconstructs $U,h,w,A,$ and $B$
-from hash-bound prompt/decoder probabilities, rewards, lengths, the frozen
-$\lambda$, nuisance predictions, and projected scores; self-declared terms are
-not empirical evidence.
+Projected terms are never trusted as declared. A raw-field validator
+recomputes $w$ in log space from frozen header prompt masses and both
+sequence log-probabilities, then $U$, $h$, and $A$, $B$, or $U_\lambda s$ from
+rewards, lengths, the frozen $\lambda$, nuisance predictions, and projected
+scores. The projected ledger must match row for row. The same validator reconstructs
+$K_{\mathrm{gen}}$, $K_{\mathrm{ver}}$, $K_{\mathrm{score}}$, and allocated
+accelerator-seconds across candidate, reference, and aborted attempts, and
+rejects rows whose generator or scorer is not the frozen policy pair under the rollout
+decoder, any reused trajectory, nuisance predictions from an unfrozen model or
+one trained on audited prompts, an omitted or spurious added-scoring pass, or
+an action-dependent baseline (\cref{app:gate0}). It fails closed until the
+policy tensors are frozen.
 Before these partitions are formed, every prompt is tied to a pinned source
 revision, export-byte hash, stable upstream identifier, raw-row hash, and
 versioned normalized-content hash. The downstream partitioner assigns every
@@ -476,7 +505,9 @@ relying on a broad ``doubly robust replay'' label.
 current component of $M_t$ is no longer the target policy, the
 $1/\alpha$ bound need not hold, and the same data influenced the updated
 policy. Multiple epochs, ratio recomputation, or small KL do not restore the
-theorem. Optimizer momentum and clipping may still be useful, but the theorem
+theorem: in the exact four-cell law of \cref{app:gate0}, reusing the batch that
+formed $\theta_t$ with a recomputed ratio remains biased although the
+post-update KL is below $0.01$. Optimizer momentum and clipping may still be useful, but the theorem
 is about the raw estimator rather than the transformed displacement or
 monotonic improvement.
 
@@ -530,10 +561,12 @@ bias, variance, MSE, interval coverage, residual-weight ESS by source, and
 compute. Fault injection deliberately omits prompt ratios, uses base-model
 rather than decoder probabilities, fits the focal nuisance outcome, clips
 weights, and reuses data that formed the target policy.
-The committed finite-law Gate~0 currently executes the omitted-prompt-ratio
-and clipping cases. Base-versus-decoder scoring, focal nuisance fitting, and
-reuse are pending executable validators and must pass before Phase~A; listing
-them here is a test plan, not evidence that they have run.
+The committed finite-law Gate~0 executes all five injections by exact
+enumeration (\cref{app:gate0}). Each fault must be detected, its positive
+control must reproduce the target to $10^{-12}$, and its null-fault control
+must silence the detector. All five are also replayed through the raw
+trajectory reconstruction validator that gates every real train stage. These
+remain software checks on a generated law.
 The committed public-data configuration is a one-family mathematics pre-pilot
 for H1 only. It uses disjoint normalized laws $D_{\rm fit}$,
 $D_{\rm select}$, and $D_{\rm confirm}$; selection MSE is not described as an
@@ -817,13 +850,82 @@ feasible shape of 64 projected coordinates, 250 candidate replications per
 cell, 2,048 trajectories per reference sample, and 2,000 bootstrap draws.
 NumPy~2.5.3 PCG64 emits exact multinomial weights in chunks of 32; projected
 means and squared norms avoid materializing resampled trajectory tensors, and
-the self-test executes the full selection-law shape. Tampered MSE or intervals
+the self-test executes the full selection-law shape. Tampered MSE, intervals, or cost counters
 and incomplete source strata must fail; infrastructure failure must block
-estimator-claim eligibility. The fixture is marked non-empirical and cannot
-populate any result cell. The script still consumes projected terms
-rather than reconstructing $U,h,w,A,$ and $B$ from raw probabilities and
-outcomes; that raw-field gap, the unreviewed field inventory, and three pending
-fault injections keep the artifact-integrity gate closed.
+estimator-claim eligibility while still requiring the summary to reproduce the
+incurred candidate, reference, and aborted $K_{\mathrm{gen}},K_{\mathrm{ver}},
+K_{\mathrm{score}}$ and accelerator-seconds cost ledger. The fixture is marked non-empirical and cannot
+populate any result cell. Its input ledger and cost counters are no longer self-declared:
+\texttt{scripts/reconstruct\_rl\_trajectories.py} rebuilds every row and the
+complete $K_{\mathrm{gen}},K_{\mathrm{ver}},K_{\mathrm{score}}$ cost ledger from a raw
+header and raw trajectory ledger, and the runner requires exact agreement in
+both \texttt{train/trajectory\_ledger.jsonl} and \texttt{train/costs.json}.
+The unreviewed field inventory, the null policy-pair,
+decoder, and verifier records, and the absence of a hash-bound sampler--scorer
+conformance artifact keep the artifact-integrity gate closed.
+
+\subsection{Exact Gate 0 Fault Injections}
+\label{app:gate0}
+\texttt{scripts/rl\_gate0\_fault\_injections.py} uses the same four-cell law
+as Gate~0: two prompts, a binary response, the scalar decoder-logit shift
+$\theta$ with score $y-\pi_x(\theta)$, $\alpha=1/2$, and the frozen $h$ and
+prompt baseline. Every expectation is an exhaustive sum over the joint sample
+space. The runner executes it and checks its hash before any stage.
+\emph{Base-versus-decoder scoring} generates the current law with decoder
+temperature $T_d=0.7$ and scores it with temperature-one base logits in both
+$w$ and $M$. The total-variation distance between the two current laws is
+$0.058$. The exact decoder route reproduces the target, whereas the
+base-scored estimator has bias $1.43\times10^{-3}$. That bias equals the
+common implemented-weight identity \cref{eq:bias} to $10^{-12}$.
+\emph{Focal nuisance fitting} refits $h$ on the focal batch ($n_P=n_G=2$,
+$256$ joint batches) as a pooled per-prompt outcome mean. Its bias is
+$4.93\times10^{-3}$. A frozen $h$ and an $h$ fitted on an independent prior
+current-policy batch ($4{,}096$ joint configurations) are both exact.
+\emph{Consumed-trajectory reuse} forms $\theta_t$ by one REINFORCE step
+($\eta=1/2$) on two current-policy draws and then reuses those draws at
+$\theta_t$. The target is the expected post-update gradient
+$\mathbb E[\nabla\mathcal L(\theta_t)]$. Fresh draws at $\theta_t$
+reproduce it exactly. Reuse has bias $1.97\times10^{-4}$ without a ratio and
+$-2.53\times10^{-4}$ with the recomputed ratio
+$P_{\theta_t}/P_{\theta_{t-1}}$, although the largest post-update KL is only
+$0.0074$. The detection threshold is $10^{-6}$. Setting $T_d=1$, keeping $h$
+frozen in the focal route, or taking a zero step must each silence its
+detector, so a detector that always fires fails. These are exact properties of
+a constructed law, not estimates of language-model bias magnitudes. They show
+that the listed exclusions are necessary, not merely conservative.
+
+\paragraph{Replay through raw reconstruction.}
+The same law also defines a golden raw ledger. It has one row per cell and
+source for $\alpha=1/2$, the $\alpha=1$ control, and reference rows. Each row
+logs the prompt, both sequence log-probabilities, reward, length, verifier
+call, added cross-policy scoring passes ($1$ for $\alpha<1$ mixture candidates
+and $0$ for $\alpha=1$ and reference rows), nuisance
+predictions, and the score. Reconstructed terms are unbiased for the target
+gradient by enumeration in all three groups to $10^{-12}$, and the
+reconstructed cost ledger recovers $K_{\mathrm{gen}}=24$,
+$K_{\mathrm{ver}}=12$, and $K_{\mathrm{score}}=16$ for candidates plus
+$K_{\mathrm{gen}}=8$, $K_{\mathrm{ver}}=4$, and $K_{\mathrm{score}}=0$ for
+reference rows; a separate aborted-attempt fixture verifies that failed draws
+retain their incurred token, verifier, and scoring costs without entering any
+gradient estimate. Thirteen raw-ledger and cost-counter mutations fail,
+including dropping an aborted attempt's cost or miscounting added scoring
+passes. They also match an
+independent producer written directly from the Gate~0 functions. All five
+faults are then replayed through the reconstruction. An omitted prompt ratio
+and clipping at $0.9\max w$ change the producer's projected terms, with
+exact biases $-1.71\times10^{-2}$ and $-1.61\times10^{-3}$, so the row-wise
+comparison rejects them. Base-logit scoring is rejected by its recorded
+temperature. When the validator is relaxed to accept base logits, the
+reconstructed bias equals the Gate~0 value $1.43\times10^{-3}$ to
+$10^{-12}$. Focal nuisance fitting is rejected either through overlap between
+training and audited prompts or through an unfrozen nuisance-model hash.
+Reuse is rejected through a nonzero prior use count or a generator hash from
+the previous policy, which covers both the plain and the ratio-recomputed
+variants. The null controls must pass: a proposal equal to $D$, a clip at
+$1/\alpha$, $T_d=1$, disjoint nuisance training prompts, and fresh draws. The
+ledger cannot reveal a producer that records $T_d$ while scoring other
+logits; the sampler--scorer conformance test remains responsible for that
+case.
 
 \subsection{Optional Prefix Gate}
 Prefix continuation is excluded from the core experiments. A later extension

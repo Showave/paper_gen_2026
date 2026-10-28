@@ -40,6 +40,32 @@ from validate_eval_simulation_design import (
     validate_condition_manifest as validate_eval_condition_manifest,
     validate_design as validate_eval_simulation_design,
 )
+from rl_gate0_fault_injections import run_all as run_rl_gate0_fault_injections
+from aggregate_sft_factorial import aggregate as aggregate_sft_factorial
+from validate_sft_train_ledger import (
+    LedgerError as SFTLedgerError,
+    check_pairing as check_sft_pairing,
+    protected_slices as sft_protected_slices,
+    self_test as run_sft_train_ledger_self_test,
+    validate_train_manifest as validate_sft_train_manifest,
+)
+from reconstruct_rl_trajectories import (
+    ReconstructionError as RLReconstructionError,
+    self_test as run_rl_raw_reconstruction_self_test,
+    verify_work_dir as verify_rl_raw_reconstruction,
+)
+from validate_eval_sequential_bundle import (
+    BundleError as EvalBundleError,
+    recompute_frame_hierarchy as recompute_eval_frame_hierarchy,
+    self_test as run_eval_bundle_self_test,
+    validate_bundle as validate_eval_sequential_bundle,
+)
+from recompute_eval_evi import (
+    EVIError,
+    config_from_section as eval_evi_config,
+    self_test as run_eval_evi_self_test,
+    validate_bundle_evi as validate_eval_bundle_evi,
+)
 from validate_overlap_projection_contract import (
     ProjectionContractError,
     validate_contract as validate_overlap_projection_contract,
@@ -208,6 +234,22 @@ def referenced_registry_keys(section: dict[str, Any]) -> set[str]:
     return references
 
 
+def require_bound_files(
+    contract: Any, prefixes: tuple[str, ...], label: str, repo: Path
+) -> None:
+    if not isinstance(contract, dict) or contract.get("required_status") != "pass":
+        fail(f"{label} contract must require a passing status")
+    for prefix in prefixes:
+        declared_path = Path(str(contract.get(f"{prefix}_path", "")))
+        if (
+            not declared_path.parts
+            or declared_path.is_absolute()
+            or ".." in declared_path.parts
+            or digest_file(repo / declared_path) != contract.get(f"{prefix}_sha256")
+        ):
+            fail(f"{label} {prefix} hash does not match")
+
+
 def validate_preregistration_section(
     section: dict[str, Any],
     paper: str,
@@ -352,6 +394,21 @@ def validate_preregistration_section(
             )
         except SFTReferenceContractError as exc:
             fail(f"invalid SFT reference contract: {exc}")
+        require_bound_files(
+            section.get("train_ledger_contract"),
+            ("validator", "aggregator"),
+            "SFT train-ledger closure",
+            repo,
+        )
+        try:
+            sft_ledger_audit = run_sft_train_ledger_self_test(preregistration)
+        except SFTLedgerError as exc:
+            fail(f"SFT train-ledger self-test failed: {exc}")
+        if (
+            sft_ledger_audit.get("empirical_evidence") is not False
+            or sft_ledger_audit.get("mutations_rejected", 0) < 30
+        ):
+            fail("SFT train-ledger self-test did not pass")
         window = nested(section, "optimizer_window")
         if window["physical_packs_per_update"] != window["microbatches_per_update"]:
             fail("SFT packs and microbatches per update must match")
@@ -539,7 +596,65 @@ def validate_preregistration_section(
             or "alpha=1" not in audit["confirmation_required_cells"]
         ):
             fail("RL audit must freeze lambda, EOS cost, and on-policy confirmation")
+        require_bound_files(
+            section.get("gate0_fault_injections"),
+            ("validator",),
+            "RL Gate 0 fault-injection",
+            repo,
+        )
+        gate0 = run_rl_gate0_fault_injections()
+        if gate0["status"] != "pass" or gate0["empirical_evidence"] is not False:
+            fail(
+                "RL Gate 0 fault injections failed: "
+                + ", ".join(gate0["failed_checks"])
+            )
+        require_bound_files(
+            section.get("raw_reconstruction_contract"),
+            ("validator",),
+            "RL raw trajectory reconstruction",
+            repo,
+        )
+        try:
+            reconstruction = run_rl_raw_reconstruction_self_test()
+        except RLReconstructionError as exc:
+            fail(f"RL raw trajectory reconstruction self-test failed: {exc}")
+        if (
+            reconstruction["status"] != "pass"
+            or reconstruction["empirical_evidence"] is not False
+        ):
+            fail("RL raw trajectory reconstruction self-test did not pass")
     else:
+        require_bound_files(
+            section.get("sequential_bundle_contract"),
+            ("validator",),
+            "evaluation sequential-bundle",
+            repo,
+        )
+        try:
+            bundle_audit = run_eval_bundle_self_test(preregistration)
+        except EvalBundleError as exc:
+            fail(f"evaluation sequential-bundle self-test failed: {exc}")
+        if (
+            bundle_audit.get("empirical_evidence") is not False
+            or bundle_audit.get("mutations_rejected", 0) < 17
+        ):
+            fail("evaluation sequential-bundle self-test did not pass")
+        require_bound_files(
+            section.get("evi_recomputation_contract"),
+            ("validator",),
+            "evaluation EVI recomputation",
+            repo,
+        )
+        try:
+            evi_audit = run_eval_evi_self_test(section)
+        except EVIError as exc:
+            fail(f"evaluation EVI recomputation self-test failed: {exc}")
+        if (
+            evi_audit["status"] != "pass"
+            or evi_audit["empirical_evidence"] is not False
+            or evi_audit.get("mutations_rejected", 0) < 13
+        ):
+            fail("evaluation EVI recomputation self-test did not pass")
         acquisition = nested(section, "acquisition")
         epsilon = acquisition["exploration_epsilon"]
         if not isinstance(epsilon, (int, float)) or not 0 < epsilon <= 1:
@@ -896,26 +1011,26 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def confined_work_path(work_dir: Path, declared: Any) -> Path:
+def confined_work_path(work_dir: Path, declared: Any, stage: str = "process") -> Path:
     if not isinstance(declared, str) or not declared:
-        fail("process artifact path must be a nonempty string")
+        fail(f"{stage} artifact path must be a nonempty string")
     relative = Path(declared)
     if (
         relative.is_absolute()
         or ".." in relative.parts
         or not relative.parts
-        or relative.parts[0] != "process"
+        or relative.parts[0] != stage
     ):
-        fail(f"process artifact path must stay under process/: {declared!r}")
+        fail(f"{stage} artifact path must stay under {stage}/: {declared!r}")
     root = work_dir.resolve()
     current = root
     for part in relative.parts:
         current = current / part
         if current.is_symlink():
-            fail(f"process artifact path traverses a symlink: {declared!r}")
+            fail(f"{stage} artifact path traverses a symlink: {declared!r}")
     resolved = current.resolve()
     if root not in resolved.parents:
-        fail(f"process artifact path escapes the work directory: {declared!r}")
+        fail(f"{stage} artifact path escapes the work directory: {declared!r}")
     return resolved
 
 
@@ -1259,8 +1374,141 @@ def validate_real_stage_semantics(
                         "reference_split_records": reference_summary["records"],
                     }
                 )
+            elif paper == "eval":
+                cell_manifest = load_json(
+                    work_dir / "process" / "cell_manifest.json"
+                )
+                frame_path = work_dir / "acquire" / "frame_manifest.json"
+                if (
+                    not isinstance(cell_manifest, dict)
+                    or not frame_path.is_file()
+                    or cell_manifest.get("frame_manifest_sha256")
+                    != digest_file(frame_path)
+                ):
+                    fail(
+                        "evaluation cell_manifest.json must bind "
+                        "acquire/frame_manifest.json"
+                    )
+                frame_spec = nested(section, "frame")
+                try:
+                    hierarchy_summary = recompute_eval_frame_hierarchy(
+                        cell_manifest.get("frame_hierarchy"),
+                        expected_sources=frame_spec["root_items_by_source"],
+                        expected_variants=frame_spec["prompt_variants_per_root"],
+                        expected_orders=frame_spec["display_orders"],
+                        expected_panel_size=nested(
+                            section, "human_protocol.panel_size"
+                        ),
+                        expected_jury_keys=list(section["jury_model_keys"]),
+                    )
+                except EvalBundleError as exc:
+                    fail(f"evaluation cell_manifest frame hierarchy invalid: {exc}")
+                content_validation.update(
+                    {
+                        "selected_roots": hierarchy_summary["selected_roots"],
+                        "root_prompt_order_cells": hierarchy_summary[
+                            "root_prompt_order_cells"
+                        ],
+                        "model_jury_calls": hierarchy_summary["model_jury_calls"],
+                        "human_target_units": hierarchy_summary[
+                            "human_target_units"
+                        ],
+                    }
+                )
             if stage_name == "process":
                 return content_validation
+
+    if paper == "sft" and stage_name == "train":
+        run_ledger_relative = "train/run_ledger.jsonl"
+        run_rows, run_ledger_sha256 = load_jsonl_with_sha256(
+            work_dir / run_ledger_relative,
+            recorded_stage_artifact_sha256(
+                run_manifest, "train", work_dir, run_ledger_relative
+            ),
+        )
+        factorial = nested(section, "primary_factorial")
+        expected_identities = {
+            (seed, target, budget, cell, tolerance)
+            for seed in section["seeds"]
+            for target in factorial["target_settings"]
+            for budget in section["cost_design"]["budget_fractions"]
+            for cell in factorial["cells"]
+            for tolerance in factorial["protected_tolerance_grid"]
+        }
+        split_digest = digest_file(work_dir / "process" / "splits_manifest.json")
+        slices_by_setting = sft_protected_slices(
+            Path(__file__).resolve().parents[1], section
+        )
+        allowed_gate_ids = {
+            record_id
+            for record_id, partition in lineage_validation["partition_by_id"].items()
+            if partition == "gate"
+        }
+        seen_identities: set[tuple[Any, ...]] = set()
+        closures: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        for row in run_rows:
+            identity_key = (
+                row.get("seed"),
+                row.get("target_setting"),
+                row.get("budget_fraction"),
+                row.get("cell"),
+                row.get("protected_tolerance"),
+            )
+            if (
+                identity_key not in expected_identities
+                or identity_key in seen_identities
+                or row.get("status") not in {"completed", "failed"}
+                or row.get("empirical_evidence") is not True
+                or not is_sha256(row.get("run_manifest_sha256"))
+            ):
+                fail("SFT train/run_ledger.jsonl has an invalid or duplicate factorial row")
+            seen_identities.add(identity_key)
+            run_path = confined_work_path(
+                work_dir, row.get("run_manifest_path"), "train"
+            )
+            if not run_path.is_file() or digest_file(run_path) != row["run_manifest_sha256"]:
+                fail("SFT train/run_ledger.jsonl run manifest hash mismatch")
+            per_run_manifest = load_json(run_path)
+            if (
+                per_run_manifest.get("synthetic_audit") is not False
+                or per_run_manifest.get("preregistration_sha256")
+                != canonical_digest(section)
+                or per_run_manifest.get("split_manifest_sha256") != split_digest
+                or per_run_manifest.get("audit_endpoint") is not None
+            ):
+                fail(
+                    "SFT train run manifest must be real, bind the processed split "
+                    "manifest, and keep sealed audits closed during train"
+                )
+            try:
+                closure = validate_sft_train_manifest(
+                    per_run_manifest,
+                    work_dir.resolve(),
+                    row,
+                    section,
+                    slices_by_setting,
+                )
+            except (SFTLedgerError, KeyError, TypeError) as exc:
+                fail(f"SFT train run ledger failed validation: {exc}")
+            if (closure["protocol_failure"] and row["status"] != "failed") or (
+                not closure["protocol_failure"] and row["status"] != "completed"
+            ):
+                fail("SFT train run status does not match its ledger closure")
+            for gate_ids in closure["gate_partition_ids"].values():
+                if not gate_ids.issubset(allowed_gate_ids):
+                    fail("SFT gate partition contains examples outside the processed gate split")
+            closures.append((row, closure))
+        if seen_identities != expected_identities:
+            fail("SFT train/run_ledger.jsonl omits a required factorial run")
+        try:
+            check_sft_pairing(closures)
+        except SFTLedgerError as exc:
+            fail(f"SFT train runs are not paired: {exc}")
+        return {
+            **content_validation,
+            "run_ledger_sha256": run_ledger_sha256,
+            "factorial_runs_validated": len(closures),
+        }
 
     if paper == "sft" and stage_name == "evaluate":
         summary = load_json(work_dir / "evaluate" / "summary.json")
@@ -1277,9 +1525,67 @@ def validate_real_stage_semantics(
             or len(summary["contrasts"]) != 6
         ):
             fail("SFT summary does not match the frozen factorial aggregation")
+        endpoints_path = work_dir / "evaluate" / "endpoints.jsonl"
+        if not endpoints_path.is_file() or summary.get("input_sha256") != digest_file(
+            endpoints_path
+        ):
+            fail("SFT summary is not bound to the evaluate/endpoints.jsonl rows")
+        endpoint_rows = load_jsonl(endpoints_path)
+        train_run_rows, _ = load_jsonl_with_sha256(
+            work_dir / "train" / "run_ledger.jsonl",
+            recorded_stage_artifact_sha256(
+                run_manifest, "train", work_dir, "train/run_ledger.jsonl"
+            ),
+        )
+        train_by_identity = {
+            (
+                row.get("seed"),
+                row.get("target_setting"),
+                row.get("budget_fraction"),
+                row.get("cell"),
+                row.get("protected_tolerance"),
+            ): (row.get("run_manifest_path"), row.get("status"))
+            for row in train_run_rows
+        }
+        split_digest = digest_file(work_dir / "process" / "splits_manifest.json")
+        for endpoint_row in endpoint_rows:
+            identity_key = (
+                endpoint_row.get("seed"),
+                endpoint_row.get("target_setting"),
+                endpoint_row.get("budget_fraction"),
+                endpoint_row.get("cell"),
+                endpoint_row.get("protected_tolerance"),
+            )
+            manifest_relative = endpoint_row.get("run_manifest_path")
+            if train_by_identity.get(identity_key) != (
+                manifest_relative,
+                endpoint_row.get("status"),
+            ):
+                fail("SFT endpoint row does not match train/run_ledger.jsonl")
+            run_path = confined_work_path(work_dir, manifest_relative, "train")
+            if (
+                not run_path.is_file()
+                or load_json(run_path).get("split_manifest_sha256") != split_digest
+            ):
+                fail("SFT endpoint run manifest does not bind the processed split manifest")
+        try:
+            recomputed = aggregate_sft_factorial(
+                endpoint_rows,
+                {"sft": section},
+                list(factorial["target_settings"]),
+                "real",
+                work_dir.resolve(),
+            )
+        except SystemExit as exc:
+            fail(f"SFT factorial aggregation does not reproduce: {exc}")
+        recomputed["input_sha256"] = summary["input_sha256"]
+        if canonical_digest(recomputed) != canonical_digest(summary):
+            fail("SFT evaluation summary differs from the re-executed aggregation")
         return {
             **content_validation,
             "factorial_contrasts": 6,
+            "ledger_closed_rows": recomputed["ledger_closed_rows"],
+            "endpoints_sha256": summary["input_sha256"],
             "execution_class": "real",
         }
 
@@ -1378,10 +1684,40 @@ def validate_real_stage_semantics(
         ):
             fail("evaluation acquisition ledger violates the fixed-slot contract")
         missing = sum(not row["response_observed"] for row in rows)
+        bundle_path = work_dir / "train" / "sequential_bundle.json"
+        posterior_path = work_dir / "train" / "evi_posteriors.json"
+        for path in (bundle_path, posterior_path):
+            if not path.is_file() or path.is_symlink():
+                fail(f"real evaluation train stage needs {path.relative_to(work_dir)}")
+        bundle = load_json(bundle_path)
+        cell_manifest_path = work_dir / "process" / "cell_manifest.json"
+        if (
+            not isinstance(bundle, dict)
+            or bundle.get("cell_manifest_sha256")
+            != digest_file(cell_manifest_path)
+            or bundle.get("frame_hierarchy")
+            != load_json(cell_manifest_path).get("frame_hierarchy")
+        ):
+            fail(
+                "evaluation sequential_bundle.json must bind "
+                "process/cell_manifest.json and its frame_hierarchy"
+            )
+        try:
+            bundle_validation = validate_eval_sequential_bundle(bundle, {"eval": section})
+            evi_validation = validate_eval_bundle_evi(
+                bundle, load_json(posterior_path), eval_evi_config(section)
+            )
+        except (EvalBundleError, EVIError, KeyError, TypeError, ValueError) as exc:
+            fail(f"evaluation sequential bundle or EVI does not reproduce: {exc}")
+        if bundle_validation["slots"] != expected_slots:
+            fail("evaluation sequential bundle does not cover the fixed slots")
         return {
             **content_validation,
             "fixed_slots": expected_slots,
             "nonresponses": missing,
+            "sequential_bundle_sha256": bundle_validation["bundle_sha256"],
+            "evi_posteriors_sha256": digest_file(posterior_path),
+            "evi_batches_recomputed": evi_validation["evi_batches_recomputed"],
         }
 
     if paper == "eval" and stage_name == "evaluate":
@@ -1602,8 +1938,30 @@ def validate_real_stage_semantics(
                     0,
                 ) != stale:
                     fail("RL confirmation candidate allocation is incomplete")
+        try:
+            raw_validation = verify_rl_raw_reconstruction(work_dir, section, rows)
+        except (RLReconstructionError, KeyError, TypeError, ValueError) as exc:
+            fail(f"RL trajectory ledger does not reproduce from raw fields: {exc}")
+        train_costs = load_json(work_dir / "train" / "costs.json")
+        total_cost = raw_validation["cost_ledger"]["total"]
+        if (
+            train_costs.get("generated_tokens") != total_cost["k_gen"]
+            or train_costs.get("verifier_calls") != total_cost["k_ver"]
+            or train_costs.get("likelihood_tokens") != total_cost["k_score"]
+            or not math.isclose(
+                float(train_costs.get("accelerator_seconds", -1.0)),
+                total_cost["accelerator_seconds"],
+                rel_tol=1e-9,
+                abs_tol=1e-9,
+            )
+        ):
+            fail(
+                "RL train/costs.json does not match the reconstructed "
+                "K_gen, K_ver, K_score, and accelerator-seconds ledger"
+            )
         return {
             **content_validation,
+            **raw_validation,
             "attempts": len(rows),
             "infrastructure_failures": failures,
             "trajectory_ids_disjoint": True,

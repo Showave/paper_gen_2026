@@ -225,6 +225,53 @@ difference-in-differences, and forms simultaneous max-$t$ intervals by
 resampling complete seed blocks. Fixture endpoints cannot be consumed in
 `real` mode.
 
+Every endpoint row must also close against its training record:
+
+```bash
+make sft-ledger-audit
+```
+
+`scripts/validate_sft_train_ledger.py` replays the run manifest's hash-bound
+per-round train ledger and per-draw gate-loss records. It checks the
+parameter-state and optimizer-step chain,
+with one step per accepted update and none for a rejected update or null
+action. It checks reserve admission before every round, complete charging of
+seven cost components, and the stop rule (maximum rounds, exhausted reserve,
+or a retained overrun marked as a protocol failure). Gate evidence must use a
+fresh 512-draw block per protected slice and round from that slice's gate
+partition, shared as a paired block across every scale in the frozen grid. For
+each draw and scale, the validator recomputes the response-token-mean NLL,
+clips it to $[0,M_\phi]$ before differencing against the clipped pre-update
+draw NLL, and requires the draw-uniform mean change and heuristic upper
+statistic to reproduce. An accepted update must commit the largest passing
+scale and transition to that scale's candidate state hash; the cumulative
+tolerance ledger must also hold. The audit endpoint must be evaluated on
+the final ledger state. Each declared initial and final audit NLL is
+recomputed from hash-bound per-example records (`example_id`, `slice`,
+`evaluated_state_sha256`, `response_tokens`, `nll_sum`) as the frozen
+row-uniform mean of response-token-mean NLL. Records must be evaluated on the
+exact initial and final states, repeat no example, and cover exactly the
+audit partition identified by the SHA-256 of its sorted identifiers, which must
+be disjoint from every gate partition. A
+protocol-failure run must leave its sealed audits unopened. The real runner
+validates `train/run_ledger.jsonl` at the `train` stage and re-executes the
+aggregator at `evaluate`. The aggregator calls this closure for every row and
+requires paired rows to share the split-manifest hash, one gate partition per
+protected slice, one disjoint audit partition per slice, reference cost,
+initial state, and initial audit NLLs. Thirty generated mutations fail,
+including post-difference instead of per-example gate clipping, token-weighted
+gate or audit means, foreign gate draws, overlapping gate and audit
+partitions, an accepted state that differs from the committed scale's
+candidate state, a dropped audit example, and a final record evaluated on the
+initial state.
+
+In a real run, `aggregate_sft_factorial.py` writes `input_sha256` for its
+endpoint file. The pipeline runner requires `evaluate/endpoints.jsonl` to
+match that hash. It requires every endpoint run manifest under `train/` to
+bind the processed `process/splits_manifest.json`. It then re-executes the
+aggregation and requires exact equality with `evaluate/summary.json`. The
+per-example forward passes themselves remain site-local measurements.
+
 ## Paper-specific design contracts
 
 The SFT capability and split contract is independently auditable:
@@ -255,9 +302,11 @@ python3 scripts/aggregate_rl_estimator.py \
 
 Current candidate rows store projected
 `A=(h-b)s+alpha*w*(U-h)s`, stale rows store `B=w*(U-h)s`, and reference rows
-store `target=U*s`. Every attempted row retains allocated accelerator-seconds.
+store `target=U*s`. Every attempted row retains allocated accelerator-seconds,
+`generated_tokens`, `verifier_calls`, and `added_score_tokens`.
 The aggregator reconstructs the stratified estimate, cross-reference MSE,
-mean complete-replication cost, selection argmin, and untouched-confirmation
+mean complete-replication cost, candidate/reference/aborted `K_gen`, `K_ver`,
+and `K_score` cost buckets, selection argmin, and untouched-confirmation
 results from the ledger hash. It retains negative raw cross-MSE, uses the
 nonnegative MSE--cost transform only for selection, and requires the selected
 plus alpha=1 confirmation cells. It now jointly resamples paired candidate
@@ -270,10 +319,68 @@ and 2,000 bootstrap draws. NumPy 2.5.3 PCG64 generates exact multinomial
 weights in chunks of 32; projected means and squared norms are sufficient, so
 the implementation never materializes resampled trajectory tensors. The
 self-test executes this full selection-law shape in addition to the
-hand-computed fixture. The projected terms remain self-declared: raw
-probability/outcome reconstruction is still an unfrozen blocker. Any
-infrastructure failure disables estimator-claim eligibility; it cannot yield a
-success-conditioned MSE.
+hand-computed fixture. Any infrastructure failure disables estimator-claim
+eligibility while still requiring the summary to reproduce the incurred
+`K_gen`, `K_ver`, `K_score`, and accelerator-seconds cost ledger; it cannot
+yield a success-conditioned MSE.
+
+The projected terms and cost counters are no longer trusted as declared:
+
+```bash
+make rl-reconstruction-audit
+```
+
+`scripts/reconstruct_rl_trajectories.py` rebuilds every projected row and the
+complete `K_gen`/`K_ver`/`K_score` cost ledger from
+`train/raw_trajectory_header.json` and `train/raw_trajectory_ledger.jsonl`.
+The header carries the frozen policy pair, decoder temperature, lambda,
+support floor, nuisance model, freeze record, normalized select/confirm prompt
+laws, nuisance training prompts, and the declared cost ledger. Every attempted
+row—including infrastructure-failed/aborted attempts—carries `response_tokens`,
+`verifier_called`, `added_score_passes` (`1` for `alpha<1` mixture candidates
+and `0` for `alpha=1` and reference rows), and `allocated_accelerator_seconds`;
+successful rows also carry prompt IDs, generator hash,
+scoring policies and temperature, both sequence log-probabilities, reward,
+termination, nuisance predictions, prior use count, and the
+projected score. The validator recomputes `w=P/M` in log space from header
+prompt masses and both log-probabilities, then `U`, `h`, and the `A`, `B`, or
+`U*s` term, plus per-attempt `generated_tokens`, `verifier_calls`, and
+`added_score_tokens = response_tokens * added_score_passes`. It requires zero
+prior uses, the frozen generator and scorer pair,
+the frozen nuisance model, training prompts disjoint from audited prompts, one
+baseline per prompt, `q>=epsilon*d`, consistent truncation, and exact agreement
+with the header's candidate, reference, aborted, per-cell, and total cost
+buckets. In a real
+train stage, the runner requires `train/trajectory_ledger.jsonl` and
+`train/costs.json` to equal the
+reconstruction row for row. That check currently fails closed because the
+policy tensor hashes are null.
+
+The self-test builds a golden raw ledger on the exact four-cell Gate 0 law.
+By enumeration, the alpha=1/2 cell, the alpha=1 cell, and the reference rows
+are unbiased to 1e-12, and the reconstructed weights normalize under `M`.
+Five faults are replayed: omitted prompt ratio, weight clipping below the
+largest weight, base-versus-decoder scoring, focal nuisance fitting, and
+consumed-trajectory reuse. Each is rejected and each null control passes. The
+reconstructed base-scoring bias equals the Gate 0 module's exact value. A
+producer that records the frozen temperature while scoring with other logits
+cannot be detected from the ledger; that remains the job of the sampler-scorer
+conformance test.
+
+The Gate 0 fault injections run by exact enumeration:
+
+```bash
+make rl-fault-injection-audit
+```
+
+`scripts/rl_gate0_fault_injections.py` covers base-versus-decoder scoring,
+focal nuisance fitting, and consumed-trajectory reuse with and without ratio
+recomputation on the four-cell Gate 0 law. Each fault must be detected, and
+the base-scoring bias must equal the common implemented-weight identity. The
+frozen-h, independent-prior-fit, and fresh-draw positive controls must be
+exact, and each detector must stay silent under its null-fault control. The
+runner hash-checks and executes it, together with the raw reconstruction
+self-test above, on every plan load. Both are software checks.
 
 The evaluation simulation layout is executable as a design audit:
 
@@ -290,6 +397,59 @@ uniqueness, and deterministic seeds against the exact committed rows in
 and resource/restart implementations remain blocked and unfrozen. Human EVI
 uses a separate 256-unit IID target candidate multiset per batch, preserving
 the exploration floor while capping hypothetical updates.
+
+The sequential decision bundle has a shared real/golden validator:
+
+```bash
+make eval-bundle-audit
+```
+
+`scripts/validate_eval_sequential_bundle.py` recomputes per-source
+`SHA-256(revision || question_id)` root ranks, selected roots, prompt-variant
+weights, root--prompt--order cells, model-jury call counts, human target-unit
+product masses $\pi(i,c,h,o)=w_i a_{c\mid i}\rho_h/2$, and every batch draw law
+from its commitment, checks commitment hashes and strictly earlier fit slots,
+and requires all fixed slots exactly once. It reproduces the sequential
+contributions, worst-case nonresponse bounds, intervals, drift widenings,
+terminal action, maximum weight, and ESS. Golden bundles have exact rational
+draw probabilities and unit masses and are checked against an independent
+`Fraction` computation, and the self-test also validates the full 528-root,
+2,112-cell, 8,448-jury-call, 168,960-unit pilot hierarchy; seventeen mutations
+must fail. Real bundles are refused while any
+estimand-defining artifact hash in the preregistration is null or while the
+bundle fails to bind `process/cell_manifest.json`.
+
+Committed EVI values are recomputed from the frozen working posterior:
+
+```bash
+make eval-evi-audit
+```
+
+`scripts/recompute_eval_evi.py` reads `train/evi_posteriors.json`, which
+holds one mode and precision per adaptive batch plus the frame design. Each
+posterior must carry its batch commitment hash. The mode must be stationary
+for the Gaussian-prior Davidson log posterior on the observed outcomes in the
+batch's strictly earlier fit slots. The precision must equal prior precision
+plus observed information. The script then recomputes `Q_b`, the posterior
+predictive, and the registered damped Newton update for each hypothetical
+outcome, using the frozen 4,096 common normals (seed 2026090322), ridge,
+damping, and jitter ladder. Every committed EVI must reproduce within 1e-9.
+Draws within 1e-9 of the margin fail closed. Both the fixed-discrimination
+working model (`eta = f_x^T theta`, `kappa = g_x^T theta`) and the jointly
+estimated log-discrimination bilinear working model
+(`eta = f_x^T theta + exp(u_x^T theta)*(s_x^T theta)`, `kappa = g_x^T theta`)
+are recomputed. In the bilinear model, the validator enforces the human-panel
+identifiability constraint $\sum_x\pi(x)u_x=0$ and applies the exact parameter
+Jacobian $\nabla_\vartheta\eta_x=f_x+d_x s_x+(d_x q_x)u_x$ and observed
+negative Hessian $J_x^\top I_{(\eta,\kappa)}J_x-g_\eta(y)\nabla^2_{\vartheta\vartheta}\eta_x(\vartheta)$
+in both Laplace closure and every hypothetical Newton update; linear or
+Gauss--Newton approximations are rejected. Both golden
+bundles are checked against an independent pure-Python implementation, and
+thirteen mutations must fail. The self-test also reports EVI ranges and the
+maximum softmax tilt `exp(lambda_E * (max EVI - min EVI))` across five generated
+fit sizes. In a real evaluation train stage, the runner executes both this
+recomputation and the sequential bundle validator on
+`train/sequential_bundle.json`.
 
 The shared materialization validator recomputes each provenance record from
 raw materialized rows and requires a bijection into canonical retained,

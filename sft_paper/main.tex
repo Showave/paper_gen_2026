@@ -144,6 +144,18 @@ PartitionSel couples validation-gradient matching across domains under
 partition-matroid coverage constraints \cite{agrawal2026partitionsel}. Its
 source-constrained selector is a close matched-cost baseline; our separate
 question is whether profiling physical pack cost changes the feasible choice.
+HARP lowers train--evaluate selection cost by scoring representative leaves of
+a data hierarchy and inferring the rest with empirical-Bayes posteriors
+\cite{wang2026harp}; like every selector here, its measurement runs are charged
+to the same accelerator-second ledger. Q-Tuning jointly prunes samples and
+response tokens \cite{wang2025qtuning}, while TRIM aligns token-wise attention
+saliency with target-task representations after a short warm-up
+\cite{nagaraj2026trim}. Token pruning changes $\mathcal R_i$,
+hence both $N_B$ and packed cost, so it is compared only inside the same
+frozen response-token window. Cure-SFT separates semantic redundancy from
+quality defects and repairs fixable samples with teacher models
+\cite{fu2026curesft}; we hold candidate text fixed so any difference isolates
+scheduling and packing rather than data rewriting.
 
 \paragraph{Online allocation.}
 Dynamic bilevel weighting \cite{yu2025dynamicbilevel}, source-mixture
@@ -400,6 +412,9 @@ step or moment increment; it is not \cref{eq:train-loss} with $N_B=0$.
 Actual allocated accelerator-seconds are metered. A reserve overrun is retained
 as a protocol failure; before sealed audits open, every paired method is
 restarted from the common initial state under a newly frozen larger reserve.
+A run thus ends in exactly one way: after $T_{\max}$ rounds; when the next
+round's reserve exceeds the remaining budget, with the unspent remainder
+reported as undershoot rather than reallocated; or at a retained overrun.
 
 \paragraph{Actual-update gate.}
 After one backward pass on the selected window, form the single post-unscale,
@@ -603,7 +618,9 @@ Joint scheduler with gate & -- & -- & -- & -- \\
 \end{table*}
 
 No ranking is inferred from \cref{tab:main}. Before values are inserted, each
-cell must link to a run manifest and the aggregation script. The primary
+cell must link to a run manifest whose per-round train ledger replays to the
+reported endpoint, whose audit NLLs reproduce from per-example loss records on
+the final ledger state, and to the aggregation script. The primary
 comparison is a paired frontier contrast between score-then-pack and joint
 scheduling, not the single best endpoint.
 
@@ -815,10 +832,53 @@ and is not empirical evidence.
 The shared acquisition-to-retention validator now recomputes row identifiers,
 raw and projected-content hashes, canonical duplicate representatives, and
 every retained/suppressed/quarantined disposition from acquisition bytes.
-Real execution nevertheless remains blocked on reviewed source-specific
-multi-field inventories, train-ledger-to-endpoint aggregation, and a
-site-local sealed-resource access attestation. Declarative stage checks do not
-count as execution evidence.
+\texttt{scripts/validate\_sft\_train\_ledger.py} now closes every factorial
+endpoint row against its run manifest, hash-bound per-round train ledger, and
+per-draw gate-loss records,
+and \texttt{aggregate\_sft\_factorial.py} refuses any row that does not close.
+The replay checks a contiguous parameter-state and optimizer-step chain from
+the common initial state, with one step per accepted update and none for a
+rejected update or null action. It also checks reserve admission before every
+round, charging of all seven cost components (packing, reference gradients,
+scoring, solving, gate forwards, training, and rejected updates), and the
+three-way stop rule above. Gate evidence must use a fresh block per protected
+slice and round with the frozen 512 draws from that slice's gate partition,
+reused as a paired block across every scale in the frozen grid. For each draw
+and scale, the validator recomputes the response-token-mean NLL, clips it to
+$[0,M_\phi]$ before differencing against the clipped pre-update draw NLL, and
+requires the draw-uniform mean change and heuristic upper statistic to
+reproduce. An accepted update must commit the largest passing scale and
+transition to that scale's candidate state hash. The cumulative tolerance ledger is also
+checked. Finally, the audit endpoint must be evaluated on the ledger's final
+state, from which the row's target and worst-protected NLL changes are
+recomputed. Each declared audit NLL is itself recomputed from hash-bound
+per-example records carrying the example identifier, slice, evaluated state
+hash, response-token count, and summed NLL. The validator applies the frozen
+estimand, a row-uniform mean of per-example response-token-mean NLL, and
+requires initial and final records to be evaluated on the exact initial and
+final states and to cover exactly the audit partition named by the hash of its
+sorted identifiers, which must be disjoint from every gate partition. A
+protocol-failure run must leave its sealed audits
+unopened. Paired rows must share one split-manifest hash, one gate partition
+per protected slice, and one disjoint audit partition per slice, the reference
+cost within a target setting, and the initial state
+and initial audit NLLs within seed and target setting. Thirty generated
+mutations fail, including a hidden charge, a rejected update that advances the
+optimizer, a smaller-than-largest passing scale, a reused gate block, a
+dropped round, an unmarked overrun, post-difference instead of per-example gate
+clipping, a token-weighted gate or audit mean, a foreign gate draw,
+overlapping gate and audit partitions, an accepted state that differs from the
+committed scale's candidate state, a final audit record evaluated on the
+initial state, a dropped or duplicated audit example, and a failed run that
+opens its audit. The real runner now validates \texttt{train/run\_ledger.jsonl}
+at the train stage, verifies that \texttt{evaluate/endpoints.jsonl} matches
+that run ledger, re-executes the aggregator over the hash-bound endpoint file,
+requires every run manifest to bind the processed split manifest, and demands
+exact equality with the evaluation summary. The fixtures are non-empirical, and the
+per-example forward passes remain site-local measurements. Real execution
+remains blocked on reviewed source-specific multi-field inventories and a
+site-local sealed-resource access attestation. Declarative stage checks do
+not count as execution evidence.
 With \texttt{--execute --synthetic-audit --commands
 experiments/synthetic\_commands.json}, a
 CPU-only audit exactly enumerates packings for two length-10 packs under a

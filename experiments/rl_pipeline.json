@@ -71,7 +71,7 @@
       "objective": "Construct policy, stale actor, frozen reward/length predictors, prompt baseline, and adaptive proposal.",
       "inputs": [
         "process/trajectory_schema.json",
-        "Exact finite-law Gate 0 oracle, implemented omitted-prompt-ratio and clipped-weight fault injections, and 1e-12 identity tolerance",
+        "Exact finite-law Gate 0 oracle, implemented omitted-prompt-ratio, clipped-weight, base-versus-decoder, focal-nuisance, and consumed-trajectory-reuse fault injections, and 1e-12 identity tolerance",
         "Frozen alpha grid, per-alpha stratum counts, and proposal support floor",
         "Projection, nuisance-training, and stale-KL configurations"
       ],
@@ -83,7 +83,8 @@
         "Current and behavior scorers share tokenizer, masks, and decoder semantics",
         "Policy and nuisance tensor hashes are frozen before each audit",
         "Gate 0 reproduces target gradient, mixture normalization, weight bound, and implemented-weight bias identities",
-        "Base-versus-decoder scoring, focal-nuisance fitting, and policy-data-reuse injections remain blocking pending validators before Phase A"
+        "rl_gate0_fault_injections.py detects base-versus-decoder scoring, focal-nuisance fitting, and consumed-trajectory reuse by exact enumeration, reproduces frozen-h, independent-prior-fit, and fresh-draw positive controls, and silences each detector under its null-fault control",
+        "reconstruct_rl_trajectories.py replays omitted-prompt-ratio, weight-clipping, base-versus-decoder, focal-nuisance, and consumed-trajectory-reuse faults through raw trajectory reconstruction on the golden four-cell law; each must be rejected and each null control must pass"
       ],
       "costs": [
         "cpu_seconds",
@@ -106,11 +107,11 @@
       "checks": [
         "Every theorem-facing trajectory is generated after iteration choices freeze and has use_count one",
         "Every theorem-facing draw reaches a scored outcome; an infrastructure-failed replication is retained but cannot enter a success-conditioned estimator claim",
-        "Each successful current, stale, R1, and R2 row declares the exact projected-term semantics and every attempted row retains allocated accelerator-seconds",
-        "Projected terms are intermediate only; real execution remains blocked until U, h, w, A, and B are reconstructed from raw hash-bound trajectory fields",
+        "Each successful current, stale, R1, and R2 row declares the exact projected-term semantics and every attempted row retains allocated accelerator-seconds, generated_tokens, verifier_calls, and added_score_tokens",
+        "train/trajectory_ledger.jsonl and train/costs.json must equal the row-for-row reconstruction of U, h, w, A, B, U*s, and the candidate/reference/aborted K_gen, K_ver, K_score, and accelerator-seconds cost ledger from train/raw_trajectory_header.json and train/raw_trajectory_ledger.jsonl by reconstruct_rl_trajectories.py, which fails closed while the frozen policy tensor hashes are null",
         "The numerical mixture-weight bound and source-specific ESS are checked",
         "The exploratory alpha-allocation coupling is logged as a design restriction rather than an unbiasedness requirement",
-        "Generated-token, verifier-call, and added-scoring counters retain aborted candidates"
+        "Generated-token, verifier-call, and added-scoring counters retain aborted candidates and are verified by both raw reconstruction and evaluation aggregation"
       ],
       "costs": [
         "cpu_seconds",
@@ -128,7 +129,7 @@
         "train/trajectory_ledger.jsonl",
         "Frozen projection, confirmation replications, independent R1/R2 reference pairs, and seed pairing",
         "Pinned NumPy 2.5.3 PCG64 bootstrap engine, chunk size 32, and nearest-rank interval rule",
-        "Omitted-prompt-ratio and clipped-weight fault injections"
+        "Omitted-prompt-ratio, clipped-weight, base-versus-decoder, focal-nuisance, and consumed-trajectory-reuse fault injections"
       ],
       "artifacts": [
         "evaluate/summary.json"
@@ -142,7 +143,7 @@
         "Reference-generation accelerator cost remains in the summary separately rather than disappearing into a shared constant",
         "Selection targets D_select and confirmation targets the separately normalized D_confirm",
         "The selected alpha is evaluated once on untouched confirmation replications",
-        "Any infrastructure failure blocks estimator-claim eligibility instead of producing a success-conditioned MSE; eligibility is distinct from the H1 estimate and result",
+        "Any infrastructure failure blocks estimator-claim eligibility instead of producing a success-conditioned MSE while still requiring the summary to reproduce the incurred candidate, reference, and aborted K_gen/K_ver/K_score/accelerator-seconds cost ledger; eligibility is distinct from the H1 estimate and result",
         "Every seed, parser failure, support failure, and negative result is retained"
       ],
       "costs": [

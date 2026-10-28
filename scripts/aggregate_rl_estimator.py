@@ -379,6 +379,7 @@ def analyze_rows(
     attempt_ids: set[str] = set()
     trajectory_ids: set[str] = set()
     failures = 0
+    materialized_rows: list[dict[str, Any]] = []
     for row in rows:
         attempt_id = row.get("attempt_id")
         law = row.get("target_law")
@@ -386,6 +387,9 @@ def analyze_rows(
         source = row.get("source_component")
         failed = row.get("infrastructure_failure")
         cost = row.get("allocated_accelerator_seconds")
+        gen_tokens = row.get("generated_tokens")
+        ver_calls = row.get("verifier_calls")
+        score_tokens = row.get("added_score_tokens")
         if (
             not isinstance(attempt_id, str)
             or not attempt_id
@@ -398,9 +402,48 @@ def analyze_rows(
             or isinstance(cost, bool)
             or not math.isfinite(cost)
             or cost < 0
+            or not isinstance(gen_tokens, int)
+            or isinstance(gen_tokens, bool)
+            or gen_tokens < (0 if failed else 1)
+            or not isinstance(ver_calls, int)
+            or isinstance(ver_calls, bool)
+            or ver_calls not in ({0, 1} if failed else {1})
+            or not isinstance(score_tokens, int)
+            or isinstance(score_tokens, bool)
+            or score_tokens < 0
+            or (gen_tokens == 0 and (ver_calls != 0 or score_tokens != 0))
         ):
-            fail("RL trajectory row has invalid common fields")
+            fail("RL trajectory row has invalid common or cost fields")
+        if role in {"r1", "r2"}:
+            if source != "current" or score_tokens != 0:
+                fail("reference rows must be current-policy draws with zero added_score_tokens")
+        else:
+            alpha = row.get("alpha")
+            allocation_id = row.get("allocation_id")
+            replication = row.get("replication_id")
+            key = (float(alpha), allocation_id) if isinstance(alpha, (int, float)) else None
+            if (
+                key not in cells
+                or not isinstance(replication, int)
+                or isinstance(replication, bool)
+                or replication < 0
+            ):
+                fail("candidate row has an invalid allocation or replication")
+            expected_replications = (
+                audit["selection_replications"]
+                if law == "select"
+                else audit["confirmation_replications"]
+            )
+            if replication >= expected_replications:
+                fail("candidate replication is outside the frozen range")
+            if math.isclose(key[0], 1.0) and score_tokens != 0:
+                fail("alpha=1 candidate rows must have zero added_score_tokens")
+            if not failed and key[0] < 1.0 and score_tokens != gen_tokens:
+                fail("successful mixture candidate rows must charge added_score_tokens == generated_tokens")
+            if failed and key[0] < 1.0 and score_tokens not in {0, gen_tokens}:
+                fail("failed mixture candidate rows must charge 0 or generated_tokens for added_score_tokens")
         attempt_ids.add(attempt_id)
+        materialized_rows.append(row)
         if failed:
             failures += 1
             continue
@@ -418,25 +461,12 @@ def analyze_rows(
             row.get("projected_gradient"), dimension, "projected_gradient"
         )
         if role in {"r1", "r2"}:
-            if (
-                source != "current"
-                or row.get("projected_term_semantics") != "target=U*s"
-            ):
+            if row.get("projected_term_semantics") != "target=U*s":
                 fail("reference rows must store current-policy target terms")
             references[(law, role)].append((trajectory_id, vector))
             reference_costs.append((attempt_id, float(cost)))
             continue
 
-        alpha = row.get("alpha")
-        allocation_id = row.get("allocation_id")
-        replication = row.get("replication_id")
-        key = (float(alpha), allocation_id) if isinstance(alpha, (int, float)) else None
-        if (
-            key not in cells
-            or not isinstance(replication, int)
-            or replication < 0
-        ):
-            fail("candidate row has an invalid allocation or replication")
         expected_semantics = (
             "A=(h-b)s+alpha*w*(U-h)s"
             if source == "current"
@@ -444,19 +474,53 @@ def analyze_rows(
         )
         if row.get("projected_term_semantics") != expected_semantics:
             fail("candidate projected term has ambiguous or incorrect semantics")
-        expected_replications = (
-            audit["selection_replications"]
-            if law == "select"
-            else audit["confirmation_replications"]
-        )
-        if replication >= expected_replications:
-            fail("candidate replication is outside the frozen range")
         candidates[(law, key[0], key[1], replication, source)].append(
             (trajectory_id, vector)
         )
         candidate_costs[(law, key[0], key[1], replication)].append(
             (attempt_id, float(cost))
         )
+
+    def empty_bucket() -> dict[str, Any]:
+        return {
+            "attempts": 0,
+            "aborted_attempts": 0,
+            "k_gen": 0,
+            "k_ver": 0,
+            "k_score": 0,
+            "accelerator_seconds": 0.0,
+        }
+
+    def add_bucket(bucket: dict[str, Any], item: dict[str, Any]) -> None:
+        bucket["attempts"] += 1
+        if item["infrastructure_failure"]:
+            bucket["aborted_attempts"] += 1
+        bucket["k_gen"] += int(item["generated_tokens"])
+        bucket["k_ver"] += int(item["verifier_calls"])
+        bucket["k_score"] += int(item["added_score_tokens"])
+        bucket["accelerator_seconds"] = math.fsum(
+            [bucket["accelerator_seconds"], float(item["allocated_accelerator_seconds"])]
+        )
+
+    cost_ledger: dict[str, Any] = {
+        "candidate": empty_bucket(),
+        "reference": empty_bucket(),
+        "aborted": empty_bucket(),
+        "total": empty_bucket(),
+        "by_cell": {},
+    }
+    for item in sorted(materialized_rows, key=lambda r: r["attempt_id"]):
+        add_bucket(cost_ledger["total"], item)
+        if item["infrastructure_failure"]:
+            add_bucket(cost_ledger["aborted"], item)
+        if item["estimator_role"] == "candidate":
+            add_bucket(cost_ledger["candidate"], item)
+            cell_key = f"{item['target_law']}|{float(item['alpha'])}|{item['allocation_id']}"
+            cell_bucket = cost_ledger["by_cell"].setdefault(cell_key, empty_bucket())
+            add_bucket(cell_bucket, item)
+        else:
+            add_bucket(cost_ledger["reference"], item)
+    cost_ledger["by_cell"] = dict(sorted(cost_ledger["by_cell"].items()))
 
     if failures:
         return {
@@ -465,6 +529,7 @@ def analyze_rows(
             "estimator_claim_eligible": False,
             "infrastructure_failures": failures,
             "attempts": len(attempt_ids),
+            "cost_ledger": cost_ledger,
         }
 
     reference_count = audit["reference_current_policy_trajectories_per_replica"]
@@ -655,6 +720,7 @@ def analyze_rows(
         "infrastructure_failures": 0,
         "attempts": len(attempt_ids),
         "reference_accelerator_seconds": reference_accelerator_seconds,
+        "cost_ledger": cost_ledger,
         "projection_dimension": dimension,
         "projected_mse_formula": "(g_hat-R1)^T(g_hat-R2)",
         "candidate_estimator_formula": "mean(A_current)+(1-alpha)*mean(B_stale)",
@@ -704,6 +770,34 @@ def close_structure(observed: Any, expected: Any) -> bool:
     return close(observed, expected)
 
 
+def close_cost_ledger(observed: Any, expected: dict[str, Any]) -> bool:
+    if not isinstance(observed, dict) or set(observed) != set(expected):
+        return False
+
+    def check_bucket(obs: Any, exp: dict[str, Any]) -> bool:
+        if not isinstance(obs, dict) or set(obs) != set(exp):
+            return False
+        for key in ("attempts", "aborted_attempts", "k_gen", "k_ver", "k_score"):
+            if (
+                not isinstance(obs[key], int)
+                or isinstance(obs[key], bool)
+                or obs[key] != exp[key]
+            ):
+                return False
+        return close(obs["accelerator_seconds"], exp["accelerator_seconds"])
+
+    for section_name in ("candidate", "reference", "aborted", "total"):
+        if not check_bucket(observed[section_name], expected[section_name]):
+            return False
+    by_cell = observed["by_cell"]
+    if not isinstance(by_cell, dict) or set(by_cell) != set(expected["by_cell"]):
+        return False
+    return all(
+        check_bucket(by_cell[cell_key], exp_bucket)
+        for cell_key, exp_bucket in expected["by_cell"].items()
+    )
+
+
 def validate_summary(
     summary: Any,
     analysis: dict[str, Any],
@@ -721,8 +815,9 @@ def validate_summary(
         or summary.get("aggregation_status") != analysis["aggregation_status"]
         or summary.get("estimator_claim_eligible")
         is not analysis["estimator_claim_eligible"]
+        or not close_cost_ledger(summary.get("cost_ledger"), analysis["cost_ledger"])
     ):
-        fail("RL summary does not bind the analyzed trajectory ledger")
+        fail("RL summary does not bind the analyzed trajectory ledger or cost ledger")
     if analysis["aggregation_status"] == "blocked_infrastructure_failure":
         forbidden = {
             "projected_mse_by_cell",
@@ -738,6 +833,7 @@ def validate_summary(
             "aggregation_status": analysis["aggregation_status"],
             "estimator_claim_eligible": False,
             "infrastructure_failures": analysis["infrastructure_failures"],
+            "cost_ledger": analysis["cost_ledger"],
         }
 
     audit = audit_configuration(section)
@@ -886,10 +982,12 @@ def make_row(
     source: str,
     vector: list[float],
     cost: float = 0.0,
+    tokens: int = 4,
     alpha: float | None = None,
     allocation_id: str | None = None,
     replication: int | None = None,
 ) -> dict[str, Any]:
+    added_score = tokens if (role == "candidate" and alpha is not None and alpha < 1.0) else 0
     row = {
         "attempt_id": attempt,
         "target_law": law,
@@ -897,6 +995,9 @@ def make_row(
         "source_component": source,
         "infrastructure_failure": False,
         "allocated_accelerator_seconds": cost,
+        "generated_tokens": tokens,
+        "verifier_calls": 1,
+        "added_score_tokens": added_score,
         "trajectory_id": f"trajectory-{attempt}",
         "use_count": 1,
         "scored_outcome": True,
@@ -1048,6 +1149,7 @@ def generated_summary(analysis: dict[str, Any], ledger_sha256: str, section: dic
         "reference_accelerator_seconds": analysis[
             "reference_accelerator_seconds"
         ],
+        "cost_ledger": copy.deepcopy(analysis["cost_ledger"]),
         "confirmation_results": confirmation_results,
         "confirmation_contrast": analysis["confirmation_contrast"],
         "bootstrap_replicates": audit["mse_bootstrap_replicates"],
@@ -1146,8 +1248,56 @@ def self_test() -> dict[str, Any]:
     for field in ("trajectory_id", "use_count", "scored_outcome", "projected_gradient"):
         failed[0].pop(field)
     blocked = analyze_rows(failed, section)
-    if blocked["aggregation_status"] != "blocked_infrastructure_failure":
-        fail("self-test did not block an infrastructure failure")
+    if (
+        blocked["aggregation_status"] != "blocked_infrastructure_failure"
+        or blocked["cost_ledger"]["aborted"]["attempts"] != 1
+        or blocked["cost_ledger"]["aborted"]["k_gen"] != 4
+    ):
+        fail("self-test did not block an infrastructure failure or retain aborted costs")
+    blocked_summary = {
+        "execution_class": "synthetic-audit",
+        "aggregation_status": "blocked_infrastructure_failure",
+        "empirical_evidence": False,
+        "estimator_claim_eligible": False,
+        "ledger_sha256": ledger_sha256,
+        "cost_ledger": copy.deepcopy(blocked["cost_ledger"]),
+    }
+    validate_summary(
+        blocked_summary,
+        blocked,
+        ledger_sha256,
+        section,
+        execution_class="synthetic-audit",
+    )
+    dropped_aborted_cost = copy.deepcopy(blocked_summary)
+    dropped_aborted_cost["cost_ledger"]["aborted"]["k_gen"] = 0
+    try:
+        validate_summary(
+            dropped_aborted_cost,
+            blocked,
+            ledger_sha256,
+            section,
+            execution_class="synthetic-audit",
+        )
+    except AggregationError:
+        pass
+    else:
+        fail("self-test accepted an infrastructure-blocked summary that dropped aborted costs")
+
+    tampered_cost = copy.deepcopy(summary)
+    tampered_cost["cost_ledger"]["candidate"]["k_score"] -= 1
+    try:
+        validate_summary(
+            tampered_cost,
+            analysis,
+            ledger_sha256,
+            section,
+            execution_class="synthetic-audit",
+        )
+    except AggregationError:
+        pass
+    else:
+        fail("self-test accepted a tampered K_score cost ledger")
 
     production_section = read_json(DEFAULT_PREREGISTRATION)["rl"]
     production_audit = audit_configuration(production_section)
@@ -1220,7 +1370,7 @@ def self_test() -> dict[str, Any]:
         },
         "production_shape_vectorized_bootstrap_validated": True,
         "hand_computed_values_reproduced": True,
-        "fault_injections_rejected": 6,
+        "fault_injections_rejected": 8,
     }
 
 

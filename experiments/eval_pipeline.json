@@ -56,6 +56,7 @@
         "Every retained normalized duplicate cluster is assigned wholly to one frame unit or excluded",
         "The record-pair external audit remains blocking for a multi-field export; a reviewed successor must cover the full cross-record segment-pair space and independently reproduce every qualifying segment pair",
         "The cell manifest embeds the passing content-readiness ledger hash and accounts for every scanned record with an included partition or explicit exclusion reason",
+        "process/cell_manifest.json binds acquire/frame_manifest.json and validate_eval_sequential_bundle.py recomputes SHA-256(revision || question_id) root ranks, the 528 selected roots, prompt-variant weights, 2112 root--prompt--order cells, 8448 model-jury calls, and 168960 human target units",
         "Every protected input and target slot reproduces from a reviewed multi-field projection attestation; generated or null inventories cannot clear real execution",
         "Audit attempts are independent draws from the full target mass; hidden audit membership never removes a target unit from adaptive support",
         "AB and BA renders strip model identifiers and preserve content",
@@ -109,6 +110,7 @@
       ],
       "checks": [
         "Each draw logs pi, p_t, model revision, EVI, outcome, and pre-outcome timestamp",
+        "The runner validates train/sequential_bundle.json (binding process/cell_manifest.json and its frame hierarchy) and recomputes every committed EVI from train/evi_posteriors.json with recompute_eval_evi.py: commitment binding, Laplace stationarity and precision closure on strictly earlier observed fit slots, exact Jacobian and observed negative Hessian for both fixed- and estimated-discrimination Davidson models, and the registered damped Newton update on the frozen common normals",
         "The first 200 human attempts are IID target-random pilot draws from pi; no unbudgeted human baseline arm is inferred from them",
         "validate_eval_simulation_design.py reproduces the 16 orthogonal main-effect rows, zero main--two-factor aliases, center/local-alternative blocks, 189 unique conditions, and condition seeds",
         "Executable DGPs, missingness laws, baseline policies, and estimator implementations match replacement-preregistration hashes; the frozen layout alone does not clear this blocker",
@@ -142,6 +144,7 @@
       ],
       "checks": [
         "Estimator, martingale variance, maximum weight, and ESS reproduce from the ledger",
+        "validate_eval_sequential_bundle.py recomputes root SHA-256 hash ranks, root--prompt--order cells, human target-unit product masses, and every batch draw law from its committed candidate multiset, EVI values, costs, and temperature; rejects commitment-hash mismatches and non-predictable fit slots; and reproduces contributions, worst-case bounds, intervals, drift widenings, and the terminal action",
         "Any nonresponse switches the primary decision to the two one-sided martingale-Hoeffding endpoint bounds",
         "All 200 audit slots remain; audit nonresponses use the frozen -1/+1 endpoint means and Hoeffding radius",
         "Adaptive-minus-audit uncertainty includes shared-rater covariance",
