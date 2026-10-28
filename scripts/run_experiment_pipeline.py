@@ -42,6 +42,13 @@ from validate_eval_simulation_design import (
 )
 from rl_gate0_fault_injections import run_all as run_rl_gate0_fault_injections
 from aggregate_sft_factorial import aggregate as aggregate_sft_factorial
+from validate_sft_train_ledger import (
+    LedgerError as SFTLedgerError,
+    check_pairing as check_sft_pairing,
+    protected_slices as sft_protected_slices,
+    self_test as run_sft_train_ledger_self_test,
+    validate_train_manifest as validate_sft_train_manifest,
+)
 from reconstruct_rl_trajectories import (
     ReconstructionError as RLReconstructionError,
     self_test as run_rl_raw_reconstruction_self_test,
@@ -391,6 +398,15 @@ def validate_preregistration_section(
             "SFT train-ledger closure",
             repo,
         )
+        try:
+            sft_ledger_audit = run_sft_train_ledger_self_test(preregistration)
+        except SFTLedgerError as exc:
+            fail(f"SFT train-ledger self-test failed: {exc}")
+        if (
+            sft_ledger_audit.get("empirical_evidence") is not False
+            or sft_ledger_audit.get("mutations_rejected", 0) < 30
+        ):
+            fail("SFT train-ledger self-test did not pass")
         window = nested(section, "optimizer_window")
         if window["physical_packs_per_update"] != window["microbatches_per_update"]:
             fail("SFT packs and microbatches per update must match")
@@ -1346,6 +1362,98 @@ def validate_real_stage_semantics(
             if stage_name == "process":
                 return content_validation
 
+    if paper == "sft" and stage_name == "train":
+        run_ledger_relative = "train/run_ledger.jsonl"
+        run_rows, run_ledger_sha256 = load_jsonl_with_sha256(
+            work_dir / run_ledger_relative,
+            recorded_stage_artifact_sha256(
+                run_manifest, "train", work_dir, run_ledger_relative
+            ),
+        )
+        factorial = nested(section, "primary_factorial")
+        expected_identities = {
+            (seed, target, budget, cell, tolerance)
+            for seed in section["seeds"]
+            for target in factorial["target_settings"]
+            for budget in section["cost_design"]["budget_fractions"]
+            for cell in factorial["cells"]
+            for tolerance in factorial["protected_tolerance_grid"]
+        }
+        split_digest = digest_file(work_dir / "process" / "splits_manifest.json")
+        slices_by_setting = sft_protected_slices(
+            Path(__file__).resolve().parents[1], section
+        )
+        allowed_gate_ids = {
+            record_id
+            for record_id, partition in lineage_validation["partition_by_id"].items()
+            if partition == "gate"
+        }
+        seen_identities: set[tuple[Any, ...]] = set()
+        closures: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        for row in run_rows:
+            identity_key = (
+                row.get("seed"),
+                row.get("target_setting"),
+                row.get("budget_fraction"),
+                row.get("cell"),
+                row.get("protected_tolerance"),
+            )
+            if (
+                identity_key not in expected_identities
+                or identity_key in seen_identities
+                or row.get("status") not in {"completed", "failed"}
+                or row.get("empirical_evidence") is not True
+                or not is_sha256(row.get("run_manifest_sha256"))
+            ):
+                fail("SFT train/run_ledger.jsonl has an invalid or duplicate factorial row")
+            seen_identities.add(identity_key)
+            run_path = confined_work_path(
+                work_dir, row.get("run_manifest_path"), "train"
+            )
+            if not run_path.is_file() or digest_file(run_path) != row["run_manifest_sha256"]:
+                fail("SFT train/run_ledger.jsonl run manifest hash mismatch")
+            per_run_manifest = load_json(run_path)
+            if (
+                per_run_manifest.get("synthetic_audit") is not False
+                or per_run_manifest.get("preregistration_sha256")
+                != canonical_digest(section)
+                or per_run_manifest.get("split_manifest_sha256") != split_digest
+                or per_run_manifest.get("audit_endpoint") is not None
+            ):
+                fail(
+                    "SFT train run manifest must be real, bind the processed split "
+                    "manifest, and keep sealed audits closed during train"
+                )
+            try:
+                closure = validate_sft_train_manifest(
+                    per_run_manifest,
+                    work_dir.resolve(),
+                    row,
+                    section,
+                    slices_by_setting,
+                )
+            except (SFTLedgerError, KeyError, TypeError) as exc:
+                fail(f"SFT train run ledger failed validation: {exc}")
+            if (closure["protocol_failure"] and row["status"] != "failed") or (
+                not closure["protocol_failure"] and row["status"] != "completed"
+            ):
+                fail("SFT train run status does not match its ledger closure")
+            for gate_ids in closure["gate_partition_ids"].values():
+                if not gate_ids.issubset(allowed_gate_ids):
+                    fail("SFT gate partition contains examples outside the processed gate split")
+            closures.append((row, closure))
+        if seen_identities != expected_identities:
+            fail("SFT train/run_ledger.jsonl omits a required factorial run")
+        try:
+            check_sft_pairing(closures)
+        except SFTLedgerError as exc:
+            fail(f"SFT train runs are not paired: {exc}")
+        return {
+            **content_validation,
+            "run_ledger_sha256": run_ledger_sha256,
+            "factorial_runs_validated": len(closures),
+        }
+
     if paper == "sft" and stage_name == "evaluate":
         summary = load_json(work_dir / "evaluate" / "summary.json")
         factorial = nested(section, "primary_factorial")
@@ -1367,9 +1475,37 @@ def validate_real_stage_semantics(
         ):
             fail("SFT summary is not bound to the evaluate/endpoints.jsonl rows")
         endpoint_rows = load_jsonl(endpoints_path)
+        train_run_rows, _ = load_jsonl_with_sha256(
+            work_dir / "train" / "run_ledger.jsonl",
+            recorded_stage_artifact_sha256(
+                run_manifest, "train", work_dir, "train/run_ledger.jsonl"
+            ),
+        )
+        train_by_identity = {
+            (
+                row.get("seed"),
+                row.get("target_setting"),
+                row.get("budget_fraction"),
+                row.get("cell"),
+                row.get("protected_tolerance"),
+            ): (row.get("run_manifest_path"), row.get("status"))
+            for row in train_run_rows
+        }
         split_digest = digest_file(work_dir / "process" / "splits_manifest.json")
         for endpoint_row in endpoint_rows:
+            identity_key = (
+                endpoint_row.get("seed"),
+                endpoint_row.get("target_setting"),
+                endpoint_row.get("budget_fraction"),
+                endpoint_row.get("cell"),
+                endpoint_row.get("protected_tolerance"),
+            )
             manifest_relative = endpoint_row.get("run_manifest_path")
+            if train_by_identity.get(identity_key) != (
+                manifest_relative,
+                endpoint_row.get("status"),
+            ):
+                fail("SFT endpoint row does not match train/run_ledger.jsonl")
             run_path = confined_work_path(work_dir, manifest_relative, "train")
             if (
                 not run_path.is_file()

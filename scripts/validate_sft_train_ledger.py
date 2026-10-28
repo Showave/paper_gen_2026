@@ -13,8 +13,10 @@ validator replays the ledger under the frozen SFT preregistration and requires
   reason that reproduces the stop rule (maximum rounds, exhausted reserve, or
   a retained reserve overrun marked as a protocol failure);
 * the frozen response-token window, pack capacity, fresh per-slice gate
-  blocks, the heuristic upper statistic, largest-passing-scale commitment, and
-  the cumulative protected-tolerance ledger;
+  blocks, per-draw clipped gate-loss recomputation across paired scale
+  candidates, the heuristic upper statistic, largest-passing-scale commitment
+  to that scale's candidate state, and the cumulative protected-tolerance
+  ledger;
 * audit endpoints evaluated on the final ledger state, from which the row's
   target and worst-protected NLL changes are recomputed;
 * every declared initial and final audit NLL recomputed from hash-bound
@@ -25,14 +27,16 @@ validator replays the ledger under the frozen SFT preregistration and requires
 
 Across rows, paired runs must share the split-manifest hash, the reference
 cost per target setting, the initial state and initial audit NLLs per seed and
-target setting, and one audit-partition identity per slice.  The per-example
-NLLs themselves are still produced by the evaluation stage; this closes their
-aggregation and binding, not the forward pass that measured them.
+target setting, and one disjoint gate-partition and audit-partition identity
+per slice.  The per-example forward passes themselves are still produced by
+the training and evaluation stages; this closes their clipping, pairing,
+aggregation, and state binding, not the model forward pass that measured them.
 """
 
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import math
@@ -325,13 +329,195 @@ def replay_ledger(
     }
 
 
+def recompute_gate_blocks(
+    manifest: dict[str, Any],
+    manifest_root: Path,
+    rows: list[dict[str, Any]],
+    section: dict[str, Any],
+    slices: list[str],
+) -> tuple[dict[str, str], dict[str, set[str]]]:
+    """Recompute every round's gate mean changes from per-draw loss records."""
+    gate = section["actual_update_gate"]
+    scales = list(gate["scale_grid"])
+    n_samples = gate["samples_per_slice_round"]
+    clip_bound = float(gate["clipped_example_nll_bound"])
+    require(clip_bound > 0, "clipped_example_nll_bound must be positive")
+    declared_partitions = manifest.get("gate_partitions")
+    require(
+        isinstance(declared_partitions, dict) and set(declared_partitions) == set(slices),
+        "run manifest must declare gate_partitions for every protected slice",
+    )
+    gate_partition_hashes: dict[str, str] = {}
+    gate_partition_ids: dict[str, set[str]] = {}
+    for name in slices:
+        entry = declared_partitions[name]
+        require(
+            isinstance(entry, dict)
+            and set(entry) == {"gate_partition_sha256", "example_ids"}
+            and is_sha256(entry.get("gate_partition_sha256")),
+            f"gate partition declaration for {name} is invalid",
+        )
+        ids = entry.get("example_ids")
+        require(
+            isinstance(ids, list)
+            and ids
+            and all(isinstance(item, str) and item for item in ids)
+            and len(set(ids)) == len(ids)
+            and canonical_digest(sorted(ids)) == entry["gate_partition_sha256"],
+            f"gate partition example IDs for {name} do not reproduce its hash",
+        )
+        gate_partition_hashes[name] = entry["gate_partition_sha256"]
+        gate_partition_ids[name] = set(ids)
+
+    require(
+        is_sha256(manifest.get("gate_loss_records_sha256")),
+        "run manifest needs gate_loss_records_sha256",
+    )
+    records = load_ledger(
+        safe_child(manifest_root, manifest.get("gate_loss_records_path")),
+        manifest["gate_loss_records_sha256"],
+        "gate-loss records",
+    )
+    expected_keys = {
+        (row["round"], name)
+        for row in rows
+        if row.get("decision") != "null_action"
+        for name in slices
+    }
+    by_key: dict[tuple[Any, Any], dict[str, Any]] = {}
+    for index, record in enumerate(records):
+        label = f"gate-loss record {index}"
+        require(
+            set(record)
+            == {
+                "round",
+                "slice",
+                "block_id",
+                "gate_partition_sha256",
+                "state_sha256_before",
+                "candidate_state_sha256_by_scale",
+                "example_ids",
+                "response_tokens",
+                "base_nll_sum",
+                "candidate_nll_sum_by_scale",
+            },
+            f"{label} has an unexpected schema",
+        )
+        key = (record["round"], record["slice"])
+        require(key not in by_key, f"duplicate gate-loss record for {key}")
+        by_key[key] = record
+    require(
+        set(by_key) == expected_keys,
+        "gate-loss records must cover exactly the non-null round/slice blocks",
+    )
+
+    for row in rows:
+        if row["decision"] == "null_action":
+            continue
+        round_index = row["round"]
+        round_candidate_states: list[str] | None = None
+        for name in slices:
+            label = f"round {round_index} {name} gate block"
+            record = by_key[(round_index, name)]
+            block = row["gate"][name]
+            require(
+                record["block_id"] == block["block_id"],
+                f"{label} block_id differs from the train ledger",
+            )
+            require(
+                record["gate_partition_sha256"] == gate_partition_hashes[name],
+                f"{label} gate_partition_sha256 differs from the run manifest",
+            )
+            require(
+                record["state_sha256_before"] == row["state_sha256_before"],
+                f"{label} was not evaluated at state_sha256_before",
+            )
+            candidate_states = record["candidate_state_sha256_by_scale"]
+            require(
+                isinstance(candidate_states, list)
+                and len(candidate_states) == len(scales)
+                and all(is_sha256(state) for state in candidate_states)
+                and len(set(candidate_states)) == len(scales)
+                and row["state_sha256_before"] not in candidate_states,
+                f"{label} needs distinct candidate state hashes per scale",
+            )
+            if round_candidate_states is None:
+                round_candidate_states = candidate_states
+            else:
+                require(
+                    candidate_states == round_candidate_states,
+                    f"round {round_index} slices do not evaluate the same scale candidate states",
+                )
+            if row["decision"] == "accepted":
+                committed_index = scales.index(row["committed_scale"])
+                require(
+                    candidate_states[committed_index] == row["state_sha256_after"],
+                    f"round {round_index} accepted state_sha256_after differs from the committed scale candidate state",
+                )
+            draw_ids = record["example_ids"]
+            allowed_ids = gate_partition_ids[name]
+            require(
+                isinstance(draw_ids, list)
+                and len(draw_ids) == n_samples
+                and set(map(type, draw_ids)) <= {str}
+                and set(draw_ids) <= allowed_ids,
+                f"{label} draws an example outside the {name} gate partition",
+            )
+            tokens = record["response_tokens"]
+            require(
+                isinstance(tokens, list)
+                and len(tokens) == n_samples
+                and set(map(type, tokens)) <= {int}
+                and min(tokens) > 0,
+                f"{label} needs positive integer response-token counts",
+            )
+            base_nll = record["base_nll_sum"]
+            require(
+                isinstance(base_nll, list)
+                and len(base_nll) == n_samples
+                and set(map(type, base_nll)) <= {int, float}
+                and min(base_nll) >= 0
+                and math.isfinite(sum(base_nll)),
+                f"{label} needs finite nonnegative base NLL sums",
+            )
+            cand_by_scale = record["candidate_nll_sum_by_scale"]
+            require(
+                isinstance(cand_by_scale, list) and len(cand_by_scale) == len(scales),
+                f"{label} must provide candidate NLL sums for every frozen scale",
+            )
+            base_clipped_sum = math.fsum(
+                min(float(nll) / tok, clip_bound) for nll, tok in zip(base_nll, tokens)
+            )
+            for scale_index, cand_nll in enumerate(cand_by_scale):
+                require(
+                    isinstance(cand_nll, list)
+                    and len(cand_nll) == n_samples
+                    and set(map(type, cand_nll)) <= {int, float}
+                    and min(cand_nll) >= 0
+                    and math.isfinite(sum(cand_nll)),
+                    f"{label} scale {scale_index} needs finite nonnegative candidate NLL sums",
+                )
+                recomputed_mean = (
+                    math.fsum(
+                        min(float(nll) / tok, clip_bound)
+                        for nll, tok in zip(cand_nll, tokens)
+                    )
+                    - base_clipped_sum
+                ) / n_samples
+                require(
+                    close(block["mean_change"][scale_index], recomputed_mean),
+                    f"{label} scale {scales[scale_index]} mean_change does not reproduce from clipped per-draw records",
+                )
+    return gate_partition_hashes, gate_partition_ids
+
+
 def recompute_audit_slice(
     entry: Any,
     name: str,
     manifest_root: Path,
     states: dict[str, str],
-) -> tuple[dict[str, float], str]:
-    """Return recomputed initial/final audit NLLs and the partition hash."""
+) -> tuple[dict[str, float], str, set[str]]:
+    """Return recomputed initial/final audit NLLs, partition hash, and IDs."""
     require(isinstance(entry, dict), f"audit endpoint for {name} must be an object")
     partition = entry.get("audit_partition_sha256")
     require(is_sha256(partition), f"audit endpoint for {name} needs a partition hash")
@@ -412,19 +598,16 @@ def recompute_audit_slice(
         canonical_digest(example_sets["initial"]) == partition,
         f"{name} audit records do not cover exactly the declared partition",
     )
-    return recomputed, partition
+    return recomputed, partition, set(example_sets["initial"])
 
 
-def validate_run(
+def validate_train_manifest(
     manifest: dict[str, Any],
     manifest_root: Path,
     row: dict[str, Any],
     section: dict[str, Any],
     slices_by_setting: dict[str, list[str]],
-    targets_by_setting: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    if targets_by_setting is None:
-        targets_by_setting = target_slices(ROOT, section)
     require(manifest.get("schema_version") == 1, "unsupported run-manifest schema")
     identity = manifest.get("run_identity")
     expected_identity = {
@@ -449,6 +632,9 @@ def validate_run(
         manifest["train_ledger_sha256"],
     )
     closure = replay_ledger(manifest, rows, section, slices)
+    gate_partitions, gate_partition_ids = recompute_gate_blocks(
+        manifest, manifest_root, rows, section, slices
+    )
     totals = manifest.get("totals")
     require(isinstance(totals, dict), "run manifest needs ledger totals")
     for key in (
@@ -463,6 +649,31 @@ def validate_run(
         close(totals.get("charged_accelerator_seconds"), closure["charged_accelerator_seconds"]),
         "manifest charged accelerator-seconds do not reproduce",
     )
+    return {
+        **closure,
+        "split_manifest_sha256": manifest["split_manifest_sha256"],
+        "initial_state_sha256": manifest["initial_state_sha256"],
+        "reference_cost_accelerator_seconds": reference,
+        "gate_partitions": gate_partitions,
+        "gate_partition_ids": gate_partition_ids,
+    }
+
+
+def validate_run(
+    manifest: dict[str, Any],
+    manifest_root: Path,
+    row: dict[str, Any],
+    section: dict[str, Any],
+    slices_by_setting: dict[str, list[str]],
+    targets_by_setting: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    if targets_by_setting is None:
+        targets_by_setting = target_slices(ROOT, section)
+    closure = validate_train_manifest(
+        manifest, manifest_root, row, section, slices_by_setting
+    )
+    slices = slices_by_setting[row["target_setting"]]
+    gate_partition_ids = closure.pop("gate_partition_ids")
     endpoint = manifest.get("audit_endpoint")
     audit_nll: dict[str, dict[str, float]] = {}
     partitions: dict[str, str] = {}
@@ -491,10 +702,18 @@ def validate_run(
         target_name = targets_by_setting[row["target_setting"]]
         require(target_name not in slices, "target slice cannot also be protected")
         entries = {target_name: endpoint.get("target_audit_nll"), **protected}
+        audit_ids_by_slice: dict[str, set[str]] = {}
         for name, entry in entries.items():
-            audit_nll[name], partitions[name] = recompute_audit_slice(
+            audit_nll[name], partitions[name], audit_ids = recompute_audit_slice(
                 entry, name, manifest_root, states
             )
+            audit_ids_by_slice[name] = audit_ids
+        for gate_name, gate_ids in gate_partition_ids.items():
+            for audit_name, audit_ids in audit_ids_by_slice.items():
+                require(
+                    not (gate_ids & audit_ids),
+                    f"gate partition for {gate_name} overlaps audit partition for {audit_name}",
+                )
         target = audit_nll[target_name]
         require(
             close(row["target_delta_nll"], target["final"] - target["initial"]),
@@ -507,9 +726,6 @@ def validate_run(
         )
     return {
         **closure,
-        "split_manifest_sha256": manifest["split_manifest_sha256"],
-        "initial_state_sha256": manifest["initial_state_sha256"],
-        "reference_cost_accelerator_seconds": reference,
         "initial_audit_nll": {name: value["initial"] for name, value in audit_nll.items()},
         "audit_partitions": partitions,
     }
@@ -520,6 +736,7 @@ def check_pairing(closures: list[tuple[dict[str, Any], dict[str, Any]]]) -> None
     require(len(splits) == 1, "factorial rows do not share one split-manifest hash")
     reference: dict[str, float] = {}
     initial: dict[tuple[Any, str], str] = {}
+    gate_partitions: dict[str, str] = {}
     partitions: dict[str, str] = {}
     initial_nll: dict[tuple[tuple[Any, str], str], float] = {}
     for row, closure in closures:
@@ -533,9 +750,16 @@ def check_pairing(closures: list[tuple[dict[str, Any], dict[str, Any]]]) -> None
         require(state == closure["initial_state_sha256"], (
             f"paired runs for {key} do not share an initial state"
         ))
+        for name, partition in closure.get("gate_partitions", {}).items():
+            shared_gate = gate_partitions.setdefault(name, partition)
+            require(shared_gate == partition, f"gate partition for {name} differs across rows")
         for name, partition in closure.get("audit_partitions", {}).items():
             shared = partitions.setdefault(name, partition)
             require(shared == partition, f"audit partition for {name} differs across rows")
+            require(
+                gate_partitions.get(name) != partition,
+                f"gate and audit partition hashes for {name} collide",
+            )
         for name, value in closure.get("initial_audit_nll", {}).items():
             shared_nll = initial_nll.setdefault((key, name), value)
             require(close(value, shared_nll), (
@@ -549,10 +773,67 @@ def fake_hash(*parts: Any) -> str:
 
 FIXTURE_AUDIT_TOKENS = (17, 40, 64, 9, 128, 33, 72, 21)
 FIXTURE_AUDIT_OFFSETS = (0.3, -0.3, 0.15, -0.15, 0.05, -0.05, 0.2, -0.2)
+FIXTURE_GATE_POOL_SIZE = 16
 
 
 def fixture_audit_ids(name: str) -> list[str]:
     return [f"{name}-audit-{index}" for index in range(len(FIXTURE_AUDIT_TOKENS))]
+
+
+def fixture_gate_ids(name: str) -> list[str]:
+    return [f"{name}-gate-{index}" for index in range(FIXTURE_GATE_POOL_SIZE)]
+
+
+@functools.lru_cache(maxsize=64)
+def cached_gate_draw_arrays(
+    name: str,
+    n_samples: int,
+    clip_bound: float,
+    means: tuple[float, ...],
+) -> tuple[list[str], list[int], list[float], list[list[float]], dict[str, str]]:
+    """Construct paired 512-draw gate arrays with clipped tail and token variation.
+
+    The first 1/8 of draws exceed ``clip_bound`` at both base and candidate
+    states (1.35 vs 1.20 per token), so clipping each example-average NLL to
+    ``[0, clip_bound]`` before differencing yields zero change on those draws,
+    whereas unclipped or post-difference clipping shifts the mean by
+    ``-0.15 / 8 = -0.01875``.  The remaining 7/8 of draws alternate token
+    counts (16 vs 48) and opposite zero-sum offsets (+0.02 vs -0.02), so a
+    token-weighted mean differs from the draw-uniform mean by ``-0.01``.
+    """
+    pool = fixture_gate_ids(name)
+    example_ids = [pool[(j * 7 + 3) % len(pool)] for j in range(n_samples)]
+    clipped_prefix = n_samples // 8
+    active_count = n_samples - clipped_prefix
+    require(active_count > 0 and active_count % 2 == 0, "invalid gate sample count for fixture")
+    tokens = [16 if j % 2 == 0 else 48 for j in range(n_samples)]
+    base_nll = [
+        1.35 * clip_bound * tokens[j]
+        if j < clipped_prefix
+        else (0.50 + (-0.01 if j % 2 == 0 else 0.01)) * tokens[j]
+        for j in range(n_samples)
+    ]
+    cand_by_scale: list[list[float]] = []
+    scale_factor = n_samples / active_count
+    for target_mean in means:
+        shifted_delta = target_mean * scale_factor
+        cand_nll = []
+        for j in range(n_samples):
+            if j < clipped_prefix:
+                cand_nll.append(1.20 * clip_bound * tokens[j])
+            else:
+                base_rate = 0.50 + (-0.01 if j % 2 == 0 else 0.01)
+                offset = 0.02 if j % 2 == 0 else -0.02
+                cand_rate = base_rate + shifted_delta + offset
+                cand_nll.append(cand_rate * tokens[j])
+        cand_by_scale.append(cand_nll)
+    serialized = {
+        "base_nll_sum": json.dumps(base_nll, allow_nan=False),
+        "candidate_nll_sum_by_scale": json.dumps(cand_by_scale, allow_nan=False),
+        "example_ids": json.dumps(example_ids, allow_nan=False),
+        "response_tokens": json.dumps(tokens, allow_nan=False),
+    }
+    return example_ids, tokens, base_nll, cand_by_scale, serialized
 
 
 def write_audit_records(
@@ -614,6 +895,13 @@ def build_fixture_run(
     gate = section["actual_update_gate"]
     scales = gate["scale_grid"]
     slices = slices_by_setting[identity["target_setting"]]
+    gate_partitions = {
+        name: {
+            "gate_partition_sha256": canonical_digest(sorted(fixture_gate_ids(name))),
+            "example_ids": sorted(fixture_gate_ids(name)),
+        }
+        for name in slices
+    }
     reference = 1000.0
     budget = identity["budget_fraction"] * reference
     run_key = path_prefix + canonical_digest(identity)[:16]
@@ -622,6 +910,7 @@ def build_fixture_run(
     step = 0
     charged_total = 0.0
     rows = []
+    gate_record_lines: list[str] = []
     round_index = 0
     while round_index < gate["maximum_rounds"]:
         reserve = 40.0
@@ -644,23 +933,47 @@ def build_fixture_run(
             "response_tokens": None,
             "physical_packs": None,
         }
+        candidate_states = [
+            fake_hash("candidate-state", run_key, round_index, scale)
+            for scale in scales
+        ]
+        candidate_states_json = json.dumps(candidate_states, allow_nan=False)
+        first_pass = 1 if decision == "accepted" else len(scales)
         if decision != "null_action":
             charged.update(gate_forwards=6.0, training=12.0)
             if decision == "rejected":
                 charged["rejected_update"] = 3.0
-            first_pass = 1 if decision == "accepted" else len(scales)
             row["gate"] = {}
             for slice_index, name in enumerate(slices):
                 means = [
                     0.02 - 0.004 * k if k < first_pass else -0.001 * (k + slice_index)
                     for k in range(len(scales))
                 ]
+                block_id = f"{run_key[len(path_prefix):]}-{round_index}-{name}"
                 row["gate"][name] = {
-                    "block_id": f"{run_key[len(path_prefix):]}-{round_index}-{name}",
+                    "block_id": block_id,
                     "samples": gate["samples_per_slice_round"],
                     "mean_change": means,
                     "upper": [m + gate["empirical_margin"] for m in means],
                 }
+                _, _, _, _, serialized = cached_gate_draw_arrays(
+                    name,
+                    gate["samples_per_slice_round"],
+                    float(gate["clipped_example_nll_bound"]),
+                    tuple(means),
+                )
+                gate_record_lines.append(
+                    f'{{"base_nll_sum": {serialized["base_nll_sum"]}, '
+                    f'"block_id": "{block_id}", '
+                    f'"candidate_nll_sum_by_scale": {serialized["candidate_nll_sum_by_scale"]}, '
+                    f'"candidate_state_sha256_by_scale": {candidate_states_json}, '
+                    f'"example_ids": {serialized["example_ids"]}, '
+                    f'"gate_partition_sha256": "{gate_partitions[name]["gate_partition_sha256"]}", '
+                    f'"response_tokens": {serialized["response_tokens"]}, '
+                    f'"round": {round_index}, '
+                    f'"slice": "{name}", '
+                    f'"state_sha256_before": "{state}"}}\n'
+                )
             row["tolerance"] = dict.fromkeys(slices, gate["per_round_tolerance"])
             row["response_tokens"] = 6144
             row["physical_packs"] = section["optimizer_window"]["physical_packs_per_update"]
@@ -669,7 +982,7 @@ def build_fixture_run(
         if overrun and round_index == 1:
             charged["training"] += 30.0
         after_state = (
-            fake_hash("state", run_key, round_index) if decision == "accepted" else state
+            candidate_states[first_pass] if decision == "accepted" else state
         )
         after_step = step + 1 if decision == "accepted" else step
         row["charged"] = charged
@@ -692,6 +1005,9 @@ def build_fixture_run(
         json.dumps(row, sort_keys=True, allow_nan=False) + "\n" for row in rows
     ).encode()
     (directory / ledger_name).write_bytes(ledger_bytes)
+    gate_records_name = f"{run_key}-gate-records.jsonl"
+    gate_records_bytes = "".join(gate_record_lines).encode()
+    (directory / gate_records_name).write_bytes(gate_records_bytes)
     target_initial = 2.0
     protected_initial = {name: 1.5 + 0.1 * i for i, name in enumerate(slices)}
     target_name = target_slices(ROOT, section)[identity["target_setting"]]
@@ -732,6 +1048,9 @@ def build_fixture_run(
         "budget_accelerator_seconds": budget,
         "train_ledger_path": ledger_name,
         "train_ledger_sha256": hashlib.sha256(ledger_bytes).hexdigest(),
+        "gate_partitions": gate_partitions,
+        "gate_loss_records_path": gate_records_name,
+        "gate_loss_records_sha256": hashlib.sha256(gate_records_bytes).hexdigest(),
         "terminal_reason": reason,
         "next_round_reserve_accelerator_seconds": 40.0 if reason == "reserve_exhausted" else None,
         "protocol_failure": overrun,
@@ -969,6 +1288,125 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
 
         mutate("token_weighted_instead_of_row_uniform_mean", token_weighted)
 
+        def edit_gate_records(m: dict, change) -> list[dict]:
+            path = directory / m["gate_loss_records_path"]
+            records = load_ledger(path, m["gate_loss_records_sha256"], "gate-loss records")
+            change(records)
+            payload = "".join(
+                json.dumps(x, sort_keys=True, allow_nan=False) + "\n" for x in records
+            ).encode()
+            path.write_bytes(payload)
+            m["gate_loss_records_sha256"] = hashlib.sha256(payload).hexdigest()
+            return records
+
+        def tampered_gate_records(r, m, l):
+            path = directory / m["gate_loss_records_path"]
+            path.write_bytes(path.read_bytes().replace(b'"round": 0', b'"round": 9'))
+
+        mutate("gate_record_bytes_changed", tampered_gate_records)
+
+        def gate_mean_not_reproduced(r, m, l):
+            block = l[0]["gate"][protected_name]
+            block["mean_change"][1] -= 0.002
+            block["upper"][1] -= 0.002
+            relog(m, l)
+
+        mutate("gate_mean_not_reproduced_from_draws", gate_mean_not_reproduced)
+
+        def post_difference_clipped_gate(r, m, l):
+            records = load_ledger(
+                directory / m["gate_loss_records_path"],
+                m["gate_loss_records_sha256"],
+                "gate-loss records",
+            )
+            record = next(
+                x for x in records if x["round"] == 0 and x["slice"] == protected_name
+            )
+            tokens = record["response_tokens"]
+            base = record["base_nll_sum"]
+            margin = section["actual_update_gate"]["empirical_margin"]
+            unclipped_means = [
+                math.fsum((c - b) / t for c, b, t in zip(cand, base, tokens)) / len(tokens)
+                for cand in record["candidate_nll_sum_by_scale"]
+            ]
+            l[0]["gate"][protected_name]["mean_change"] = unclipped_means
+            l[0]["gate"][protected_name]["upper"] = [v + margin for v in unclipped_means]
+            relog(m, l)
+
+        mutate(
+            "gate_clipped_after_differencing_instead_of_per_example",
+            post_difference_clipped_gate,
+        )
+
+        def token_weighted_gate(r, m, l):
+            records = load_ledger(
+                directory / m["gate_loss_records_path"],
+                m["gate_loss_records_sha256"],
+                "gate-loss records",
+            )
+            record = next(
+                x for x in records if x["round"] == 0 and x["slice"] == protected_name
+            )
+            tokens = record["response_tokens"]
+            total_tokens = sum(tokens)
+            bound = float(section["actual_update_gate"]["clipped_example_nll_bound"])
+            margin = section["actual_update_gate"]["empirical_margin"]
+            base_c = [min(b / t, bound) for b, t in zip(record["base_nll_sum"], tokens)]
+            weighted_means = [
+                math.fsum(
+                    (min(c / t, bound) - b_c) * t
+                    for c, b_c, t in zip(cand, base_c, tokens)
+                )
+                / total_tokens
+                for cand in record["candidate_nll_sum_by_scale"]
+            ]
+            l[0]["gate"][protected_name]["mean_change"] = weighted_means
+            l[0]["gate"][protected_name]["upper"] = [v + margin for v in weighted_means]
+            relog(m, l)
+
+        mutate("gate_token_weighted_instead_of_draw_uniform_mean", token_weighted_gate)
+
+        def foreign_gate_draw(r, m, l):
+            def change(records):
+                records[0]["example_ids"][0] = f"{records[0]['slice']}-foreign-0"
+
+            edit_gate_records(m, change)
+
+        mutate("gate_example_outside_partition", foreign_gate_draw)
+
+        def overlapping_gate_audit(r, m, l):
+            overlap_id = fixture_audit_ids(protected_name)[0]
+            ids = sorted({*m["gate_partitions"][protected_name]["example_ids"], overlap_id})
+            digest = canonical_digest(ids)
+            m["gate_partitions"][protected_name] = {
+                "gate_partition_sha256": digest,
+                "example_ids": ids,
+            }
+
+            def change(records):
+                for rec in records:
+                    if rec["slice"] == protected_name:
+                        rec["gate_partition_sha256"] = digest
+
+            edit_gate_records(m, change)
+
+        mutate("gate_and_audit_partitions_overlap", overlapping_gate_audit)
+
+        def wrong_committed_candidate_state(r, m, l):
+            def change(records):
+                for rec in records:
+                    if rec["round"] == 0:
+                        rec["candidate_state_sha256_by_scale"][1] = fake_hash(
+                            "wrong-committed-candidate-state"
+                        )
+
+            edit_gate_records(m, change)
+
+        mutate(
+            "committed_state_differs_from_accepted_scale_candidate",
+            wrong_committed_candidate_state,
+        )
+
         _, _, failed_row = build_fixture_run(
             directory,
             section,
@@ -996,6 +1434,7 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
         else:
             raise LedgerError("unpaired initial state was accepted")
         for label, field, value in (
+            ("unpaired_gate_partition", "gate_partitions", fake_hash("other-gate-partition")),
             ("unpaired_audit_partition", "audit_partitions", fake_hash("other-partition")),
             ("unpaired_initial_audit_nll", "initial_audit_nll", 9.0),
         ):

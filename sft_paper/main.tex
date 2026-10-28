@@ -148,9 +148,14 @@ HARP lowers train--evaluate selection cost by scoring representative leaves of
 a data hierarchy and inferring the rest with empirical-Bayes posteriors
 \cite{wang2026harp}; like every selector here, its measurement runs are charged
 to the same accelerator-second ledger. Q-Tuning jointly prunes samples and
-response tokens \cite{wang2025qtuning}. Token pruning changes $\mathcal R_i$,
+response tokens \cite{wang2025qtuning}, while TRIM aligns token-wise attention
+saliency with target-task representations after a short warm-up
+\cite{nagaraj2026trim}. Token pruning changes $\mathcal R_i$,
 hence both $N_B$ and packed cost, so it is compared only inside the same
-frozen response-token window.
+frozen response-token window. Cure-SFT separates semantic redundancy from
+quality defects and repairs fixable samples with teacher models
+\cite{fu2026curesft}; we hold candidate text fixed so any difference isolates
+scheduling and packing rather than data rewriting.
 
 \paragraph{Online allocation.}
 Dynamic bilevel weighting \cite{yu2025dynamicbilevel}, source-mixture
@@ -828,7 +833,8 @@ The shared acquisition-to-retention validator now recomputes row identifiers,
 raw and projected-content hashes, canonical duplicate representatives, and
 every retained/suppressed/quarantined disposition from acquisition bytes.
 \texttt{scripts/validate\_sft\_train\_ledger.py} now closes every factorial
-endpoint row against its run manifest and hash-bound per-round train ledger,
+endpoint row against its run manifest, hash-bound per-round train ledger, and
+per-draw gate-loss records,
 and \texttt{aggregate\_sft\_factorial.py} refuses any row that does not close.
 The replay checks a contiguous parameter-state and optimizer-step chain from
 the common initial state, with one step per accepted update and none for a
@@ -836,9 +842,13 @@ rejected update or null action. It also checks reserve admission before every
 round, charging of all seven cost components (packing, reference gradients,
 scoring, solving, gate forwards, training, and rejected updates), and the
 three-way stop rule above. Gate evidence must use a fresh block per protected
-slice and round with the frozen 512 draws. The upper statistic is recomputed as
-the observed mean plus the frozen empirical margin, and the committed scale
-must be the largest passing one. The cumulative tolerance ledger is also
+slice and round with the frozen 512 draws from that slice's gate partition,
+reused as a paired block across every scale in the frozen grid. For each draw
+and scale, the validator recomputes the response-token-mean NLL, clips it to
+$[0,M_\phi]$ before differencing against the clipped pre-update draw NLL, and
+requires the draw-uniform mean change and heuristic upper statistic to
+reproduce. An accepted update must commit the largest passing scale and
+transition to that scale's candidate state hash. The cumulative tolerance ledger is also
 checked. Finally, the audit endpoint must be evaluated on the ledger's final
 state, from which the row's target and worst-protected NLL changes are
 recomputed. Each declared audit NLL is itself recomputed from hash-bound
@@ -847,18 +857,24 @@ hash, response-token count, and summed NLL. The validator applies the frozen
 estimand, a row-uniform mean of per-example response-token-mean NLL, and
 requires initial and final records to be evaluated on the exact initial and
 final states and to cover exactly the audit partition named by the hash of its
-sorted identifiers. A protocol-failure run must leave its sealed audits
-unopened. Paired rows must share one split-manifest hash and audit partition
-per slice, the reference cost within a target setting, and the initial state
-and initial audit NLLs within seed and target setting. Twenty-two generated
+sorted identifiers, which must be disjoint from every gate partition. A
+protocol-failure run must leave its sealed audits
+unopened. Paired rows must share one split-manifest hash, one gate partition
+per protected slice, and one disjoint audit partition per slice, the reference
+cost within a target setting, and the initial state
+and initial audit NLLs within seed and target setting. Thirty generated
 mutations fail, including a hidden charge, a rejected update that advances the
 optimizer, a smaller-than-largest passing scale, a reused gate block, a
-dropped round, an unmarked overrun, a final audit record evaluated on the
-initial state, a dropped or duplicated audit example, a failed run that opens
-its audit, and a token-weighted rather than row-uniform mean. The real runner
-now re-executes the aggregator over the hash-bound endpoint file, requires
-every run manifest to bind the processed split manifest, and demands exact
-equality with the evaluation summary. The fixtures are non-empirical, and the
+dropped round, an unmarked overrun, post-difference instead of per-example gate
+clipping, a token-weighted gate or audit mean, a foreign gate draw,
+overlapping gate and audit partitions, an accepted state that differs from the
+committed scale's candidate state, a final audit record evaluated on the
+initial state, a dropped or duplicated audit example, and a failed run that
+opens its audit. The real runner now validates \texttt{train/run\_ledger.jsonl}
+at the train stage, verifies that \texttt{evaluate/endpoints.jsonl} matches
+that run ledger, re-executes the aggregator over the hash-bound endpoint file,
+requires every run manifest to bind the processed split manifest, and demands
+exact equality with the evaluation summary. The fixtures are non-empirical, and the
 per-example forward passes remain site-local measurements. Real execution
 remains blocked on reviewed source-specific multi-field inventories and a
 site-local sealed-resource access attestation. Declarative stage checks do

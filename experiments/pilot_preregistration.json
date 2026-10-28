@@ -58,12 +58,12 @@
       "validator_dependencies": [],
       "blocking_gaps": [
         "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
-        "factorial endpoint rows close against hash-bound train ledgers, but target and protected audit NLLs are still declared rather than recomputed from per-example audit-loss records, and the real runner does not yet invoke the aggregator",
+        "train and evaluation stages close per-draw gate blocks and per-example audit-loss records against the run manifest and split manifest, but per-example forward passes and profiled execution-cost calibration plans are not yet tied to a reviewed hardware measurement bundle",
         "site-local sealed-resource access isolation is required but not enforced by the repository runner"
       ],
       "required_before_freezing": [
         "reviewed overlap inventories covering every model-visible and protected textual field plus a segment-pair exact engine for artifacts above the exhaustive limit",
-        "endpoint aggregator integrated into the real runner, with audit NLLs recomputed from hash-bound per-example audit-loss records evaluated on the ledger's final state",
+        "reviewed hardware measurement bundle for the 200 independent cost-calibration plans and per-example gate/audit forward passes",
         "site-local isolation attestation defining which stages can read score, gate, audit, and benchmark bytes"
       ]
     },
@@ -224,7 +224,7 @@
     },
     "train_ledger_contract": {
       "validator_path": "scripts/validate_sft_train_ledger.py",
-      "validator_sha256": "ac39d0c5de495ad640ac635f8fcd6ae8fe3d783ecbaa94ad93ce7f5511d602f6",
+      "validator_sha256": "836694682dfbb59876dc069e6c751021308a83ea048861e490fa7160846065fb",
       "aggregator_path": "scripts/aggregate_sft_factorial.py",
       "aggregator_sha256": "9c45ba798479dde41c23254c293f93ba27392b9fbd3b5c7bd97f6ed020d797ee",
       "required_status": "pass",
@@ -243,8 +243,8 @@
         "reserve_exhausted",
         "protocol_failure"
       ],
-      "pairing_rule": "all factorial rows share one split-manifest hash and one audit-partition hash per slice; rows share the reference cost within a target setting and the initial state and initial audit NLLs within seed and target setting",
-      "interpretation": "Endpoint rows are replayed against hash-bound per-round ledgers: state and optimizer-step chain, reserve admission, complete charging, stop rule, gate blocks, largest passing scale, tolerance ledger, and final-state audit endpoint. Every declared initial and final audit NLL is recomputed from hash-bound per-example loss records as the row-uniform mean of response-token-mean NLL, evaluated on the exact initial and final states over exactly the identified audit partition; protocol-failure runs keep audits sealed. The real runner re-executes the aggregation over evaluate/endpoints.jsonl and requires exact equality with evaluate/summary.json. Per-example forward passes remain site-local measurements."
+      "pairing_rule": "all factorial rows share one split-manifest hash, one gate-partition hash per protected slice, and one disjoint audit-partition hash per slice; rows share the reference cost within a target setting and the initial state and initial audit NLLs within seed and target setting",
+      "interpretation": "Endpoint rows are replayed against hash-bound per-round ledgers: state and optimizer-step chain, reserve admission, complete charging, stop rule, fresh per-slice gate blocks, per-draw clipped gate-loss recomputation across paired scale candidates, largest passing scale committed to its candidate state, tolerance ledger, and final-state audit endpoint. Every declared initial and final audit NLL is recomputed from hash-bound per-example loss records as the row-uniform mean of response-token-mean NLL, evaluated on the exact initial and final states over exactly the identified audit partition; protocol-failure runs keep audits sealed. The real runner validates train/run_ledger.jsonl at the train stage and re-executes the aggregation over evaluate/endpoints.jsonl at the evaluate stage. Per-example forward passes remain site-local measurements."
     }
   },
   "rl": {

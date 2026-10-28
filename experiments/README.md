@@ -232,26 +232,38 @@ make sft-ledger-audit
 ```
 
 `scripts/validate_sft_train_ledger.py` replays the run manifest's hash-bound
-per-round train ledger. It checks the parameter-state and optimizer-step chain,
+per-round train ledger and per-draw gate-loss records. It checks the
+parameter-state and optimizer-step chain,
 with one step per accepted update and none for a rejected update or null
 action. It checks reserve admission before every round, complete charging of
 seven cost components, and the stop rule (maximum rounds, exhausted reserve,
 or a retained overrun marked as a protocol failure). Gate evidence must use a
-fresh block per protected slice and round, the heuristic upper statistic must
-reproduce, the committed scale must be the largest passing one, and the
-cumulative tolerance ledger must hold. The audit endpoint must be evaluated on
+fresh 512-draw block per protected slice and round from that slice's gate
+partition, shared as a paired block across every scale in the frozen grid. For
+each draw and scale, the validator recomputes the response-token-mean NLL,
+clips it to $[0,M_\phi]$ before differencing against the clipped pre-update
+draw NLL, and requires the draw-uniform mean change and heuristic upper
+statistic to reproduce. An accepted update must commit the largest passing
+scale and transition to that scale's candidate state hash; the cumulative
+tolerance ledger must also hold. The audit endpoint must be evaluated on
 the final ledger state. Each declared initial and final audit NLL is
 recomputed from hash-bound per-example records (`example_id`, `slice`,
 `evaluated_state_sha256`, `response_tokens`, `nll_sum`) as the frozen
 row-uniform mean of response-token-mean NLL. Records must be evaluated on the
 exact initial and final states, repeat no example, and cover exactly the
-audit partition identified by the SHA-256 of its sorted identifiers. A
-protocol-failure run must leave its sealed audits unopened. The aggregator
-calls this closure for every row and requires paired rows to share the
-split-manifest hash, one audit partition per slice, reference cost, initial
-state, and initial audit NLLs. Twenty-two generated mutations fail, including
-a token-weighted instead of row-uniform mean, a dropped audit example, and a
-final record evaluated on the initial state.
+audit partition identified by the SHA-256 of its sorted identifiers, which must
+be disjoint from every gate partition. A
+protocol-failure run must leave its sealed audits unopened. The real runner
+validates `train/run_ledger.jsonl` at the `train` stage and re-executes the
+aggregator at `evaluate`. The aggregator calls this closure for every row and
+requires paired rows to share the split-manifest hash, one gate partition per
+protected slice, one disjoint audit partition per slice, reference cost,
+initial state, and initial audit NLLs. Thirty generated mutations fail,
+including post-difference instead of per-example gate clipping, token-weighted
+gate or audit means, foreign gate draws, overlapping gate and audit
+partitions, an accepted state that differs from the committed scale's
+candidate state, a dropped audit example, and a final record evaluated on the
+initial state.
 
 In a real run, `aggregate_sft_factorial.py` writes `input_sha256` for its
 endpoint file. The pipeline runner requires `evaluate/endpoints.jsonl` to
