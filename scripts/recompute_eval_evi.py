@@ -15,14 +15,22 @@ records the working-model mode and precision.  This validator
   committed candidate, with the frozen common standard-normal draws, ridge,
   damping, Cholesky jitter ladder, margin, and loss matrix.
 
-The working model scored here has Davidson natural parameters that are linear
-in the coefficients (eta = F_x theta, kappa = G_x theta), i.e. fixed
-discrimination.  Jointly estimated log-discrimination makes eta bilinear and
-needs its own Jacobian; that case is rejected rather than approximated.
+Both the fixed-discrimination linear Davidson model
+(``eta = f_x^T theta``, ``kappa = g_x^T theta``) and the jointly estimated
+log-discrimination bilinear Davidson model
+(``eta = f_x^T theta + exp(u_x^T theta) * (s_x^T theta)``,
+``kappa = g_x^T theta``) are recomputed.  In the bilinear model, the validator
+enforces the human-panel identifiability constraint ``sum_x pi(x) u_x = 0``
+and applies the exact parameter Jacobian
+``d eta / d theta = f_x + d_x s_x + (d_x q_x) u_x`` and observed negative
+Hessian ``J_x^T I_(eta,kappa) J_x - g_eta(y) d^2 eta / d theta^2`` in both
+Laplace closure and every hypothetical Newton update; linear or Gauss-Newton
+approximations are rejected.
 
-The self-test builds a generated golden bundle, recomputes EVI with numpy and
-with an independent pure-Python implementation, and applies mutations that
-must fail.  Outputs are software checks with empirical_evidence=false.
+The self-test builds generated golden bundles for both working models,
+recomputes EVI with numpy and with an independent pure-Python implementation,
+and applies mutations that must fail.  Outputs are software checks with
+empirical_evidence=false.
 """
 
 from __future__ import annotations
@@ -42,6 +50,9 @@ from validate_eval_sequential_bundle import canonical_digest, commitment_payload
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PREREGISTRATION = ROOT / "experiments" / "pilot_preregistration.json"
 WORKING_MODEL = "davidson_linear_natural_parameters"
+WORKING_MODEL_BILINEAR = "davidson_estimated_discrimination"
+SUPPORTED_WORKING_MODELS = {WORKING_MODEL, WORKING_MODEL_BILINEAR}
+IDENTIFIABILITY_TOLERANCE = 1e-12
 STATIONARITY_TOLERANCE = 1e-8
 PRECISION_TOLERANCE = 1e-9
 EVI_TOLERANCE = 1e-9
@@ -124,10 +135,64 @@ def posterior_draws(mode: np.ndarray, factor: np.ndarray, normals: np.ndarray) -
     return mode + np.linalg.solve(factor.T, normals.T).T
 
 
+def evaluate_natural_parameters(
+    draws: np.ndarray, design: dict[str, Any], unit_index: int | None = None
+) -> tuple[np.ndarray, np.ndarray]:
+    """Evaluate (eta, kappa) for 1D mode or 2D posterior draws."""
+    if unit_index is not None:
+        f_row = design["eta_additive"][unit_index]
+        s_row = design["eta_scaled"][unit_index]
+        u_row = design["log_discrimination"][unit_index]
+        g_row = design["kappa"][unit_index]
+        eta = draws @ f_row + np.exp(draws @ u_row) * (draws @ s_row)
+        kappa = draws @ g_row
+        return eta, kappa
+    eta = draws @ design["eta_additive"].T + np.exp(
+        draws @ design["log_discrimination"].T
+    ) * (draws @ design["eta_scaled"].T)
+    kappa = draws @ design["kappa"].T
+    return eta, kappa
+
+
+def unit_gradient_and_observed_information(
+    mode: np.ndarray,
+    design: dict[str, Any],
+    unit_index: int,
+    outcome: int,
+    *,
+    include_log_disc_chain: bool = True,
+    include_second_derivative: bool = True,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Exact parameter gradient and observed information -d^2 log p(y|x)/d theta^2."""
+    f_row = design["eta_additive"][unit_index]
+    s_row = design["eta_scaled"][unit_index]
+    u_row = design["log_discrimination"][unit_index]
+    g_row = design["kappa"][unit_index]
+    phi = float(u_row @ mode)
+    disc = math.exp(phi)
+    scaled_quality = float(s_row @ mode)
+    eta = float(f_row @ mode) + disc * scaled_quality
+    kappa = float(g_row @ mode)
+    grad_eta = f_row + disc * s_row
+    if include_log_disc_chain:
+        grad_eta = grad_eta + (disc * scaled_quality) * u_row
+    jacobian = np.stack([grad_eta, g_row])
+    local_gradient, information = natural_gradient_and_information(eta, kappa, outcome)
+    param_gradient = jacobian.T @ local_gradient
+    observed_info = jacobian.T @ information @ jacobian
+    if include_second_derivative and design["working_model"] == WORKING_MODEL_BILINEAR:
+        hessian_eta = disc * (
+            np.outer(u_row, s_row) + np.outer(s_row, u_row)
+        ) + (disc * scaled_quality) * np.outer(u_row, u_row)
+        observed_info = observed_info - float(local_gradient[0]) * hessian_eta
+    return param_gradient, observed_info
+
+
 def state_probabilities(
-    draws: np.ndarray, design: dict[str, np.ndarray], margin: float
+    draws: np.ndarray, design: dict[str, Any], margin: float
 ) -> tuple[np.ndarray, int]:
-    p_plus, _, p_minus = davidson(draws @ design["eta"].T, draws @ design["kappa"].T)
+    eta_mat, kappa_mat = evaluate_natural_parameters(draws, design)
+    p_plus, _, p_minus = davidson(eta_mat, kappa_mat)
     delta = (p_plus - p_minus) @ design["mass"]
     counts = np.array(
         [np.sum(delta > margin), np.sum(delta < -margin), 0], dtype=np.float64
@@ -148,33 +213,79 @@ def frame_design(
     artifact: dict[str, Any], mass: dict[str, float], dimension: int
 ) -> dict[str, Any]:
     units = sorted(mass)
+    working_model = artifact.get("working_model", WORKING_MODEL)
+    require(
+        working_model in SUPPORTED_WORKING_MODELS,
+        f"unsupported working_model: {working_model!r}",
+    )
     design = artifact.get("frame_design")
     require(
         isinstance(design, dict) and set(design) == set(units),
         "posterior frame design must cover exactly the bundle frame",
     )
-    rows: dict[str, list[list[float]]] = {"eta": [], "kappa": []}
-    for unit in units:
-        entry = design[unit]
-        require(
-            isinstance(entry, dict) and set(entry) == {"eta", "kappa"},
-            f"frame design for {unit} needs eta and kappa rows",
-        )
-        for key in ("eta", "kappa"):
-            row = entry[key]
+    mass_vec = np.array([mass[unit] for unit in units], dtype=np.float64)
+    if working_model == WORKING_MODEL:
+        rows: dict[str, list[list[float]]] = {"eta": [], "kappa": []}
+        for unit in units:
+            entry = design[unit]
             require(
-                isinstance(row, list)
-                and len(row) == dimension
-                and all(isinstance(v, (int, float)) and math.isfinite(v) for v in row),
-                f"frame design {key} row for {unit} is invalid",
+                isinstance(entry, dict) and set(entry) == {"eta", "kappa"},
+                f"linear frame design for {unit} needs eta and kappa rows",
             )
-            rows[key].append([float(v) for v in row])
+            for key in ("eta", "kappa"):
+                row = entry[key]
+                require(
+                    isinstance(row, list)
+                    and len(row) == dimension
+                    and all(isinstance(v, (int, float)) and math.isfinite(v) for v in row),
+                    f"frame design {key} row for {unit} is invalid",
+                )
+                rows[key].append([float(v) for v in row])
+        eta_additive = np.array(rows["eta"], dtype=np.float64)
+        eta_scaled = np.zeros_like(eta_additive)
+        log_discrimination = np.zeros_like(eta_additive)
+        kappa = np.array(rows["kappa"], dtype=np.float64)
+    else:
+        bilinear_keys = {"eta_additive", "eta_scaled", "log_discrimination", "kappa"}
+        rows = {key: [] for key in bilinear_keys}
+        for unit in units:
+            entry = design[unit]
+            require(
+                isinstance(entry, dict) and set(entry) == bilinear_keys,
+                f"bilinear frame design for {unit} needs eta_additive, eta_scaled, log_discrimination, and kappa",
+            )
+            for key in bilinear_keys:
+                row = entry[key]
+                require(
+                    isinstance(row, list)
+                    and len(row) == dimension
+                    and all(isinstance(v, (int, float)) and math.isfinite(v) for v in row),
+                    f"frame design {key} row for {unit} is invalid",
+                )
+                rows[key].append([float(v) for v in row])
+        eta_additive = np.array(rows["eta_additive"], dtype=np.float64)
+        eta_scaled = np.array(rows["eta_scaled"], dtype=np.float64)
+        log_discrimination = np.array(rows["log_discrimination"], dtype=np.float64)
+        kappa = np.array(rows["kappa"], dtype=np.float64)
+        require(
+            bool(np.any(np.abs(eta_scaled) > 0))
+            and bool(np.any(np.abs(log_discrimination) > 0)),
+            "estimated-discrimination frame design must have nonzero eta_scaled and log_discrimination rows",
+        )
+        require(
+            float(np.max(np.abs(mass_vec @ log_discrimination))) <= IDENTIFIABILITY_TOLERANCE,
+            "estimated-discrimination frame design violates the weighted human-panel log-discrimination zero constraint",
+        )
     return {
+        "working_model": working_model,
         "units": units,
         "index": {unit: i for i, unit in enumerate(units)},
-        "eta": np.array(rows["eta"]),
-        "kappa": np.array(rows["kappa"]),
-        "mass": np.array([mass[unit] for unit in units]),
+        "eta": eta_additive,
+        "eta_additive": eta_additive,
+        "eta_scaled": eta_scaled,
+        "log_discrimination": log_discrimination,
+        "kappa": kappa,
+        "mass": mass_vec,
     }
 
 
@@ -189,12 +300,12 @@ def close_laplace_fit(
     expected = prior_precision.copy()
     for unit, outcome in observations:
         i = design["index"][unit]
-        jacobian = np.stack([design["eta"][i], design["kappa"][i]])
-        local_gradient, information = natural_gradient_and_information(
-            float(design["eta"][i] @ mode), float(design["kappa"][i] @ mode), outcome
+        param_gradient, observed_info = unit_gradient_and_observed_information(
+            mode, design, i, outcome
         )
-        gradient += jacobian.T @ local_gradient
-        expected += jacobian.T @ information @ jacobian
+        gradient += param_gradient
+        expected += observed_info
+    expected = (expected + expected.T) / 2.0
     scale = max(1.0, float(len(observations)))
     require(
         float(np.max(np.abs(gradient))) <= STATIONARITY_TOLERANCE * scale,
@@ -202,7 +313,7 @@ def close_laplace_fit(
     )
     require(
         np.allclose(precision, expected, rtol=PRECISION_TOLERANCE, atol=PRECISION_TOLERANCE),
-        "posterior precision is not prior precision plus fit-slot information",
+        "posterior precision is not prior precision plus fit-slot observed information",
     )
 
 
@@ -212,6 +323,9 @@ def recompute_evi(
     design: dict[str, Any],
     candidates: list[str],
     config: dict[str, Any],
+    *,
+    include_log_disc_chain: bool = True,
+    include_second_derivative: bool = True,
 ) -> dict[str, Any]:
     dimension = len(mode)
     normals = common_normals(config, dimension)
@@ -225,20 +339,24 @@ def recompute_evi(
     identity = np.eye(dimension)
     for unit in sorted(set(candidates)):
         i = design["index"][unit]
-        eta_row, kappa_row = design["eta"][i], design["kappa"][i]
+        eta_draws, kappa_draws = evaluate_natural_parameters(base, design, i)
         predictive = np.array(
-            [float(np.mean(p)) for p in davidson(base @ eta_row, base @ kappa_row)]
+            [float(np.mean(p)) for p in davidson(eta_draws, kappa_draws)]
         )
-        jacobian = np.stack([eta_row, kappa_row])
         expected_risk = 0.0
         failed = False
         for index, outcome in enumerate(OUTCOMES):
-            local_gradient, information = natural_gradient_and_information(
-                float(eta_row @ mode), float(kappa_row @ mode), outcome
+            param_gradient, observed_info = unit_gradient_and_observed_information(
+                mode,
+                design,
+                i,
+                outcome,
+                include_log_disc_chain=include_log_disc_chain,
+                include_second_derivative=include_second_derivative,
             )
-            updated = precision + jacobian.T @ information @ jacobian + config["damping"] * identity
-            regularized = updated + config["ridge"] * identity
-            new_mode = mode + np.linalg.solve(regularized, jacobian.T @ local_gradient)
+            updated = precision + observed_info + config["damping"] * identity
+            regularized = (updated + updated.T) / 2.0 + config["ridge"] * identity
+            new_mode = mode + np.linalg.solve(regularized, param_gradient)
             new_factor = cholesky_with_jitter(regularized, config["jitter"])
             if new_factor is None:
                 failed = True
@@ -267,8 +385,8 @@ def validate_bundle_evi(
 ) -> dict[str, Any]:
     require(posteriors.get("schema_version") == 1, "unsupported posterior artifact schema")
     require(
-        posteriors.get("working_model") == WORKING_MODEL,
-        "only the fixed-discrimination linear Davidson working model is recomputable",
+        posteriors.get("working_model") in SUPPORTED_WORKING_MODELS,
+        "unsupported Davidson working model in posterior artifact",
     )
     names = posteriors.get("parameter_names")
     prior_sd = posteriors.get("prior_standard_deviations")
@@ -391,13 +509,29 @@ def py_solve(matrix: list[list[float]], vector: list[float]) -> list[float]:
     return py_solve_upper_transpose(lower, forward)
 
 
+def py_eta_kappa(
+    f_row: list[float],
+    s_row: list[float],
+    u_row: list[float],
+    g_row: list[float],
+    theta: list[float],
+) -> tuple[float, float, float, float]:
+    phi = sum(a * b for a, b in zip(u_row, theta))
+    disc = math.exp(phi)
+    scaled = sum(a * b for a, b in zip(s_row, theta))
+    eta = sum(a * b for a, b in zip(f_row, theta)) + disc * scaled
+    kappa = sum(a * b for a, b in zip(g_row, theta))
+    return eta, kappa, disc, scaled
+
+
 def py_evi(
     mode: list[float],
     precision: list[list[float]],
-    frame: list[tuple[list[float], list[float], float]],
-    candidate: tuple[list[float], list[float]],
+    frame: list[tuple[list[float], list[float], list[float], list[float], float]],
+    candidate: tuple[list[float], list[float], list[float], list[float]],
     normals: list[list[float]],
     config: dict[str, Any],
+    bilinear: bool = False,
 ) -> float:
     n = len(mode)
 
@@ -410,11 +544,9 @@ def py_evi(
             theta = [c + o for c, o in zip(center, offset)]
             draws.append(theta)
             delta = 0.0
-            for eta_row, kappa_row, mass in frame:
-                p, _, m = py_davidson(
-                    sum(a * b for a, b in zip(eta_row, theta)),
-                    sum(a * b for a, b in zip(kappa_row, theta)),
-                )
+            for f_row, s_row, u_row, g_row, mass in frame:
+                eta_val, kappa_val, _, _ = py_eta_kappa(f_row, s_row, u_row, g_row, theta)
+                p, _, m = py_davidson(eta_val, kappa_val)
                 delta += mass * (p - m)
             if delta > config["margin"]:
                 counts[0] += 1
@@ -426,17 +558,27 @@ def py_evi(
         return min(sum(l * s for l, s in zip(row, state)) for row in config["loss"]), draws
 
     prior_risk, base = risk(mode, precision)
-    eta_row, kappa_row = candidate
+    f_row, s_row, u_row, g_row = candidate
     predictive = [0.0, 0.0, 0.0]
     for theta in base:
-        probabilities = py_davidson(
-            sum(a * b for a, b in zip(eta_row, theta)),
-            sum(a * b for a, b in zip(kappa_row, theta)),
-        )
+        eta_val, kappa_val, _, _ = py_eta_kappa(f_row, s_row, u_row, g_row, theta)
+        probabilities = py_davidson(eta_val, kappa_val)
         for k in range(3):
             predictive[k] += probabilities[k] / len(base)
-    eta = sum(a * b for a, b in zip(eta_row, mode))
-    kappa = sum(a * b for a, b in zip(kappa_row, mode))
+    eta, kappa, disc, scaled = py_eta_kappa(f_row, s_row, u_row, g_row, mode)
+    grad_eta = [
+        f_row[i] + disc * s_row[i] + (disc * scaled) * u_row[i] for i in range(n)
+    ]
+    hessian_eta = [
+        [
+            disc * (u_row[i] * s_row[j] + s_row[i] * u_row[j])
+            + (disc * scaled) * u_row[i] * u_row[j]
+            if bilinear
+            else 0.0
+            for j in range(n)
+        ]
+        for i in range(n)
+    ]
     probabilities = py_davidson(eta, kappa)
     directions = ((0.5, 0.0), (0.0, 1.0), (-0.5, 0.0))
     mean = [sum(p * d[k] for p, d in zip(probabilities, directions)) for k in range(2)]
@@ -447,7 +589,7 @@ def py_evi(
         ]
         for a in range(2)
     ]
-    rows = (eta_row, kappa_row)
+    rows = (grad_eta, g_row)
     expected = 0.0
     for index in range(3):
         local = [directions[index][k] - mean[k] for k in range(2)]
@@ -456,6 +598,7 @@ def py_evi(
             [
                 precision[i][j]
                 + sum(rows[a][i] * covariance[a][b] * rows[b][j] for a in range(2) for b in range(2))
+                - local[0] * hessian_eta[i][j]
                 + (config["damping"] + config["ridge"]) * (i == j)
                 for j in range(n)
             ]
@@ -468,37 +611,50 @@ def py_evi(
 
 
 # ---------------------------------------------------------------------------
-# Golden fixture.
+# Golden fixtures (linear and bilinear estimated-discrimination).
 
 FIXTURE_LENGTHS = (-1.0, -0.5, 0.0, 0.5, 1.0, 1.5)
 FIXTURE_MASS_WEIGHTS = (1, 2, 3, 2, 1, 3)
 FIXTURE_TRUE_THETA = (0.25, -0.6, 0.3)
 FIXTURE_PRIOR_SD = (2.0, 2.0, 1.0)
+BILINEAR_LOG_DISC_COEFFS = (0.6, 0.3, -0.4, -0.3, 0.6, 0.0)
+BILINEAR_TRUE_THETA = (0.22, 0.18, -0.55, 0.35)
+BILINEAR_PRIOR_SD = (2.0, 1.0, 2.0, 0.5)
 FIXTURE_BATCH_SIZE = 80
 DIAGNOSTIC_FIT_SIZES = (20, 40, 80, 120, 200)
 
 
 def fit_map(
-    prior_precision: np.ndarray, design: dict[str, Any], observations: list[tuple[str, int]]
+    prior_precision: np.ndarray,
+    design: dict[str, Any],
+    observations: list[tuple[str, int]],
+    *,
+    include_log_disc_chain: bool = True,
+    include_second_derivative: bool = True,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Producer-side Newton MAP fit; the validator only checks its closure."""
     mode = np.zeros(prior_precision.shape[0])
     for _ in range(100):
-        gradient = -prior_precision @ mode
-        precision = prior_precision.copy()
-        for unit, outcome in observations:
-            i = design["index"][unit]
-            jacobian = np.stack([design["eta"][i], design["kappa"][i]])
-            local, information = natural_gradient_and_information(
-                float(design["eta"][i] @ mode), float(design["kappa"][i] @ mode), outcome
-            )
-            gradient += jacobian.T @ local
-            precision += jacobian.T @ information @ jacobian
+        gradient, precision = laplace_terms(
+            mode,
+            prior_precision,
+            design,
+            observations,
+            include_log_disc_chain=include_log_disc_chain,
+            include_second_derivative=include_second_derivative,
+        )
         step = np.linalg.solve(precision, gradient)
         mode = mode + step
         if float(np.max(np.abs(step))) < 1e-14:
             break
-    _, precision = laplace_terms(mode, prior_precision, design, observations)
+    _, precision = laplace_terms(
+        mode,
+        prior_precision,
+        design,
+        observations,
+        include_log_disc_chain=include_log_disc_chain,
+        include_second_derivative=include_second_derivative,
+    )
     return mode, precision
 
 
@@ -507,18 +663,124 @@ def laplace_terms(
     prior_precision: np.ndarray,
     design: dict[str, Any],
     observations: list[tuple[str, int]],
+    *,
+    include_log_disc_chain: bool = True,
+    include_second_derivative: bool = True,
 ) -> tuple[np.ndarray, np.ndarray]:
     gradient = -prior_precision @ mode
     precision = prior_precision.copy()
     for unit, outcome in observations:
         i = design["index"][unit]
-        jacobian = np.stack([design["eta"][i], design["kappa"][i]])
-        local, information = natural_gradient_and_information(
-            float(design["eta"][i] @ mode), float(design["kappa"][i] @ mode), outcome
+        param_gradient, observed_info = unit_gradient_and_observed_information(
+            mode,
+            design,
+            i,
+            outcome,
+            include_log_disc_chain=include_log_disc_chain,
+            include_second_derivative=include_second_derivative,
         )
-        gradient += jacobian.T @ local
-        precision += jacobian.T @ information @ jacobian
+        gradient += param_gradient
+        precision += observed_info
     return gradient, (precision + precision.T) / 2.0
+
+
+def build_bilinear_fixture(config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    units = [f"u{i}" for i in range(len(FIXTURE_LENGTHS))]
+    total = sum(FIXTURE_MASS_WEIGHTS)
+    mass = {u: w / total for u, w in zip(units, FIXTURE_MASS_WEIGHTS)}
+    posteriors = {
+        "schema_version": 1,
+        "working_model": WORKING_MODEL_BILINEAR,
+        "parameter_names": ["preference", "item_shift", "tie", "rater_log_disc"],
+        "prior_standard_deviations": list(BILINEAR_PRIOR_SD),
+        "frame_design": {
+            u: {
+                "eta_additive": [0.0, 0.2 * length, 0.0, 0.0],
+                "eta_scaled": [1.0, 0.5 * length, 0.0, 0.0],
+                "log_discrimination": [0.0, 0.0, 0.0, disc_coeff],
+                "kappa": [0.0, 0.0, 1.0, 0.1 * length],
+            }
+            for u, length, disc_coeff in zip(
+                units, FIXTURE_LENGTHS, BILINEAR_LOG_DISC_COEFFS
+            )
+        },
+        "batches": [],
+    }
+    design = frame_design(posteriors, mass, 4)
+    rng = random.Random(2026102801)
+    slots = []
+    batch_size = FIXTURE_BATCH_SIZE
+    theta = np.array(BILINEAR_TRUE_THETA, dtype=np.float64)
+    for slot in range(2 * batch_size):
+        unit = rng.choices(units, weights=FIXTURE_MASS_WEIGHTS)[0]
+        i = design["index"][unit]
+        eta_val, kappa_val = evaluate_natural_parameters(theta, design, i)
+        p_plus, p_tie, _ = (float(v) for v in davidson(eta_val, kappa_val))
+        draw = rng.random()
+        outcome = 1 if draw < p_plus else (0 if draw < p_plus + p_tie else -1)
+        observed = slot != 9
+        slots.append(
+            {
+                "slot": slot,
+                "batch": slot // batch_size,
+                "unit_id": unit,
+                "observed": observed,
+                "outcome": outcome if observed else None,
+            }
+        )
+    multiset: dict[str, int] = {}
+    for _ in range(6):
+        unit = rng.choices(units, weights=FIXTURE_MASS_WEIGHTS)[0]
+        multiset[unit] = multiset.get(unit, 0) + 1
+    prior_precision = np.diag([1.0 / v**2 for v in BILINEAR_PRIOR_SD])
+    fit_slots = list(range(batch_size))
+    observations = [
+        (slots[s]["unit_id"], slots[s]["outcome"]) for s in fit_slots if slots[s]["observed"]
+    ]
+    mode, precision = fit_map(prior_precision, design, observations)
+    evi = recompute_evi(mode, precision, design, list(multiset), config)
+    batches = [
+        {
+            "batch": 0,
+            "policy": "target_random",
+            "slot_start": 0,
+            "slot_end": batch_size,
+            "candidate_multiset": {},
+            "evi": {},
+            "annotation_cost": {},
+            "predictions": {u: 0.0 for u in units},
+            "tie_predictions": {u: 0.0 for u in units},
+            "fit_slots": [],
+        },
+        {
+            "batch": 1,
+            "policy": "evi_candidate_mixture",
+            "slot_start": batch_size,
+            "slot_end": 2 * batch_size,
+            "candidate_multiset": multiset,
+            "evi": evi["evi"],
+            "annotation_cost": {u: 1.0 for u in multiset},
+            "predictions": {u: 0.1 for u in units},
+            "tie_predictions": {u: 0.2 for u in units},
+            "fit_slots": fit_slots,
+        },
+    ]
+    for batch in batches:
+        batch["commitment_sha256"] = canonical_digest(commitment_payload(batch))
+    posteriors["batches"] = [
+        {
+            "batch": 1,
+            "commitment_sha256": batches[1]["commitment_sha256"],
+            "theta_hat": mode.tolist(),
+            "precision": precision.tolist(),
+        }
+    ]
+    bundle = {
+        "frame": [{"unit_id": u, "target_mass": mass[u]} for u in units],
+        "batches": batches,
+        "slots": slots,
+    }
+    return bundle, {"posteriors": posteriors, "evi": evi, "design": design, "observations": observations}
 
 
 def build_fixture(config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -678,7 +940,13 @@ def self_test(section: dict[str, Any]) -> dict[str, Any]:
     )
     design = extra["design"]
     frame = [
-        (design["eta"][i].tolist(), design["kappa"][i].tolist(), float(design["mass"][i]))
+        (
+            design["eta_additive"][i].tolist(),
+            design["eta_scaled"][i].tolist(),
+            design["log_discrimination"][i].tolist(),
+            design["kappa"][i].tolist(),
+            float(design["mass"][i]),
+        )
         for i in range(len(design["units"]))
     ]
     normals = common_normals(config, 3).tolist()
@@ -690,14 +958,65 @@ def self_test(section: dict[str, Any]) -> dict[str, Any]:
             entry["theta_hat"],
             entry["precision"],
             frame,
-            (design["eta"][i].tolist(), design["kappa"][i].tolist()),
+            (
+                design["eta_additive"][i].tolist(),
+                design["eta_scaled"][i].tolist(),
+                design["log_discrimination"][i].tolist(),
+                design["kappa"][i].tolist(),
+            ),
             normals,
             config,
+            bilinear=False,
         )
         require(
             abs(independent[unit] - evi[unit]) <= EVI_TOLERANCE,
             f"independent EVI for {unit} disagrees with the numpy recomputation",
         )
+
+    bilinear_bundle, bilinear_extra = build_bilinear_fixture(config)
+    bilinear_posteriors = bilinear_extra["posteriors"]
+    bilinear_summary = validate_bundle_evi(bilinear_bundle, bilinear_posteriors, config)
+    bilinear_evi = bilinear_extra["evi"]["evi"]
+    require(
+        any(abs(v) > 1e-6 for v in bilinear_evi.values())
+        and len(set(bilinear_evi.values())) > 1,
+        "bilinear golden EVI values must be nonzero and distinct",
+    )
+    bilinear_design = bilinear_extra["design"]
+    bilinear_frame = [
+        (
+            bilinear_design["eta_additive"][i].tolist(),
+            bilinear_design["eta_scaled"][i].tolist(),
+            bilinear_design["log_discrimination"][i].tolist(),
+            bilinear_design["kappa"][i].tolist(),
+            float(bilinear_design["mass"][i]),
+        )
+        for i in range(len(bilinear_design["units"]))
+    ]
+    bilinear_normals = common_normals(config, 4).tolist()
+    bilinear_entry = bilinear_posteriors["batches"][0]
+    bilinear_independent = {}
+    for unit in bilinear_evi:
+        i = bilinear_design["index"][unit]
+        bilinear_independent[unit] = py_evi(
+            bilinear_entry["theta_hat"],
+            bilinear_entry["precision"],
+            bilinear_frame,
+            (
+                bilinear_design["eta_additive"][i].tolist(),
+                bilinear_design["eta_scaled"][i].tolist(),
+                bilinear_design["log_discrimination"][i].tolist(),
+                bilinear_design["kappa"][i].tolist(),
+            ),
+            bilinear_normals,
+            config,
+            bilinear=True,
+        )
+        require(
+            abs(bilinear_independent[unit] - bilinear_evi[unit]) <= EVI_TOLERANCE,
+            f"independent bilinear EVI for {unit} disagrees with the numpy recomputation",
+        )
+
     require(
         cholesky_with_jitter(np.array([[-1.0]]), config["jitter"]) is None,
         "jitter ladder accepted a negative-definite precision",
@@ -705,9 +1024,9 @@ def self_test(section: dict[str, Any]) -> dict[str, Any]:
 
     mutations: dict[str, str] = {}
 
-    def mutate(name: str, change) -> None:
-        candidate_bundle = copy.deepcopy(bundle)
-        candidate_posteriors = copy.deepcopy(posteriors)
+    def mutate(name: str, change, base_b=bundle, base_p=posteriors) -> None:
+        candidate_bundle = copy.deepcopy(base_b)
+        candidate_posteriors = copy.deepcopy(base_p)
         change(candidate_bundle, candidate_posteriors)
         try:
             validate_bundle_evi(candidate_bundle, candidate_posteriors, config)
@@ -772,9 +1091,69 @@ def self_test(section: dict[str, Any]) -> dict[str, Any]:
         lambda b, p: p["prior_standard_deviations"].__setitem__(0, 10.0),
     )
     mutate(
-        "bilinear_working_model",
+        "linear_design_mislabeled_as_bilinear",
         lambda b, p: p.__setitem__("working_model", "davidson_estimated_discrimination"),
     )
+    mutate(
+        "unknown_working_model",
+        lambda b, p: p.__setitem__("working_model", "davidson_unregistered_variant"),
+    )
+
+    def omit_log_disc_chain_rule(b, p):
+        prior_precision = np.diag([1.0 / v**2 for v in BILINEAR_PRIOR_SD])
+        mode, precision = fit_map(
+            prior_precision,
+            bilinear_design,
+            bilinear_extra["observations"],
+            include_log_disc_chain=False,
+        )
+        p["batches"][0]["theta_hat"] = mode.tolist()
+        p["batches"][0]["precision"] = precision.tolist()
+        b["batches"][1]["evi"] = recompute_evi(
+            mode,
+            precision,
+            bilinear_design,
+            list(b["batches"][1]["candidate_multiset"]),
+            config,
+            include_log_disc_chain=False,
+        )["evi"]
+        recommit(b, p)
+
+    mutate(
+        "bilinear_jacobian_omits_log_disc_chain_rule",
+        omit_log_disc_chain_rule,
+        bilinear_bundle,
+        bilinear_posteriors,
+    )
+
+    def omit_second_derivative_term(b, p):
+        prior_precision = np.diag([1.0 / v**2 for v in BILINEAR_PRIOR_SD])
+        _, gauss_newton_precision = laplace_terms(
+            np.array(p["batches"][0]["theta_hat"]),
+            prior_precision,
+            bilinear_design,
+            bilinear_extra["observations"],
+            include_second_derivative=False,
+        )
+        p["batches"][0]["precision"] = gauss_newton_precision.tolist()
+
+    mutate(
+        "bilinear_hessian_omits_second_derivative_term",
+        omit_second_derivative_term,
+        bilinear_bundle,
+        bilinear_posteriors,
+    )
+
+    def uncentered_log_disc(b, p):
+        p["frame_design"]["u0"]["log_discrimination"][3] += 0.1
+
+    mutate(
+        "bilinear_uncentered_panel_log_discrimination",
+        uncentered_log_disc,
+        bilinear_bundle,
+        bilinear_posteriors,
+    )
+
     diagnostic = fit_size_diagnostic(config, section["acquisition"]["evi_temperature"])
     return {
         "schema_version": 1,
@@ -785,8 +1164,14 @@ def self_test(section: dict[str, Any]) -> dict[str, Any]:
         "common_monte_carlo_draws": config["draws"],
         "golden_evi": evi,
         "independent_python_evi": independent,
+        "bilinear_golden_evi": bilinear_evi,
+        "bilinear_independent_python_evi": bilinear_independent,
         "prior_state_probabilities": extra["evi"]["prior_state_probabilities"],
+        "bilinear_prior_state_probabilities": bilinear_extra["evi"][
+            "prior_state_probabilities"
+        ],
         "validation": summary,
+        "bilinear_validation": bilinear_summary,
         "mutations_rejected": len(mutations),
         "mutations": mutations,
     }

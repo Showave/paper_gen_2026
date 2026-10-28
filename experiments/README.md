@@ -404,14 +404,20 @@ The sequential decision bundle has a shared real/golden validator:
 make eval-bundle-audit
 ```
 
-`scripts/validate_eval_sequential_bundle.py` recomputes every batch draw law
+`scripts/validate_eval_sequential_bundle.py` recomputes per-source
+`SHA-256(revision || question_id)` root ranks, selected roots, prompt-variant
+weights, root--prompt--order cells, model-jury call counts, human target-unit
+product masses $\pi(i,c,h,o)=w_i a_{c\mid i}\rho_h/2$, and every batch draw law
 from its commitment, checks commitment hashes and strictly earlier fit slots,
 and requires all fixed slots exactly once. It reproduces the sequential
 contributions, worst-case nonresponse bounds, intervals, drift widenings,
 terminal action, maximum weight, and ESS. Golden bundles have exact rational
-draw probabilities and are checked against an independent `Fraction`
-computation; twelve mutations must fail. Real bundles are refused while any
-estimand-defining artifact hash in the preregistration is null.
+draw probabilities and unit masses and are checked against an independent
+`Fraction` computation, and the self-test also validates the full 528-root,
+2,112-cell, 8,448-jury-call, 168,960-unit pilot hierarchy; seventeen mutations
+must fail. Real bundles are refused while any
+estimand-defining artifact hash in the preregistration is null or while the
+bundle fails to bind `process/cell_manifest.json`.
 
 Committed EVI values are recomputed from the frozen working posterior:
 
@@ -428,12 +434,19 @@ plus observed information. The script then recomputes `Q_b`, the posterior
 predictive, and the registered damped Newton update for each hypothetical
 outcome, using the frozen 4,096 common normals (seed 2026090322), ridge,
 damping, and jitter ladder. Every committed EVI must reproduce within 1e-9.
-Draws within 1e-9 of the margin fail closed. Only the fixed-discrimination
-working model, with Davidson natural parameters linear in the coefficients,
-is recomputable; an estimated log-discrimination is rejected. The golden
-bundle is checked against an independent pure-Python implementation, and nine
-mutations must fail. The self-test also reports EVI ranges and the maximum
-softmax tilt `exp(lambda_E * (max EVI - min EVI))` across five generated
+Draws within 1e-9 of the margin fail closed. Both the fixed-discrimination
+working model (`eta = f_x^T theta`, `kappa = g_x^T theta`) and the jointly
+estimated log-discrimination bilinear working model
+(`eta = f_x^T theta + exp(u_x^T theta)*(s_x^T theta)`, `kappa = g_x^T theta`)
+are recomputed. In the bilinear model, the validator enforces the human-panel
+identifiability constraint $\sum_x\pi(x)u_x=0$ and applies the exact parameter
+Jacobian $\nabla_\vartheta\eta_x=f_x+d_x s_x+(d_x q_x)u_x$ and observed
+negative Hessian $J_x^\top I_{(\eta,\kappa)}J_x-g_\eta(y)\nabla^2_{\vartheta\vartheta}\eta_x(\vartheta)$
+in both Laplace closure and every hypothetical Newton update; linear or
+Gauss--Newton approximations are rejected. Both golden
+bundles are checked against an independent pure-Python implementation, and
+thirteen mutations must fail. The self-test also reports EVI ranges and the
+maximum softmax tilt `exp(lambda_E * (max EVI - min EVI))` across five generated
 fit sizes. In a real evaluation train stage, the runner executes both this
 recomputation and the sequential bundle validator on
 `train/sequential_bundle.json`.

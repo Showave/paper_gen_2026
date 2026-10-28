@@ -112,9 +112,15 @@ judges introduce additional structure: self-recognition can produce
 self-preference \cite{panickssery2024evaluators}, controlled perturbations
 reveal multiple biases \cite{ye2025justice}, and modern hierarchical methods
 estimate grader effects, confounding, or discrimination
-\cite{dubois2026biases,zhao2026care,qian2026jury}. Our jury model borrows this
+\cite{dubois2026biases,zhao2026care,qian2026jury}. TrustJudge formalizes
+score--comparison and tie-transitivity inconsistencies and aggregates
+bidirectional likelihoods to reduce them \cite{wang2026trustjudge}, while
+distribution-calibrated inference-time compute fits a Bradley--Terry--Davidson
+model to repeated thinking-judge vote counts and aligns aggregation with a
+target loss \cite{dadkhahi2026calibrated}. Our jury model borrows this
 measurement perspective. Its novelty is not a new bias taxonomy or latent
-quality model.
+quality model, and calibrated judge vote counts remain predictive features
+rather than the target human estimand.
 
 \paragraph{Human-calibrated inference.}
 Binary sensitivity/specificity correction with propagated calibration
@@ -894,7 +900,12 @@ not replace the preregistered condition grid or provide human evidence.
 The shared materialization validator now closes acquisition rows against
 retained, suppressed, and quarantined dispositions.
 \texttt{scripts/validate\_eval\_sequential\_bundle.py} is the shared
-real/golden validator for the sequential decision bundle. From each batch
+real/golden validator for the sequential decision bundle and frame hierarchy.
+It recomputes per-source $\operatorname{SHA-256}(\text{revision}\Vert
+\text{question\_id})$ root ranks, the selected roots and their weights $w_i$,
+the prompt-variant weights $a_{c\mid i}$, the root--prompt--order cells, the
+model-jury call count, and every human target unit's product mass
+$\pi(i,c,h,o)=w_ia_{c\mid i}\rho_h/2$. From each batch
 commitment it recomputes the candidate-mixture law \cref{eq:explore}, using
 log-sum-exp with log multiplicities. It rejects commitment-hash mismatches and
 fit slots that are not strictly earlier. It requires every one of the $T$
@@ -903,40 +914,58 @@ than replaced. From these inputs it reproduces \cref{eq:psi}, the worst-case
 endpoints, the complete-outcome or martingale--Hoeffding interval, the tie
 interval, the drift widenings, the terminal action, the maximum weight, and
 the ESS. Its golden bundles set each EVI to $\log(a_x)/\lambda_E$ with integer
-$a_x$, so every draw probability is an exact rational. The float recomputation
-must then match an independent \texttt{Fraction} implementation. Twelve
-mutations fail, including a tampered $p_t$, EVI edited after commitment, a
+$a_x$ and use exact rational root, variant, order, and rater weights, so every
+draw probability and unit weight is an exact rational. The float recomputation
+must then match an independent \texttt{Fraction} implementation, and the
+self-test also reproduces the 528-root, 2,112-cell, 8,448-jury-call,
+168,960-unit pilot hierarchy. Seventeen
+mutations fail, including a tampered root selection hash, a wrong hash-rank
+root selected, unnormalized variant weights, an incomplete cell crossing, a
+unit mass that disagrees with $w_ia_{c\mid i}\rho_h/2$, a tampered $p_t$, EVI
+edited after commitment, a
 predictor fit on its own batch, a dropped or replacement slot, an outcome on a
 missing slot, and a complete-case interval reported despite missingness. A
-real bundle is refused while any estimand-defining artifact hash is null or
-its configuration differs from the preregistration.
+real bundle is refused while any estimand-defining artifact hash is null, its
+configuration differs from the preregistration, or it fails to bind
+\texttt{process/cell\_manifest.json}.
 \texttt{scripts/recompute\_eval\_evi.py} now recomputes every committed EVI
-value. Each adaptive batch's posterior artifact must carry the batch
-commitment hash and a frame design covering exactly the bundle frame. The
+value under both the fixed-discrimination linear Davidson model
+($\eta_x=f_x^\top\vartheta,\kappa_x=g_x^\top\vartheta$) and the jointly
+estimated log-discrimination bilinear Davidson model
+($\eta_x=f_x^\top\vartheta+\exp(u_x^\top\vartheta)(s_x^\top\vartheta),
+\kappa_x=g_x^\top\vartheta$). Each adaptive batch's posterior artifact must carry the batch
+commitment hash and a frame design covering exactly the bundle frame; in the
+bilinear model it also enforces the human-panel identifiability constraint
+$\sum_x\pi(x)u_x=0$. The
 validator then closes the posterior against the observed outcomes in that
-batch's strictly earlier fit slots. The mode must be stationary for the
+batch's strictly earlier fit slots. Using the exact parameter Jacobian
+$\nabla_\vartheta\eta_x=f_x+d_xs_x+(d_xq_x)u_x$ and observed negative Hessian
+$J_x^\top I_{(\eta,\kappa)}J_x-g_\eta(y)\nabla^2_{\vartheta\vartheta}\eta_x(\vartheta)$,
+the mode must be stationary for the
 Gaussian-prior Davidson log posterior, and the precision must equal prior
 precision plus observed information at the mode. Next it redraws the 4,096
 common standard normals with seed 2026090322. It recomputes $Q_b$ and the
 posterior predictive, applies the registered damped Newton update with ridge
 $10^{-4}$, damping $10^{-3}$, and the fixed jitter ladder for each
 hypothetical outcome, and requires every committed EVI to reproduce within
-$10^{-9}$. Any draw within $10^{-9}$ of $\pm\delta$ fails closed. On a
-generated three-parameter golden bundle with 79 observed fit outcomes, a
+$10^{-9}$. Any draw within $10^{-9}$ of $\pm\delta$ fails closed. On both the
+three-parameter linear and four-parameter bilinear golden bundles with 79
+observed fit outcomes, a
 pure-Python implementation that shares only the normal draws agrees with the
-numpy recomputation to $10^{-12}$. Nine mutations fail: EVI set to zero, EVI
+numpy recomputation to $10^{-12}$. Thirteen mutations fail: EVI set to zero, EVI
 assigned to the wrong unit, EVI from unregistered draws, a posterior fitted on
 its own batch, a precision without the prior, a stale commitment, a missing
-frame unit, an unregistered prior scale, and an estimated-discrimination
-working model. That last case makes $\eta$ bilinear and is rejected rather than
-approximated. The same self-test reports the EVI range, the count of negative
+frame unit, an unregistered prior scale, a linear design mislabeled as
+bilinear, an unknown working model, a bilinear Jacobian that omits the
+$\log d_x$ chain-rule term, a bilinear Hessian that uses the Gauss--Newton
+term only, and an uncentered human-panel log-discrimination. The same self-test reports the EVI range, the count of negative
 values, and the maximum softmax tilt after 20, 40, 80, 120, and 200 generated
 fit outcomes; \cref{sec:method} quotes these design diagnostics. In a real
 train stage the runner now executes both the bundle
-validator and this EVI recomputation. Root ranks, prompt cells, and the
-estimated-discrimination Jacobian are still not recomputed. The
-artifact-integrity gate therefore still blocks all real response generation
-and human acquisition even if source reviews later pass.
+validator and this EVI recomputation. The unfrozen prompt generator,
+paired-response coupling, executable simulation DGPs, and shared-rater
+adaptive-minus-audit covariance keep the
+artifact-integrity gate closed even if source reviews later pass.
 
 \subsection{Proof of \cref{prop:unbiased}}
 Conditioning on pre-outcome history,

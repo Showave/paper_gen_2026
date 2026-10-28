@@ -584,12 +584,12 @@
       "validator_dependencies": [],
       "blocking_gaps": [
         "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
-        "batch probabilities, sequential contributions, missingness bounds, terminal actions, and fixed-discrimination EVI values from the frozen Laplace posterior are recomputed, but root ranks, prompt cells, and EVI under an estimated log-discrimination working model are not yet recomputed",
+        "root SHA-256 hash ranks, root--prompt--order cells, product target-unit masses, batch probabilities, sequential contributions, missingness bounds, terminal actions, and both fixed- and estimated-discrimination EVI values are recomputed from frozen artifacts, but the prompt generator, paired-response coupling, executable simulation DGPs, and shared-rater adaptive-minus-audit covariance remain unfrozen",
         "site-local sealed audit access isolation is required but not enforced by the repository runner"
       ],
       "required_before_freezing": [
         "reviewed overlap inventories and a segment-pair large-artifact engine plus a hash-frozen real/golden bundle validator with exact rational generated fixtures and mutation tests",
-        "recomputed frame/cell cardinalities and a Jacobian for the bilinear estimated-discrimination predictor, feeding the EVI and sequential bundle validators",
+        "frozen prompt-generator, paired-response, executable simulation DGP, and shared-rater covariance artifacts feeding the sequential bundle and EVI validators",
         "site-local audit isolation and one-time-open attestation"
       ]
     },
@@ -828,10 +828,11 @@
     },
     "sequential_bundle_contract": {
       "validator_path": "scripts/validate_eval_sequential_bundle.py",
-      "validator_sha256": "7c6522ebf8e33697eb43f0074c5eb621a49b74c033209ee08dce28d919e94126",
+      "validator_sha256": "ddeef73a56380244e716a21c922fcbf33213bde359ace6da7020aad9df830bd0",
       "required_status": "pass",
       "current_status": "golden_fixture_only",
       "recomputed_fields": [
+        "per-source SHA-256(revision || question_id) root ranks, selected roots, prompt-variant weights, root--prompt--order cells, model-jury call count, and human target-unit product masses pi(i,c,h,o)=w_i*a_(c|i)*rho_h/2",
         "batch candidate-mixture draw probabilities from committed multisets, EVI values, costs, and temperature",
         "batch commitment hashes and strictly earlier predictor fit slots",
         "sequential augmented Hansen--Hurwitz and tie-rate contributions",
@@ -839,30 +840,30 @@
         "complete-outcome studentized interval, response-drift widenings, and terminal action",
         "maximum weight and effective sample size"
       ],
-      "golden_fixture": "exp(g) values are integers so draw probabilities are exact rationals; the float recomputation must match an independent Fraction computation",
-      "real_execution_rule": "real bundles are rejected while any frozen_artifact_hashes entry is null or the bundle config differs from this section",
+      "golden_fixture": "exp(g) values are integers and root/variant/order/rater masses are exact rationals so draw probabilities and unit weights are exact rationals; the float recomputation must match an independent Fraction computation and reproduce the 528-root / 2112-cell / 8448-jury-call / 168960-unit pilot hierarchy",
+      "real_execution_rule": "real bundles are rejected while any frozen_artifact_hashes entry is null, the bundle config differs from this section, or the bundle fails to bind process/cell_manifest.json",
       "interpretation": "Generated golden bundles only; no human outcome exists."
     },
     "evi_recomputation_contract": {
       "validator_path": "scripts/recompute_eval_evi.py",
-      "validator_sha256": "9d5fc5be53a2590cb98dee715e8a2e817821f21b66b5f4db378317535f8da4d3",
+      "validator_sha256": "68a702957aa18526c22bef1c782e82487bc87e7b66ad6f6e5c2c91488e41f727",
       "required_status": "pass",
       "current_status": "golden_fixture_only",
       "raw_artifacts": [
         "train/sequential_bundle.json",
         "train/evi_posteriors.json"
       ],
-      "working_model": "davidson_linear_natural_parameters: eta=F_x theta and kappa=G_x theta with fixed discrimination; an estimated log-discrimination makes eta bilinear and is rejected rather than approximated",
+      "working_model": "davidson_linear_natural_parameters (eta=f_x^T theta, kappa=g_x^T theta) and davidson_estimated_discrimination (eta=f_x^T theta + exp(u_x^T theta)*(s_x^T theta), kappa=g_x^T theta, with human-panel identifiability constraint sum_x pi(x) u_x = 0, exact Jacobian d eta/d theta = f_x + d_x s_x + (d_x q_x) u_x, and observed negative Hessian J_x^T I_(eta,kappa) J_x - g_eta(y) d^2 eta/d theta^2); linear or Gauss-Newton approximations of the bilinear model are rejected",
       "recomputed_fields": [
-        "posterior bound to the batch commitment and frame design covering exactly the bundle frame",
+        "posterior bound to the batch commitment and frame design covering exactly the bundle frame, with sum_x pi(x) u_x = 0 enforced in the estimated-discrimination model",
         "posterior mode stationary for the Gaussian-prior Davidson log posterior on observed outcomes in strictly earlier fit slots",
-        "posterior precision equal to prior precision plus fit-slot observed information at the mode",
+        "posterior precision equal to prior precision plus fit-slot observed information at the mode (including the -g_eta(y) d^2 eta/d theta^2 term for estimated discrimination)",
         "Q_b, posterior predictive, preregistered damped Newton update per hypothetical outcome, and committed EVI for every candidate"
       ],
       "evi_absolute_tolerance": 1e-09,
       "boundary_rule": "any common draw within 1e-9 of +/-delta fails closed rather than resolving the state numerically",
       "real_execution_rule": "The evaluation train stage passes only if train/sequential_bundle.json validates and every adaptive batch's committed EVI reproduces from train/evi_posteriors.json.",
-      "interpretation": "Generated three-parameter golden law with numpy and independent pure-Python recomputation; software evidence only."
+      "interpretation": "Generated three-parameter linear and four-parameter bilinear estimated-discrimination golden laws with numpy and independent pure-Python recomputation; software evidence only."
     }
   }
 }

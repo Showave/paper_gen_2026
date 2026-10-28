@@ -56,6 +56,8 @@ from reconstruct_rl_trajectories import (
 )
 from validate_eval_sequential_bundle import (
     BundleError as EvalBundleError,
+    recompute_frame_hierarchy as recompute_eval_frame_hierarchy,
+    self_test as run_eval_bundle_self_test,
     validate_bundle as validate_eval_sequential_bundle,
 )
 from recompute_eval_evi import (
@@ -628,6 +630,15 @@ def validate_preregistration_section(
             "evaluation sequential-bundle",
             repo,
         )
+        try:
+            bundle_audit = run_eval_bundle_self_test(preregistration)
+        except EvalBundleError as exc:
+            fail(f"evaluation sequential-bundle self-test failed: {exc}")
+        if (
+            bundle_audit.get("empirical_evidence") is not False
+            or bundle_audit.get("mutations_rejected", 0) < 17
+        ):
+            fail("evaluation sequential-bundle self-test did not pass")
         require_bound_files(
             section.get("evi_recomputation_contract"),
             ("validator",),
@@ -638,7 +649,11 @@ def validate_preregistration_section(
             evi_audit = run_eval_evi_self_test(section)
         except EVIError as exc:
             fail(f"evaluation EVI recomputation self-test failed: {exc}")
-        if evi_audit["status"] != "pass" or evi_audit["empirical_evidence"] is not False:
+        if (
+            evi_audit["status"] != "pass"
+            or evi_audit["empirical_evidence"] is not False
+            or evi_audit.get("mutations_rejected", 0) < 13
+        ):
             fail("evaluation EVI recomputation self-test did not pass")
         acquisition = nested(section, "acquisition")
         epsilon = acquisition["exploration_epsilon"]
@@ -1359,6 +1374,47 @@ def validate_real_stage_semantics(
                         "reference_split_records": reference_summary["records"],
                     }
                 )
+            elif paper == "eval":
+                cell_manifest = load_json(
+                    work_dir / "process" / "cell_manifest.json"
+                )
+                frame_path = work_dir / "acquire" / "frame_manifest.json"
+                if (
+                    not isinstance(cell_manifest, dict)
+                    or not frame_path.is_file()
+                    or cell_manifest.get("frame_manifest_sha256")
+                    != digest_file(frame_path)
+                ):
+                    fail(
+                        "evaluation cell_manifest.json must bind "
+                        "acquire/frame_manifest.json"
+                    )
+                frame_spec = nested(section, "frame")
+                try:
+                    hierarchy_summary = recompute_eval_frame_hierarchy(
+                        cell_manifest.get("frame_hierarchy"),
+                        expected_sources=frame_spec["root_items_by_source"],
+                        expected_variants=frame_spec["prompt_variants_per_root"],
+                        expected_orders=frame_spec["display_orders"],
+                        expected_panel_size=nested(
+                            section, "human_protocol.panel_size"
+                        ),
+                        expected_jury_keys=list(section["jury_model_keys"]),
+                    )
+                except EvalBundleError as exc:
+                    fail(f"evaluation cell_manifest frame hierarchy invalid: {exc}")
+                content_validation.update(
+                    {
+                        "selected_roots": hierarchy_summary["selected_roots"],
+                        "root_prompt_order_cells": hierarchy_summary[
+                            "root_prompt_order_cells"
+                        ],
+                        "model_jury_calls": hierarchy_summary["model_jury_calls"],
+                        "human_target_units": hierarchy_summary[
+                            "human_target_units"
+                        ],
+                    }
+                )
             if stage_name == "process":
                 return content_validation
 
@@ -1634,6 +1690,18 @@ def validate_real_stage_semantics(
             if not path.is_file() or path.is_symlink():
                 fail(f"real evaluation train stage needs {path.relative_to(work_dir)}")
         bundle = load_json(bundle_path)
+        cell_manifest_path = work_dir / "process" / "cell_manifest.json"
+        if (
+            not isinstance(bundle, dict)
+            or bundle.get("cell_manifest_sha256")
+            != digest_file(cell_manifest_path)
+            or bundle.get("frame_hierarchy")
+            != load_json(cell_manifest_path).get("frame_hierarchy")
+        ):
+            fail(
+                "evaluation sequential_bundle.json must bind "
+                "process/cell_manifest.json and its frame_hierarchy"
+            )
         try:
             bundle_validation = validate_eval_sequential_bundle(bundle, {"eval": section})
             evi_validation = validate_eval_bundle_evi(

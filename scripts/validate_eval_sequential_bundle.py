@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Recompute the evaluation paper's sequential decision bundle.
+"""Recompute the evaluation paper's sequential decision bundle and frame hierarchy.
 
-A bundle contains the weighted target frame, one frozen commitment per batch,
-and every fixed assignment slot.  The validator independently recomputes
+A bundle contains the root/cell/rater frame hierarchy, the weighted target
+frame, one frozen commitment per batch, and every fixed assignment slot.  The
+validator independently recomputes
 
+* each source's SHA-256(revision || question_id) root ranks, selected roots,
+  prompt-variant weights, root--prompt--order cells, model-jury call count,
+  and human target-unit product masses pi(i,c,h,o) = w_i * a_(c|i) * rho_h / 2;
 * each batch's candidate-mixture law p_b = eps*pi + (1-eps)*r_b from the
   committed candidate multiset, EVI values, annotation costs, and temperature;
 * predictability: the batch commitment hash and fit slots strictly before the
@@ -15,9 +19,10 @@ and every fixed assignment slot.  The validator independently recomputes
   terminal four-way action.
 
 Every reported number must reproduce.  The self-test builds generated golden
-bundles whose probabilities are exact rationals and checks the float
-recomputation against an independent Fraction implementation, then applies
-mutation tests that must fail.  Real bundles are rejected while the
+bundles whose probabilities and unit masses are exact rationals and checks the
+float recomputation against an independent Fraction implementation, validates
+the 528-root / 2,112-cell / 8,448-jury-call / 168,960-unit pilot hierarchy,
+and applies mutation tests that must fail.  Real bundles are rejected while the
 preregistration's estimand-defining artifact hashes remain null.
 """
 
@@ -128,6 +133,221 @@ def draw_probability(
     return law.get(unit, eps * mass[unit])
 
 
+def root_selection_sha256(revision: str, question_id: str) -> str:
+    return hashlib.sha256(f"{revision}||{question_id}".encode("utf-8")).hexdigest()
+
+
+def recompute_frame_hierarchy(
+    hierarchy: Any,
+    *,
+    expected_sources: dict[str, int] | None = None,
+    expected_variants: int | None = None,
+    expected_orders: int | None = None,
+    expected_panel_size: int | None = None,
+    expected_jury_keys: list[str] | None = None,
+) -> dict[str, Any]:
+    """Recompute root SHA-256 ranks, selected roots, cells, jury calls, and unit masses."""
+    require(isinstance(hierarchy, dict), "frame_hierarchy must be an object")
+    sources = hierarchy.get("sources")
+    require(isinstance(sources, dict) and sources, "frame_hierarchy needs sources")
+    if expected_sources is not None:
+        require(
+            set(sources) == set(expected_sources),
+            "frame_hierarchy sources differ from the preregistration",
+        )
+    variants_per_root = hierarchy.get("prompt_variants_per_root")
+    require(
+        isinstance(variants_per_root, int)
+        and not isinstance(variants_per_root, bool)
+        and variants_per_root > 0,
+        "frame_hierarchy needs positive prompt_variants_per_root",
+    )
+    if expected_variants is not None:
+        require(
+            variants_per_root == expected_variants,
+            "prompt_variants_per_root differs from the preregistration",
+        )
+    display_orders = hierarchy.get("display_orders")
+    require(
+        display_orders == [-1, 1],
+        "frame_hierarchy display_orders must be [-1, 1]",
+    )
+    if expected_orders is not None:
+        require(len(display_orders) == expected_orders, "display_orders count mismatch")
+    jury_keys = hierarchy.get("jury_model_keys")
+    require(
+        isinstance(jury_keys, list)
+        and jury_keys
+        and all(isinstance(k, str) and k for k in jury_keys)
+        and len(set(jury_keys)) == len(jury_keys),
+        "frame_hierarchy needs unique jury_model_keys",
+    )
+    if expected_jury_keys is not None:
+        require(
+            jury_keys == expected_jury_keys,
+            "frame_hierarchy jury_model_keys differ from the preregistration",
+        )
+    raters = hierarchy.get("raters")
+    require(isinstance(raters, list) and raters, "frame_hierarchy needs raters")
+    if expected_panel_size is not None:
+        require(len(raters) == expected_panel_size, "rater panel size mismatch")
+    rater_weights: dict[str, float] = {}
+    for rater in raters:
+        require(isinstance(rater, dict), "rater entry must be an object")
+        rater_id = rater.get("rater_id")
+        weight = rater.get("target_weight")
+        require(
+            isinstance(rater_id, str)
+            and rater_id
+            and rater_id not in rater_weights
+            and isinstance(weight, (int, float))
+            and not isinstance(weight, bool)
+            and math.isfinite(weight)
+            and weight > 0,
+            "rater entry has invalid or duplicate rater_id or target_weight",
+        )
+        rater_weights[rater_id] = float(weight)
+    require(
+        close(math.fsum(rater_weights.values()), 1.0),
+        "rater target weights do not sum to one",
+    )
+
+    n_sources = len(sources)
+    row_uids: set[str] = set()
+    selected_roots: dict[str, dict[str, Any]] = {}
+    expected_cells: dict[tuple[str, str, int], float] = {}
+    for source_key, source_entry in sorted(sources.items()):
+        require(isinstance(source_entry, dict), f"source {source_key} must be an object")
+        revision = source_entry.get("revision")
+        selected_count = source_entry.get("selected_count")
+        candidates = source_entry.get("candidate_roots")
+        require(
+            isinstance(revision, str)
+            and revision
+            and isinstance(selected_count, int)
+            and not isinstance(selected_count, bool)
+            and selected_count > 0
+            and isinstance(candidates, list)
+            and len(candidates) >= selected_count,
+            f"source {source_key} has invalid revision, selected_count, or candidate_roots",
+        )
+        if expected_sources is not None:
+            require(
+                selected_count == expected_sources[source_key],
+                f"source {source_key} selected_count differs from the preregistration",
+            )
+        seen_questions: set[str] = set()
+        recomputed_candidates = []
+        for candidate in candidates:
+            require(isinstance(candidate, dict), f"{source_key} candidate root must be an object")
+            qid = candidate.get("question_id")
+            uid = candidate.get("row_uid")
+            sel_hash = candidate.get("selection_sha256")
+            require(
+                isinstance(qid, str)
+                and qid
+                and qid not in seen_questions
+                and isinstance(uid, str)
+                and uid
+                and uid not in row_uids
+                and sel_hash == root_selection_sha256(revision, qid),
+                f"{source_key} candidate root has invalid question_id, row_uid, or selection_sha256",
+            )
+            seen_questions.add(qid)
+            row_uids.add(uid)
+            recomputed_candidates.append((sel_hash, qid, candidate))
+        recomputed_candidates.sort(key=lambda item: (item[0], item[1]))
+        expected_root_mass = 1.0 / (n_sources * selected_count)
+        for expected_rank, (_, _, candidate) in enumerate(recomputed_candidates):
+            uid = candidate["row_uid"]
+            require(
+                candidate.get("hash_rank") == expected_rank,
+                f"{source_key} root {uid} hash_rank does not reproduce from sorted SHA-256(revision || question_id)",
+            )
+            should_select = expected_rank < selected_count
+            require(
+                candidate.get("selected") is should_select,
+                f"{source_key} root {uid} selection flag violates the hash-rank cutoff",
+            )
+            if not should_select:
+                require(
+                    candidate.get("target_mass") in (None, 0.0),
+                    f"unselected root {uid} cannot carry positive target_mass",
+                )
+                continue
+            require(
+                isinstance(candidate.get("target_mass"), (int, float))
+                and close(float(candidate["target_mass"]), expected_root_mass),
+                f"selected root {uid} target_mass does not equal 1/(n_sources * n_source)",
+            )
+            variants = candidate.get("prompt_variants")
+            require(
+                isinstance(variants, list) and len(variants) == variants_per_root,
+                f"selected root {uid} must define prompt_variants_per_root variants",
+            )
+            variant_weights: dict[str, float] = {}
+            for variant in variants:
+                require(isinstance(variant, dict), f"root {uid} variant must be an object")
+                vid = variant.get("variant_id")
+                v_weight = variant.get("weight")
+                require(
+                    isinstance(vid, str)
+                    and vid
+                    and vid not in variant_weights
+                    and isinstance(v_weight, (int, float))
+                    and not isinstance(v_weight, bool)
+                    and math.isfinite(v_weight)
+                    and v_weight > 0,
+                    f"root {uid} variant has invalid or duplicate variant_id or weight",
+                )
+                variant_weights[vid] = float(v_weight)
+            require(
+                close(math.fsum(variant_weights.values()), 1.0),
+                f"root {uid} prompt-variant weights do not sum to one",
+            )
+            selected_roots[uid] = {
+                "source_key": source_key,
+                "target_mass": expected_root_mass,
+                "variants": variant_weights,
+            }
+            for vid, v_weight in variant_weights.items():
+                for order in display_orders:
+                    expected_cells[(uid, vid, order)] = (
+                        expected_root_mass * v_weight / 2.0
+                    )
+
+    require(
+        close(math.fsum(expected_cells.values()), 1.0),
+        "root--prompt--order cell masses do not sum to one",
+    )
+    declared_cells = hierarchy.get("cells")
+    require(
+        isinstance(declared_cells, list) and len(declared_cells) == len(expected_cells),
+        "frame_hierarchy must list every root--prompt--order cell",
+    )
+    seen_cells: set[tuple[str, str, int]] = set()
+    for cell in declared_cells:
+        require(isinstance(cell, dict), "cell entry must be an object")
+        key = (cell.get("row_uid"), cell.get("variant_id"), cell.get("display_order"))
+        require(
+            key in expected_cells
+            and key not in seen_cells
+            and isinstance(cell.get("cell_mass"), (int, float))
+            and close(float(cell["cell_mass"]), expected_cells[key]),
+            f"root--prompt--order cell {key} is invalid, duplicated, or misweighted",
+        )
+        seen_cells.add(key)
+
+    return {
+        "selected_roots": len(selected_roots),
+        "root_prompt_order_cells": len(expected_cells),
+        "model_jury_calls": len(expected_cells) * len(jury_keys),
+        "human_target_units": len(expected_cells) * len(rater_weights),
+        "cell_masses": expected_cells,
+        "rater_weights": rater_weights,
+    }
+
+
 def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[str, Any]:
     require(bundle.get("schema_version") == 1, "unsupported bundle schema")
     execution_class = bundle.get("execution_class")
@@ -150,20 +370,58 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
             bundle.get("config") == config_from_preregistration(section),
             "real bundle config differs from the preregistration",
         )
+        frame_spec = section["frame"]
+        hierarchy = recompute_frame_hierarchy(
+            bundle.get("frame_hierarchy"),
+            expected_sources=frame_spec["root_items_by_source"],
+            expected_variants=frame_spec["prompt_variants_per_root"],
+            expected_orders=frame_spec["display_orders"],
+            expected_panel_size=section["human_protocol"]["panel_size"],
+            expected_jury_keys=section["jury_model_keys"],
+        )
     else:
         require(
             bundle.get("empirical_evidence") is False,
             "fixture bundle must be marked non-empirical",
         )
+        hierarchy = recompute_frame_hierarchy(bundle.get("frame_hierarchy"))
     config = bundle["config"]
     eps = config["exploration_epsilon"]
     total_slots = config["fixed_budget_attempts"]
     require(0 < eps <= 1 and total_slots > 1, "invalid epsilon or fixed budget")
 
     frame = bundle["frame"]
-    mass = {row["unit_id"]: row["target_mass"] for row in frame}
-    require(len(mass) == len(frame), "frame unit identifiers must be unique")
-    require(all(value > 0 for value in mass.values()), "frame masses must be positive")
+    require(
+        len(frame) == hierarchy["human_target_units"],
+        "bundle frame count does not match the hierarchy human_target_units",
+    )
+    mass = {}
+    seen_tuples: set[tuple[str, str, str, int]] = set()
+    for row in frame:
+        require(isinstance(row, dict), "frame unit must be an object")
+        unit_id = row.get("unit_id")
+        cell_key = (row.get("row_uid"), row.get("variant_id"), row.get("display_order"))
+        rater_id = row.get("rater_id")
+        tuple_key = (cell_key[0], cell_key[1], rater_id, cell_key[2])
+        require(
+            isinstance(unit_id, str)
+            and unit_id
+            and unit_id not in mass
+            and cell_key in hierarchy["cell_masses"]
+            and rater_id in hierarchy["rater_weights"]
+            and tuple_key not in seen_tuples,
+            f"frame unit {unit_id!r} does not map uniquely to a (root, variant, rater, order) cell",
+        )
+        expected_unit_mass = (
+            hierarchy["cell_masses"][cell_key] * hierarchy["rater_weights"][rater_id]
+        )
+        require(
+            isinstance(row.get("target_mass"), (int, float))
+            and close(float(row["target_mass"]), expected_unit_mass),
+            f"frame unit {unit_id} target_mass disagrees with w_i * a_(c|i) * rho_h / 2",
+        )
+        seen_tuples.add(tuple_key)
+        mass[unit_id] = float(row["target_mass"])
     require(abs(sum(mass.values()) - 1.0) <= TOLERANCE, "frame masses must sum to one")
 
     batches = sorted(bundle["batches"], key=lambda row: row["batch"])
@@ -339,6 +597,10 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
         drift[f"{gamma:g}"] = {"interval": widened, "action": action(widened)}
     recomputed = {
         **point,
+        "selected_roots": hierarchy["selected_roots"],
+        "root_prompt_order_cells": hierarchy["root_prompt_order_cells"],
+        "model_jury_calls": hierarchy["model_jury_calls"],
+        "human_target_units": hierarchy["human_target_units"],
         "interval_type": interval_type,
         "missing_slots": missing,
         "interval": interval,
@@ -410,12 +672,176 @@ def fraction_draw_probabilities(
     }
 
 
+def build_fixture_hierarchy() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Build an 8-unit frame hierarchy whose product masses equal raw/16."""
+    source_specs = (
+        ("source-a", "rev-a", (("v0", 0.25), ("v1", 0.75))),
+        ("source-b", "rev-b", (("v0", 0.50), ("v1", 0.50))),
+    )
+    sources: dict[str, Any] = {}
+    selected_root_uids: list[str] = []
+    cells: list[dict[str, Any]] = []
+    for source_key, revision, variants in source_specs:
+        raw_candidates = [
+            {
+                "question_id": f"{source_key}-q{idx}",
+                "row_uid": f"{source_key}-r{idx}",
+                "selection_sha256": root_selection_sha256(revision, f"{source_key}-q{idx}"),
+            }
+            for idx in range(2)
+        ]
+        raw_candidates.sort(key=lambda item: (item["selection_sha256"], item["question_id"]))
+        candidate_roots = []
+        for rank, cand in enumerate(raw_candidates):
+            selected = rank == 0
+            if selected:
+                selected_root_uids.append(cand["row_uid"])
+                for vid, v_weight in variants:
+                    for order in (-1, 1):
+                        cells.append(
+                            {
+                                "row_uid": cand["row_uid"],
+                                "variant_id": vid,
+                                "display_order": order,
+                                "cell_mass": 0.5 * v_weight * 0.5,
+                            }
+                        )
+            candidate_roots.append(
+                {
+                    **cand,
+                    "hash_rank": rank,
+                    "selected": selected,
+                    "target_mass": 0.5 if selected else 0.0,
+                    "prompt_variants": [
+                        {"variant_id": vid, "weight": v_weight}
+                        for vid, v_weight in variants
+                    ]
+                    if selected
+                    else [],
+                }
+            )
+        sources[source_key] = {
+            "revision": revision,
+            "selected_count": 1,
+            "candidate_roots": candidate_roots,
+        }
+    r0, r1 = selected_root_uids
+    unit_map = [
+        ("u0", r0, "v0", "h0", -1, 1 / 16),
+        ("u1", r1, "v0", "h0", -1, 2 / 16),
+        ("u2", r0, "v1", "h0", -1, 3 / 16),
+        ("u3", r1, "v0", "h0", 1, 2 / 16),
+        ("u4", r0, "v0", "h0", 1, 1 / 16),
+        ("u5", r0, "v1", "h0", 1, 3 / 16),
+        ("u6", r1, "v1", "h0", -1, 2 / 16),
+        ("u7", r1, "v1", "h0", 1, 2 / 16),
+    ]
+    frame = [
+        {
+            "unit_id": uid,
+            "row_uid": root_uid,
+            "variant_id": vid,
+            "rater_id": rater_id,
+            "display_order": order,
+            "target_mass": target_mass,
+        }
+        for uid, root_uid, vid, rater_id, order, target_mass in unit_map
+    ]
+    hierarchy = {
+        "sources": sources,
+        "prompt_variants_per_root": 2,
+        "display_orders": [-1, 1],
+        "jury_model_keys": [
+            "qwen25-instruct-1p5b",
+            "smollm2-instruct-1p7b",
+            "mistral-instruct-7b",
+            "phi3-mini-instruct",
+        ],
+        "raters": [{"rater_id": "h0", "target_weight": 1.0}],
+        "cells": cells,
+    }
+    return hierarchy, frame
+
+
+def build_pilot_frame_hierarchy(section: dict[str, Any]) -> dict[str, Any]:
+    """Build the full 528-root / 2,112-cell / 8,448-jury-call / 168,960-unit hierarchy."""
+    frame_spec = section["frame"]
+    expected_sources = frame_spec["root_items_by_source"]
+    variants_per_root = frame_spec["prompt_variants_per_root"]
+    panel_size = section["human_protocol"]["panel_size"]
+    n_sources = len(expected_sources)
+    sources: dict[str, Any] = {}
+    cells: list[dict[str, Any]] = []
+    for source_key, selected_count in sorted(expected_sources.items()):
+        revision = f"pinned-rev-{source_key}"
+        pool_count = selected_count + (50 if source_key == "livebench-math-eval" else 0)
+        raw_candidates = [
+            {
+                "question_id": f"{source_key}-q{idx:04d}",
+                "row_uid": f"{source_key}-root-{idx:04d}",
+                "selection_sha256": root_selection_sha256(
+                    revision, f"{source_key}-q{idx:04d}"
+                ),
+            }
+            for idx in range(pool_count)
+        ]
+        raw_candidates.sort(key=lambda item: (item["selection_sha256"], item["question_id"]))
+        root_mass = 1.0 / (n_sources * selected_count)
+        candidate_roots = []
+        for rank, cand in enumerate(raw_candidates):
+            selected = rank < selected_count
+            variants = (
+                [
+                    {"variant_id": f"v{v}", "weight": 1.0 / variants_per_root}
+                    for v in range(variants_per_root)
+                ]
+                if selected
+                else []
+            )
+            if selected:
+                for variant in variants:
+                    for order in (-1, 1):
+                        cells.append(
+                            {
+                                "row_uid": cand["row_uid"],
+                                "variant_id": variant["variant_id"],
+                                "display_order": order,
+                                "cell_mass": root_mass * variant["weight"] / 2.0,
+                            }
+                        )
+            candidate_roots.append(
+                {
+                    **cand,
+                    "hash_rank": rank,
+                    "selected": selected,
+                    "target_mass": root_mass if selected else 0.0,
+                    "prompt_variants": variants,
+                }
+            )
+        sources[source_key] = {
+            "revision": revision,
+            "selected_count": selected_count,
+            "candidate_roots": candidate_roots,
+        }
+    return {
+        "sources": sources,
+        "prompt_variants_per_root": variants_per_root,
+        "display_orders": [-1, 1],
+        "jury_model_keys": list(section["jury_model_keys"]),
+        "raters": [
+            {"rater_id": f"rater-{h:03d}", "target_weight": 1.0 / panel_size}
+            for h in range(panel_size)
+        ],
+        "cells": cells,
+    }
+
+
 def build_fixture(missing_slots: tuple[int, ...] = ()) -> tuple[dict[str, Any], dict]:
     """Generated golden bundle whose exp(g) values are integers."""
-    units = [f"u{index}" for index in range(8)]
+    hierarchy, frame = build_fixture_hierarchy()
+    units = [row["unit_id"] for row in frame]
     raw = [1, 2, 3, 2, 1, 3, 2, 2]
     mass_fraction = {u: Fraction(r, sum(raw)) for u, r in zip(units, raw)}
-    mass = {u: float(value) for u, value in mass_fraction.items()}
     config = {
         "exploration_epsilon": 0.25,
         "evi_temperature": 2.0,
@@ -507,7 +933,8 @@ def build_fixture(missing_slots: tuple[int, ...] = ()) -> tuple[dict[str, Any], 
         "empirical_evidence": False,
         "preregistration_section_sha256": None,
         "config": config,
-        "frame": [{"unit_id": u, "target_mass": mass[u]} for u in units],
+        "frame_hierarchy": hierarchy,
+        "frame": frame,
         "batches": batches,
         "slots": slots,
         "reported": {},
@@ -626,10 +1053,67 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
     complete_claim["reported"] = copy.deepcopy(base["reported"])
     expect_failure("complete_case_interval_despite_missing", complete_claim, preregistration)
     mutations["complete_case_interval_despite_missing"] = "rejected"
+
+    mutate(
+        "tampered_root_selection_hash",
+        lambda b: b["frame_hierarchy"]["sources"]["source-a"]["candidate_roots"][0].__setitem__(
+            "selection_sha256", "0" * 64
+        ),
+    )
+
+    def swap_selected_rank(b: dict[str, Any]) -> None:
+        roots = b["frame_hierarchy"]["sources"]["source-a"]["candidate_roots"]
+        roots[0]["selected"] = False
+        roots[0]["target_mass"] = 0.0
+        roots[1]["selected"] = True
+        roots[1]["target_mass"] = 0.5
+        roots[1]["prompt_variants"] = roots[0]["prompt_variants"]
+
+    mutate("wrong_root_hash_rank_selected", swap_selected_rank)
+
+    mutate(
+        "variant_weights_not_normalized",
+        lambda b: b["frame_hierarchy"]["sources"]["source-a"]["candidate_roots"][0][
+            "prompt_variants"
+        ][0].__setitem__("weight", 0.30),
+    )
+    mutate(
+        "incomplete_root_prompt_order_cells",
+        lambda b: b["frame_hierarchy"]["cells"].pop(),
+    )
+    mutate(
+        "unit_mass_disagrees_with_cell_rater_product",
+        lambda b: b["frame"][0].__setitem__("target_mass", b["frame"][0]["target_mass"] + 0.01),
+    )
+
+    section = preregistration["eval"]
+    frame_spec = section["frame"]
+    pilot_hierarchy = recompute_frame_hierarchy(
+        build_pilot_frame_hierarchy(section),
+        expected_sources=frame_spec["root_items_by_source"],
+        expected_variants=frame_spec["prompt_variants_per_root"],
+        expected_orders=frame_spec["display_orders"],
+        expected_panel_size=section["human_protocol"]["panel_size"],
+        expected_jury_keys=section["jury_model_keys"],
+    )
+    require(
+        pilot_hierarchy["selected_roots"] == frame_spec["root_items"]
+        and pilot_hierarchy["root_prompt_order_cells"] == frame_spec["root_prompt_order_cells"]
+        and pilot_hierarchy["model_jury_calls"] == frame_spec["model_jury_calls"]
+        and pilot_hierarchy["human_target_units"] == frame_spec["human_target_units"],
+        "528-root pilot hierarchy did not reproduce 2,112 cells, 8,448 jury calls, and 168,960 units",
+    )
+
     return {
         "schema_version": 1,
         "audit_type": "eval_sequential_bundle_golden_fixture",
         "empirical_evidence": False,
+        "pilot_frame_hierarchy": {
+            "selected_roots": pilot_hierarchy["selected_roots"],
+            "root_prompt_order_cells": pilot_hierarchy["root_prompt_order_cells"],
+            "model_jury_calls": pilot_hierarchy["model_jury_calls"],
+            "human_target_units": pilot_hierarchy["human_target_units"],
+        },
         "fixtures": {
             label: {
                 "bundle_sha256": summary["bundle_sha256"],
