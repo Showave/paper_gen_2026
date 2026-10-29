@@ -232,10 +232,18 @@ make sft-ledger-audit
 ```
 
 `scripts/validate_sft_train_ledger.py` replays the run manifest's hash-bound
-per-round train ledger and per-draw gate-loss records. It checks the
+200-plan cost-calibration bundle, per-round train ledger, and per-draw
+gate-loss records. It checks the
 parameter-state and optimizer-step chain,
 with one step per accepted update and none for a rejected update or null
-action. It checks reserve admission before every round, complete charging of
+action. From the cost-calibration bundle it recomputes each calibration plan's
+predicted nonlinear pack cost, residual, nearest-rank 0.995 residual quantile
+margin, and worst-case gate reserve. For every non-null round it checks the
+selected candidate subset and physical pack assignment (disjoint candidate IDs,
+pack loads $\le L_{\max}=4096$, canonical length-descending best-fit assignment
+in best-fit cells, and reserve recomputed from sunk round overhead plus
+calibrated pack cost, 0.995 residual margin, and worst-case gate reserve),
+reserve admission before every round, complete charging of
 seven cost components, and the stop rule (maximum rounds, exhausted reserve,
 or a retained overrun marked as a protocol failure). Gate evidence must use a
 fresh 512-draw block per protected slice and round from that slice's gate
@@ -252,16 +260,21 @@ recomputed from hash-bound per-example records (`example_id`, `slice`,
 row-uniform mean of response-token-mean NLL. Records must be evaluated on the
 exact initial and final states, repeat no example, and cover exactly the
 audit partition identified by the SHA-256 of its sorted identifiers, which must
-be disjoint from every gate partition. A
+be disjoint from every gate, calibration, and candidate partition. A
 protocol-failure run must leave its sealed audits unopened. The real runner
-validates `train/run_ledger.jsonl` at the `train` stage and re-executes the
-aggregator at `evaluate`. The aggregator calls this closure for every row and
-requires paired rows to share the split-manifest hash, one gate partition per
-protected slice, one disjoint audit partition per slice, reference cost,
-initial state, and initial audit NLLs. Thirty generated mutations fail,
-including post-difference instead of per-example gate clipping, token-weighted
-gate or audit means, foreign gate draws, overlapping gate and audit
-partitions, an accepted state that differs from the committed scale's
+validates `build/model_manifest.json` cost-calibration bundles at the `build`
+stage, validates `train/run_ledger.jsonl` at the `train` stage, and re-executes
+the aggregator at `evaluate`. The aggregator calls this closure for every row
+and requires paired rows to share the split-manifest hash, one gate partition
+per protected slice, one disjoint audit partition per slice, reference cost,
+initial state, cost-calibration bundle, and initial audit NLLs. Thirty-eight
+generated mutations fail,
+including a wrong calibration plan count or 0.995 residual margin, calibration
+or candidate overlap with gate/audit partitions, a pack load above $L_{\max}$,
+a non-best-fit packing in a best-fit cell, a round reserve that disagrees with
+the calibrated pack cost, post-difference instead of per-example gate clipping,
+token-weighted gate or audit means, foreign gate draws, overlapping gate and
+audit partitions, an accepted state that differs from the committed scale's
 candidate state, a dropped audit example, and a final record evaluated on the
 initial state.
 

@@ -160,11 +160,14 @@ scheduling and packing rather than data rewriting.
 \paragraph{Online allocation.}
 Dynamic bilevel weighting \cite{yu2025dynamicbilevel}, source-mixture
 optimization \cite{tan2026fastmix}, capability equilibrium adaptation
-\cite{ming2026ideal}, online per-example reweighting \cite{zhao2026adapt}, and
-bandit-based mixture scheduling \cite{shin2026dynamixsft} all recognize that
+\cite{ming2026ideal}, online per-example reweighting \cite{zhao2026adapt},
+bandit-based mixture scheduling \cite{shin2026dynamixsft}, sequential
+policy-based sample selection \cite{yang2026dataagent}, and in-context
+holdout-loss reweighting \cite{zhang2026ica} all recognize that
 data value changes during training. Layer-wise studies find family-specific
 gradient patterns even when relative quality trends persist
-\cite{li2026gradients}. Unlike source-level mixture adaptation, our decision
+\cite{li2026gradients}. Unlike source-level mixture adaptation or scalar
+sample-weight policies, our decision
 variable is a complete physical pack plan for one optimizer step.
 
 \paragraph{Compute-aware selection.}
@@ -833,13 +836,23 @@ The shared acquisition-to-retention validator now recomputes row identifiers,
 raw and projected-content hashes, canonical duplicate representatives, and
 every retained/suppressed/quarantined disposition from acquisition bytes.
 \texttt{scripts/validate\_sft\_train\_ledger.py} now closes every factorial
-endpoint row against its run manifest, hash-bound per-round train ledger, and
-per-draw gate-loss records,
+endpoint row against its run manifest, hash-bound cost-calibration bundle,
+per-round train ledger, and per-draw gate-loss records,
 and \texttt{aggregate\_sft\_factorial.py} refuses any row that does not close.
 The replay checks a contiguous parameter-state and optimizer-step chain from
 the common initial state, with one step per accepted update and none for a
-rejected update or null action. It also checks reserve admission before every
-round, charging of all seven cost components (packing, reference gradients,
+rejected update or null action. It validates the 200-plan cost-calibration
+bundle, recomputing each calibration plan's predicted nonlinear pack cost
+$\widehat C_{\mathrm{pack}}$, residual, nearest-rank $0.995$ residual quantile
+margin $q_{0.995}$, and worst-case gate reserve $R_{\mathrm{gate}}$. For every
+non-null round it verifies that the selected candidate subset $B$ and pack
+assignment $\pi$ are disjoint from calibration, gate, and audit examples, use
+$1\le|\operatorname{range}(\pi)|\le P$ packs within $L_{\max}=4096$, sum to
+$N_B\in[4096,8192]$ response tokens, match the canonical length-descending
+best-fit packing $\pi^{\mathrm{BF}}(B)$ in best-fit cells, and reproduce the
+round's reserve from sunk round overhead plus
+$\widehat C_{\mathrm{pack}}(\pi)+q_{0.995}+R_{\mathrm{gate}}$, together with
+charging of all seven cost components (packing, reference gradients,
 scoring, solving, gate forwards, training, and rejected updates), and the
 three-way stop rule above. Gate evidence must use a fresh block per protected
 slice and round with the frozen 512 draws from that slice's gate partition,
@@ -861,21 +874,29 @@ sorted identifiers, which must be disjoint from every gate partition. A
 protocol-failure run must leave its sealed audits
 unopened. Paired rows must share one split-manifest hash, one gate partition
 per protected slice, and one disjoint audit partition per slice, the reference
-cost within a target setting, and the initial state
-and initial audit NLLs within seed and target setting. Thirty generated
-mutations fail, including a hidden charge, a rejected update that advances the
+cost within a target setting, and the initial state, cost-calibration bundle,
+and initial audit NLLs within seed and target setting. Thirty-eight generated
+mutations fail, including a wrong calibration plan count or $0.995$ residual
+margin, a calibration or candidate example overlapping gate or audit
+partitions, a pack load above $L_{\max}$, a non-best-fit packing in a best-fit
+cell, a round reserve that disagrees with the calibrated pack cost, a hidden
+charge, a rejected update that advances the
 optimizer, a smaller-than-largest passing scale, a reused gate block, a
 dropped round, an unmarked overrun, post-difference instead of per-example gate
 clipping, a token-weighted gate or audit mean, a foreign gate draw,
 overlapping gate and audit partitions, an accepted state that differs from the
 committed scale's candidate state, a final audit record evaluated on the
 initial state, a dropped or duplicated audit example, and a failed run that
-opens its audit. The real runner now validates \texttt{train/run\_ledger.jsonl}
-at the train stage, verifies that \texttt{evaluate/endpoints.jsonl} matches
+opens its audit. The real runner now validates the cost-calibration bundles in
+\texttt{build/model\_manifest.json} at the build stage, validates
+\texttt{train/run\_ledger.jsonl} at the train stage, verifies that
+\texttt{evaluate/endpoints.jsonl} matches
 that run ledger, re-executes the aggregator over the hash-bound endpoint file,
-requires every run manifest to bind the processed split manifest, and demands
+requires every run manifest to bind the processed split manifest and build
+cost-calibration bundle, and demands
 exact equality with the evaluation summary. The fixtures are non-empirical, and the
-per-example forward passes remain site-local measurements. Real execution
+per-example forward passes and hardware timing measurements remain site-local
+measurements. Real execution
 remains blocked on reviewed source-specific multi-field inventories and a
 site-local sealed-resource access attestation. Declarative stage checks do
 not count as execution evidence.

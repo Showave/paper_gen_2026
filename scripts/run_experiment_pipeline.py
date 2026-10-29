@@ -47,6 +47,7 @@ from validate_sft_train_ledger import (
     check_pairing as check_sft_pairing,
     protected_slices as sft_protected_slices,
     self_test as run_sft_train_ledger_self_test,
+    validate_cost_calibration_bundle as validate_sft_cost_calibration_bundle,
     validate_train_manifest as validate_sft_train_manifest,
 )
 from reconstruct_rl_trajectories import (
@@ -406,7 +407,7 @@ def validate_preregistration_section(
             fail(f"SFT train-ledger self-test failed: {exc}")
         if (
             sft_ledger_audit.get("empirical_evidence") is not False
-            or sft_ledger_audit.get("mutations_rejected", 0) < 30
+            or sft_ledger_audit.get("mutations_rejected", 0) < 38
         ):
             fail("SFT train-ledger self-test did not pass")
         window = nested(section, "optimizer_window")
@@ -1418,6 +1419,65 @@ def validate_real_stage_semantics(
             if stage_name == "process":
                 return content_validation
 
+    if paper == "sft" and stage_name == "build":
+        model_manifest = load_json(work_dir / "build" / "model_manifest.json")
+        split_digest = digest_file(work_dir / "process" / "splits_manifest.json")
+        factorial = nested(section, "primary_factorial")
+        expected_pairs = {
+            f"{seed}|{target}": (seed, target)
+            for seed in section["seeds"]
+            for target in factorial["target_settings"]
+        }
+        calib_bundles = (
+            model_manifest.get("cost_calibration_bundles")
+            if isinstance(model_manifest, dict)
+            else None
+        )
+        if (
+            not isinstance(model_manifest, dict)
+            or model_manifest.get("split_manifest_sha256") != split_digest
+            or model_manifest.get("primary_factorial_model_key")
+            != section["primary_factorial_model_key"]
+            or model_manifest.get("held_out_transfer_model_key")
+            != section["held_out_transfer_model_key"]
+            or not isinstance(calib_bundles, dict)
+            or set(calib_bundles) != set(expected_pairs)
+        ):
+            fail(
+                "SFT build/model_manifest.json must bind process/splits_manifest.json, "
+                "primary and transfer model keys, and one cost_calibration_bundle per (seed, target)"
+            )
+        allowed_candidate_ids = {
+            record_id
+            for record_id, partition in lineage_validation["partition_by_id"].items()
+            if partition == "candidate"
+        }
+        for pair_key, (seed, target) in sorted(expected_pairs.items()):
+            entry = calib_bundles[pair_key]
+            if not isinstance(entry, dict) or not is_sha256(entry.get("sha256")):
+                fail(f"SFT cost_calibration_bundles[{pair_key}] needs path and sha256")
+            bundle_path = confined_work_path(work_dir, entry.get("path"), "build")
+            if not bundle_path.is_file() or digest_file(bundle_path) != entry["sha256"]:
+                fail(f"SFT cost_calibration_bundles[{pair_key}] hash mismatch")
+            try:
+                calib = validate_sft_cost_calibration_bundle(
+                    load_json(bundle_path),
+                    section,
+                    expected_seed=seed,
+                    expected_target_setting=target,
+                    require_real=True,
+                )
+            except SFTLedgerError as exc:
+                fail(f"SFT cost_calibration_bundles[{pair_key}] invalid: {exc}")
+            if not calib["calibration_example_ids"].issubset(allowed_candidate_ids):
+                fail(
+                    f"SFT cost_calibration_bundles[{pair_key}] uses examples outside the candidate split"
+                )
+        return {
+            **content_validation,
+            "cost_calibration_bundles_validated": len(expected_pairs),
+        }
+
     if paper == "sft" and stage_name == "train":
         run_ledger_relative = "train/run_ledger.jsonl"
         run_rows, run_ledger_sha256 = load_jsonl_with_sha256(
@@ -1436,6 +1496,14 @@ def validate_real_stage_semantics(
             for tolerance in factorial["protected_tolerance_grid"]
         }
         split_digest = digest_file(work_dir / "process" / "splits_manifest.json")
+        model_manifest = load_json(work_dir / "build" / "model_manifest.json")
+        build_calib_bundles = (
+            model_manifest.get("cost_calibration_bundles")
+            if isinstance(model_manifest, dict)
+            else None
+        )
+        if not isinstance(build_calib_bundles, dict):
+            fail("SFT build/model_manifest.json is missing cost_calibration_bundles")
         slices_by_setting = sft_protected_slices(
             Path(__file__).resolve().parents[1], section
         )
@@ -1443,6 +1511,11 @@ def validate_real_stage_semantics(
             record_id
             for record_id, partition in lineage_validation["partition_by_id"].items()
             if partition == "gate"
+        }
+        allowed_candidate_ids = {
+            record_id
+            for record_id, partition in lineage_validation["partition_by_id"].items()
+            if partition == "candidate"
         }
         seen_identities: set[tuple[Any, ...]] = set()
         closures: list[tuple[dict[str, Any], dict[str, Any]]] = []
@@ -1469,16 +1542,24 @@ def validate_real_stage_semantics(
             if not run_path.is_file() or digest_file(run_path) != row["run_manifest_sha256"]:
                 fail("SFT train/run_ledger.jsonl run manifest hash mismatch")
             per_run_manifest = load_json(run_path)
+            pair_key = f"{row['seed']}|{row['target_setting']}"
+            expected_calib_sha = (
+                build_calib_bundles.get(pair_key, {}).get("sha256")
+                if isinstance(build_calib_bundles.get(pair_key), dict)
+                else None
+            )
             if (
                 per_run_manifest.get("synthetic_audit") is not False
                 or per_run_manifest.get("preregistration_sha256")
                 != canonical_digest(section)
                 or per_run_manifest.get("split_manifest_sha256") != split_digest
+                or per_run_manifest.get("cost_calibration_bundle_sha256")
+                != expected_calib_sha
                 or per_run_manifest.get("audit_endpoint") is not None
             ):
                 fail(
                     "SFT train run manifest must be real, bind the processed split "
-                    "manifest, and keep sealed audits closed during train"
+                    "manifest and build cost-calibration bundle, and keep sealed audits closed during train"
                 )
             try:
                 closure = validate_sft_train_manifest(
@@ -1497,6 +1578,14 @@ def validate_real_stage_semantics(
             for gate_ids in closure["gate_partition_ids"].values():
                 if not gate_ids.issubset(allowed_gate_ids):
                     fail("SFT gate partition contains examples outside the processed gate split")
+            if not closure["candidate_example_ids"].issubset(
+                allowed_candidate_ids
+            ) or not closure["calibration_example_ids"].issubset(
+                allowed_candidate_ids
+            ):
+                fail(
+                    "SFT candidate plan or cost-calibration examples lie outside the processed candidate split"
+                )
             closures.append((row, closure))
         if seen_identities != expected_identities:
             fail("SFT train/run_ledger.jsonl omits a required factorial run")

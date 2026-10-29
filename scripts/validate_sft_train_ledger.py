@@ -12,11 +12,14 @@ validator replays the ledger under the frozen SFT preregistration and requires
   accelerator-second budget, complete component charging, and a terminal
   reason that reproduces the stop rule (maximum rounds, exhausted reserve, or
   a retained reserve overrun marked as a protocol failure);
-* the frozen response-token window, pack capacity, fresh per-slice gate
-  blocks, per-draw clipped gate-loss recomputation across paired scale
-  candidates, the heuristic upper statistic, largest-passing-scale commitment
-  to that scale's candidate state, and the cumulative protected-tolerance
-  ledger;
+* the frozen response-token window, pack capacity, per-round physical pack
+  assignment and capacity, deterministic length-descending best-fit packing for
+  best-fit cells, reserve recomputation from the 200-plan cost-calibration
+  bundle (0.995 residual quantile margin plus worst-case gate reserve), fresh
+  per-slice gate blocks, per-draw clipped gate-loss recomputation across paired
+  scale candidates, the heuristic upper statistic, largest-passing-scale
+  commitment to that scale's candidate state, and the cumulative
+  protected-tolerance ledger;
 * audit endpoints evaluated on the final ledger state, from which the row's
   target and worst-protected NLL changes are recomputed;
 * every declared initial and final audit NLL recomputed from hash-bound
@@ -26,11 +29,13 @@ validator replays the ledger under the frozen SFT preregistration and requires
 * sealed audits for protocol-failure runs, which enter only as failures.
 
 Across rows, paired runs must share the split-manifest hash, the reference
-cost per target setting, the initial state and initial audit NLLs per seed and
-target setting, and one disjoint gate-partition and audit-partition identity
-per slice.  The per-example forward passes themselves are still produced by
-the training and evaluation stages; this closes their clipping, pairing,
-aggregation, and state binding, not the model forward pass that measured them.
+cost per target setting, the initial state, cost-calibration bundle, and
+initial audit NLLs per seed and target setting, and one disjoint gate-partition
+and audit-partition identity per slice.  The per-example forward passes and
+hardware timing measurements themselves are still produced by the build,
+training, and evaluation stages; this closes their pack plans, reserve
+calibration, clipping, pairing, aggregation, and state binding, not the
+hardware execution that measured them.
 """
 
 from __future__ import annotations
@@ -138,6 +143,358 @@ def load_ledger(
         require(isinstance(value, dict), f"{path}:{line_number}: expected an object")
         rows.append(value)
     return rows
+
+
+def load_json_verified(
+    path: Path, expected_sha256: str, kind: str = "JSON artifact"
+) -> dict[str, Any]:
+    require(path.is_file(), f"{kind} not found: {path}")
+    payload = path.read_bytes()
+    require(
+        hashlib.sha256(payload).hexdigest() == expected_sha256,
+        f"{kind} hash mismatch: {path}",
+    )
+    try:
+        value = json.loads(payload.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise LedgerError(f"{path}: invalid JSON: {exc}") from exc
+    require(isinstance(value, dict), f"{path}: expected an object")
+    return value
+
+
+def predicted_pack_cost(pack_loads: list[int], cost_model: dict[str, Any]) -> float:
+    c0 = float(cost_model["launch_overhead_seconds"])
+    c1 = float(cost_model["linear_token_coeff"])
+    c2 = float(cost_model["quadratic_load_coeff"])
+    max_len = float(cost_model["max_sequence_length"])
+    return math.fsum(
+        [c0 * len(pack_loads)]
+        + [c1 * load + c2 * (load * load) / max_len for load in pack_loads]
+    )
+
+
+def deterministic_best_fit_packing(
+    example_ids: list[str],
+    packed_lengths: list[int],
+    max_sequence_length: int,
+    max_packs: int,
+) -> list[int]:
+    """Canonical length-descending (tie: example_id) best-fit pack assignment."""
+    ordered = sorted(
+        range(len(example_ids)),
+        key=lambda idx: (-packed_lengths[idx], example_ids[idx], idx),
+    )
+    pack_loads: list[int] = []
+    assignments = [-1] * len(example_ids)
+    for idx in ordered:
+        length = packed_lengths[idx]
+        fitting = [
+            pack_id
+            for pack_id, current in enumerate(pack_loads)
+            if current + length <= max_sequence_length
+        ]
+        if fitting:
+            best_pack = min(
+                fitting,
+                key=lambda pack_id: (
+                    max_sequence_length - (pack_loads[pack_id] + length),
+                    pack_id,
+                ),
+            )
+            pack_loads[best_pack] += length
+            assignments[idx] = best_pack
+        else:
+            best_pack = len(pack_loads)
+            require(
+                best_pack < max_packs,
+                "deterministic best-fit packing exceeds physical pack capacity",
+            )
+            pack_loads.append(length)
+            assignments[idx] = best_pack
+    return assignments
+
+
+def validate_cost_calibration_bundle(
+    bundle: dict[str, Any],
+    section: dict[str, Any],
+    *,
+    expected_seed: int | None = None,
+    expected_target_setting: str | None = None,
+    require_real: bool = False,
+) -> dict[str, Any]:
+    """Validate the 200-plan hardware cost-calibration bundle and reserve margin."""
+    require(bundle.get("schema_version") == 1, "unsupported cost-calibration bundle schema")
+    if require_real:
+        require(
+            bundle.get("synthetic_audit") is False
+            and bundle.get("empirical_evidence") is True,
+            "real SFT execution cannot use a synthetic cost-calibration bundle",
+        )
+    else:
+        require(
+            isinstance(bundle.get("synthetic_audit"), bool)
+            and isinstance(bundle.get("empirical_evidence"), bool),
+            "cost-calibration bundle needs synthetic_audit and empirical_evidence flags",
+        )
+    require(
+        bundle.get("model_key") == section["primary_factorial_model_key"],
+        "cost-calibration bundle model_key differs from primary_factorial_model_key",
+    )
+    if expected_seed is not None:
+        require(
+            bundle.get("seed") == expected_seed,
+            "cost-calibration bundle seed differs from the run seed",
+        )
+    if expected_target_setting is not None:
+        require(
+            bundle.get("target_setting") == expected_target_setting,
+            "cost-calibration bundle target_setting differs from the run target_setting",
+        )
+    window = section["optimizer_window"]
+    gate = section["actual_update_gate"]
+    cost_design = section["cost_design"]
+    max_seq_len = window["maximum_sequence_length"]
+    max_packs = window["physical_packs_per_update"]
+    cost_model = bundle.get("cost_model")
+    require(
+        isinstance(cost_model, dict)
+        and set(cost_model)
+        == {
+            "launch_overhead_seconds",
+            "linear_token_coeff",
+            "quadratic_load_coeff",
+            "max_sequence_length",
+        }
+        and cost_model["max_sequence_length"] == max_seq_len
+        and all(
+            isinstance(cost_model[k], (int, float))
+            and not isinstance(cost_model[k], bool)
+            and math.isfinite(cost_model[k])
+            and cost_model[k] > 0
+            for k in (
+                "launch_overhead_seconds",
+                "linear_token_coeff",
+                "quadratic_load_coeff",
+            )
+        ),
+        "cost-calibration bundle cost_model is invalid",
+    )
+    c_fwd = bundle.get("gate_forward_cost_per_example_seconds")
+    require(
+        isinstance(c_fwd, (int, float))
+        and not isinstance(c_fwd, bool)
+        and math.isfinite(c_fwd)
+        and c_fwd > 0,
+        "cost-calibration bundle needs positive gate_forward_cost_per_example_seconds",
+    )
+    expected_gate_reserve = (
+        float(c_fwd)
+        * (len(gate["scale_grid"]) + 1)
+        * gate["protected_slices"]
+        * gate["samples_per_slice_round"]
+    )
+    require(
+        close(bundle.get("worst_case_gate_reserve_seconds"), expected_gate_reserve),
+        "cost-calibration bundle worst_case_gate_reserve_seconds does not reproduce",
+    )
+    plans = bundle.get("calibration_plans")
+    expected_plan_count = cost_design["independent_cost_calibration_plans"]
+    require(
+        isinstance(plans, list) and len(plans) == expected_plan_count,
+        f"cost-calibration bundle must contain exactly {expected_plan_count} independent plans",
+    )
+    plan_ids: set[str] = set()
+    calibration_example_ids: set[str] = set()
+    residuals: list[float] = []
+    for index, plan in enumerate(plans):
+        label = f"cost-calibration plan {index}"
+        require(
+            isinstance(plan, dict)
+            and set(plan)
+            == {
+                "plan_id",
+                "example_ids",
+                "pack_loads",
+                "predicted_cost_seconds",
+                "measured_cost_seconds",
+                "residual_seconds",
+            },
+            f"{label} has an unexpected schema",
+        )
+        plan_id = plan["plan_id"]
+        require(
+            isinstance(plan_id, str) and plan_id and plan_id not in plan_ids,
+            f"{label} has a missing or duplicate plan_id",
+        )
+        plan_ids.add(plan_id)
+        ex_ids = plan["example_ids"]
+        require(
+            isinstance(ex_ids, list)
+            and ex_ids
+            and all(isinstance(x, str) and x for x in ex_ids)
+            and len(set(ex_ids)) == len(ex_ids)
+            and not (set(ex_ids) & calibration_example_ids),
+            f"{label} reuses or omits calibration example IDs",
+        )
+        calibration_example_ids.update(ex_ids)
+        pack_loads = plan["pack_loads"]
+        require(
+            isinstance(pack_loads, list)
+            and 1 <= len(pack_loads) <= max_packs
+            and all(
+                isinstance(load, int)
+                and not isinstance(load, bool)
+                and 1 <= load <= max_seq_len
+                for load in pack_loads
+            ),
+            f"{label} has invalid pack_loads",
+        )
+        pred = predicted_pack_cost(pack_loads, cost_model)
+        meas = plan["measured_cost_seconds"]
+        res = plan["residual_seconds"]
+        require(
+            isinstance(meas, (int, float))
+            and not isinstance(meas, bool)
+            and math.isfinite(meas)
+            and meas > 0
+            and close(plan["predicted_cost_seconds"], pred)
+            and close(res, float(meas) - pred),
+            f"{label} predicted_cost_seconds or residual_seconds does not reproduce",
+        )
+        residuals.append(float(meas) - pred)
+
+    quantile_prob = float(cost_design["reserve_quantile"])
+    require(
+        close(bundle.get("reserve_quantile"), quantile_prob),
+        "cost-calibration bundle reserve_quantile differs from the preregistration",
+    )
+    ordered_residuals = sorted(residuals)
+    q_index = max(0, min(math.ceil(quantile_prob * len(ordered_residuals)) - 1, len(ordered_residuals) - 1))
+    expected_margin = ordered_residuals[q_index]
+    require(
+        expected_margin >= 0 and close(bundle.get("reserve_margin_seconds"), expected_margin),
+        "cost-calibration bundle reserve_margin_seconds does not reproduce the 0.995 residual quantile",
+    )
+    return {
+        "cost_model": cost_model,
+        "worst_case_gate_reserve_seconds": expected_gate_reserve,
+        "reserve_margin_seconds": expected_margin,
+        "calibration_example_ids": calibration_example_ids,
+    }
+
+
+def recompute_round_plans_and_reserves(
+    manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+    section: dict[str, Any],
+    calibration: dict[str, Any],
+) -> set[str]:
+    """Verify every round's physical pack plan and reserve_accelerator_seconds."""
+    window = section["optimizer_window"]
+    max_seq_len = window["maximum_sequence_length"]
+    max_packs = window["physical_packs_per_update"]
+    cell = manifest["run_identity"]["cell"]
+    require_best_fit = cell.endswith("deterministic_best_fit")
+    cost_model = calibration["cost_model"]
+    gate_reserve = calibration["worst_case_gate_reserve_seconds"]
+    margin = calibration["reserve_margin_seconds"]
+    calibration_ids = calibration["calibration_example_ids"]
+    candidate_ids: set[str] = set()
+    for row in rows:
+        label = f"round {row['round']}"
+        decision = row["decision"]
+        charged = row["charged"]
+        sunk_cost = math.fsum(
+            charged[k]
+            for k in ("packing", "reference_gradients", "candidate_scoring", "solving")
+        )
+        plan = row.get("selected_plan")
+        if decision == "null_action":
+            require(plan is None, f"{label} null action cannot carry a selected_plan")
+            continue
+        require(
+            isinstance(plan, dict)
+            and set(plan)
+            == {
+                "example_ids",
+                "packed_lengths",
+                "response_tokens_by_example",
+                "pack_assignments",
+            },
+            f"{label} selected_plan has an invalid schema",
+        )
+        ex_ids = plan["example_ids"]
+        lengths = plan["packed_lengths"]
+        resp_tokens = plan["response_tokens_by_example"]
+        assignments = plan["pack_assignments"]
+        require(
+            isinstance(ex_ids, list)
+            and ex_ids
+            and all(isinstance(x, str) and x for x in ex_ids)
+            and len(set(ex_ids)) == len(ex_ids)
+            and not (set(ex_ids) & calibration_ids),
+            f"{label} selected_plan has invalid, duplicate, or calibration-overlapping example_ids",
+        )
+        candidate_ids.update(ex_ids)
+        count = len(ex_ids)
+        require(
+            isinstance(lengths, list)
+            and len(lengths) == count
+            and isinstance(resp_tokens, list)
+            and len(resp_tokens) == count
+            and isinstance(assignments, list)
+            and len(assignments) == count
+            and all(
+                isinstance(n_i, int)
+                and not isinstance(n_i, bool)
+                and isinstance(r_i, int)
+                and not isinstance(r_i, bool)
+                and 1 <= r_i <= n_i <= max_seq_len
+                for n_i, r_i in zip(lengths, resp_tokens)
+            ),
+            f"{label} selected_plan lengths or response tokens are invalid",
+        )
+        require(
+            sum(resp_tokens) == row["response_tokens"],
+            f"{label} selected_plan response_tokens_by_example do not sum to response_tokens",
+        )
+        packs = row["physical_packs"]
+        require(
+            all(
+                isinstance(p, int) and not isinstance(p, bool) and 0 <= p < packs
+                for p in assignments
+            )
+            and set(assignments) == set(range(packs)),
+            f"{label} pack_assignments do not partition the declared physical_packs",
+        )
+        pack_loads = [0] * packs
+        for length, pack_id in zip(lengths, assignments):
+            pack_loads[pack_id] += length
+        require(
+            all(1 <= load <= max_seq_len for load in pack_loads),
+            f"{label} physical pack load exceeds maximum_sequence_length {max_seq_len}",
+        )
+        if require_best_fit:
+            expected_assignments = deterministic_best_fit_packing(
+                ex_ids, lengths, max_seq_len, max_packs
+            )
+            require(
+                assignments == expected_assignments,
+                f"{label} deterministic_best_fit cell does not use the canonical best-fit packing",
+            )
+        expected_reserve = math.fsum(
+            [
+                sunk_cost,
+                predicted_pack_cost(pack_loads, cost_model),
+                margin,
+                gate_reserve,
+            ]
+        )
+        require(
+            close(row["reserve_accelerator_seconds"], expected_reserve),
+            f"{label} reserve_accelerator_seconds does not reproduce from calibrated pack cost + margin + gate reserve",
+        )
+    return candidate_ids
 
 
 def replay_ledger(
@@ -615,7 +972,12 @@ def validate_train_manifest(
         for key in ("seed", "target_setting", "budget_fraction", "cell", "protected_tolerance")
     }
     require(identity == expected_identity, "run manifest identity differs from its endpoint row")
-    for key in ("split_manifest_sha256", "initial_state_sha256", "train_ledger_sha256"):
+    for key in (
+        "split_manifest_sha256",
+        "initial_state_sha256",
+        "train_ledger_sha256",
+        "cost_calibration_bundle_sha256",
+    ):
         require(is_sha256(manifest.get(key)), f"run manifest needs {key}")
     reference = manifest.get("reference_cost_accelerator_seconds")
     require(
@@ -631,10 +993,33 @@ def validate_train_manifest(
         safe_child(manifest_root, manifest.get("train_ledger_path")),
         manifest["train_ledger_sha256"],
     )
+    cost_bundle = load_json_verified(
+        safe_child(manifest_root, manifest.get("cost_calibration_bundle_path")),
+        manifest["cost_calibration_bundle_sha256"],
+        "cost-calibration bundle",
+    )
+    calibration = validate_cost_calibration_bundle(
+        cost_bundle,
+        section,
+        expected_seed=row["seed"],
+        expected_target_setting=row["target_setting"],
+    )
+    candidate_example_ids = recompute_round_plans_and_reserves(
+        manifest, rows, section, calibration
+    )
     closure = replay_ledger(manifest, rows, section, slices)
     gate_partitions, gate_partition_ids = recompute_gate_blocks(
         manifest, manifest_root, rows, section, slices
     )
+    for gate_name, gate_ids in gate_partition_ids.items():
+        require(
+            not (gate_ids & candidate_example_ids),
+            f"candidate plan examples overlap {gate_name} gate partition",
+        )
+        require(
+            not (gate_ids & calibration["calibration_example_ids"]),
+            f"cost-calibration examples overlap {gate_name} gate partition",
+        )
     totals = manifest.get("totals")
     require(isinstance(totals, dict), "run manifest needs ledger totals")
     for key in (
@@ -653,9 +1038,12 @@ def validate_train_manifest(
         **closure,
         "split_manifest_sha256": manifest["split_manifest_sha256"],
         "initial_state_sha256": manifest["initial_state_sha256"],
+        "cost_calibration_bundle_sha256": manifest["cost_calibration_bundle_sha256"],
         "reference_cost_accelerator_seconds": reference,
         "gate_partitions": gate_partitions,
         "gate_partition_ids": gate_partition_ids,
+        "candidate_example_ids": candidate_example_ids,
+        "calibration_example_ids": calibration["calibration_example_ids"],
     }
 
 
@@ -674,6 +1062,8 @@ def validate_run(
     )
     slices = slices_by_setting[row["target_setting"]]
     gate_partition_ids = closure.pop("gate_partition_ids")
+    candidate_example_ids = closure.pop("candidate_example_ids")
+    calibration_example_ids = closure.pop("calibration_example_ids")
     endpoint = manifest.get("audit_endpoint")
     audit_nll: dict[str, dict[str, float]] = {}
     partitions: dict[str, str] = {}
@@ -708,6 +1098,14 @@ def validate_run(
                 entry, name, manifest_root, states
             )
             audit_ids_by_slice[name] = audit_ids
+            require(
+                not (candidate_example_ids & audit_ids),
+                f"candidate plan examples overlap {name} audit partition",
+            )
+            require(
+                not (calibration_example_ids & audit_ids),
+                f"cost-calibration examples overlap {name} audit partition",
+            )
         for gate_name, gate_ids in gate_partition_ids.items():
             for audit_name, audit_ids in audit_ids_by_slice.items():
                 require(
@@ -736,6 +1134,7 @@ def check_pairing(closures: list[tuple[dict[str, Any], dict[str, Any]]]) -> None
     require(len(splits) == 1, "factorial rows do not share one split-manifest hash")
     reference: dict[str, float] = {}
     initial: dict[tuple[Any, str], str] = {}
+    calibration_bundles: dict[tuple[Any, str], str] = {}
     gate_partitions: dict[str, str] = {}
     partitions: dict[str, str] = {}
     initial_nll: dict[tuple[tuple[Any, str], str], float] = {}
@@ -750,6 +1149,13 @@ def check_pairing(closures: list[tuple[dict[str, Any], dict[str, Any]]]) -> None
         require(state == closure["initial_state_sha256"], (
             f"paired runs for {key} do not share an initial state"
         ))
+        calib_sha = calibration_bundles.setdefault(
+            key, closure["cost_calibration_bundle_sha256"]
+        )
+        require(
+            calib_sha == closure["cost_calibration_bundle_sha256"],
+            f"paired runs for {key} do not share a cost-calibration bundle",
+        )
         for name, partition in closure.get("gate_partitions", {}).items():
             shared_gate = gate_partitions.setdefault(name, partition)
             require(shared_gate == partition, f"gate partition for {name} differs across rows")
@@ -877,6 +1283,65 @@ def fixture_audit_entry(
     }
 
 
+@functools.lru_cache(maxsize=64)
+def cached_cost_calibration_bundle_bytes(
+    seed: int,
+    target_setting: str,
+    model_key: str,
+    max_seq_len: int,
+    n_plans: int,
+    quantile_prob: float,
+    n_scales: int,
+    n_slices: int,
+    n_samples: int,
+) -> tuple[bytes, str]:
+    cost_model = {
+        "launch_overhead_seconds": 0.5,
+        "linear_token_coeff": 0.00025,
+        "quadratic_load_coeff": 0.0003125,
+        "max_sequence_length": max_seq_len,
+    }
+    c_fwd = 0.00125
+    gate_reserve = c_fwd * (n_scales + 1) * n_slices * n_samples
+    q_index = max(0, min(math.ceil(quantile_prob * n_plans) - 1, n_plans - 1))
+    plans = []
+    for idx in range(n_plans):
+        pack_loads = [2048 + 256 * ((idx + p) % 5) for p in range(4 + (idx % 5))]
+        pred = predicted_pack_cost(pack_loads, cost_model)
+        if idx < q_index:
+            residual = round(0.02 * (idx + 1), 6)
+        elif idx == q_index:
+            residual = 4.432
+        else:
+            residual = 4.5 + 0.01 * (idx - q_index)
+        plans.append(
+            {
+                "plan_id": f"calib-plan-{idx:03d}",
+                "example_ids": [f"calib-{idx:03d}-ex-{k:02d}" for k in range(len(pack_loads))],
+                "pack_loads": pack_loads,
+                "predicted_cost_seconds": pred,
+                "measured_cost_seconds": pred + residual,
+                "residual_seconds": residual,
+            }
+        )
+    bundle = {
+        "schema_version": 1,
+        "synthetic_audit": True,
+        "empirical_evidence": False,
+        "seed": seed,
+        "target_setting": target_setting,
+        "model_key": model_key,
+        "cost_model": cost_model,
+        "gate_forward_cost_per_example_seconds": c_fwd,
+        "worst_case_gate_reserve_seconds": gate_reserve,
+        "reserve_quantile": quantile_prob,
+        "reserve_margin_seconds": 4.432,
+        "calibration_plans": plans,
+    }
+    payload = (json.dumps(bundle, indent=2, sort_keys=True, allow_nan=False) + "\n").encode()
+    return payload, hashlib.sha256(payload).hexdigest()
+
+
 def build_fixture_run(
     directory: Path,
     section: dict[str, Any],
@@ -905,6 +1370,19 @@ def build_fixture_run(
     reference = 1000.0
     budget = identity["budget_fraction"] * reference
     run_key = path_prefix + canonical_digest(identity)[:16]
+    calib_bytes, calib_sha256 = cached_cost_calibration_bundle_bytes(
+        identity["seed"],
+        identity["target_setting"],
+        section["primary_factorial_model_key"],
+        section["optimizer_window"]["maximum_sequence_length"],
+        section["cost_design"]["independent_cost_calibration_plans"],
+        float(section["cost_design"]["reserve_quantile"]),
+        len(scales),
+        gate["protected_slices"],
+        gate["samples_per_slice_round"],
+    )
+    calib_name = f"{run_key}-cost-calibration.json"
+    (directory / calib_name).write_bytes(calib_bytes)
     initial = fake_hash("initial", identity["seed"], identity["target_setting"])
     state = initial
     step = 0
@@ -932,6 +1410,7 @@ def build_fixture_run(
             "committed_scale": None,
             "response_tokens": None,
             "physical_packs": None,
+            "selected_plan": None,
         }
         candidate_states = [
             fake_hash("candidate-state", run_key, round_index, scale)
@@ -977,6 +1456,12 @@ def build_fixture_run(
             row["tolerance"] = dict.fromkeys(slices, gate["per_round_tolerance"])
             row["response_tokens"] = 6144
             row["physical_packs"] = section["optimizer_window"]["physical_packs_per_update"]
+            row["selected_plan"] = {
+                "example_ids": [f"cand-{round_index:02d}-{k:02d}" for k in range(16)],
+                "packed_lengths": [2048 if k < 8 else 1536 for k in range(16)],
+                "response_tokens_by_example": [384] * 16,
+                "pack_assignments": [k // 2 for k in range(16)],
+            }
             if decision == "accepted":
                 row["committed_scale"] = scales[first_pass]
         if overrun and round_index == 1:
@@ -1048,6 +1533,8 @@ def build_fixture_run(
         "budget_accelerator_seconds": budget,
         "train_ledger_path": ledger_name,
         "train_ledger_sha256": hashlib.sha256(ledger_bytes).hexdigest(),
+        "cost_calibration_bundle_path": calib_name,
+        "cost_calibration_bundle_sha256": calib_sha256,
         "gate_partitions": gate_partitions,
         "gate_loss_records_path": gate_records_name,
         "gate_loss_records_sha256": hashlib.sha256(gate_records_bytes).hexdigest(),
@@ -1407,6 +1894,89 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
             wrong_committed_candidate_state,
         )
 
+        def edit_calibration_bundle(m: dict, change) -> dict:
+            path = directory / m["cost_calibration_bundle_path"]
+            bundle = load_json_verified(
+                path, m["cost_calibration_bundle_sha256"], "cost-calibration bundle"
+            )
+            change(bundle)
+            payload = (json.dumps(bundle, indent=2, sort_keys=True, allow_nan=False) + "\n").encode()
+            path.write_bytes(payload)
+            m["cost_calibration_bundle_sha256"] = hashlib.sha256(payload).hexdigest()
+            return bundle
+
+        mutate(
+            "cost_calibration_plan_count_wrong",
+            lambda r, m, l: edit_calibration_bundle(
+                m, lambda b: b["calibration_plans"].pop()
+            ),
+        )
+        mutate(
+            "cost_calibration_margin_quantile_wrong",
+            lambda r, m, l: edit_calibration_bundle(
+                m, lambda b: b.__setitem__("reserve_margin_seconds", 4.0)
+            ),
+        )
+        mutate(
+            "cost_calibration_overlaps_gate_or_audit",
+            lambda r, m, l: edit_calibration_bundle(
+                m,
+                lambda b: b["calibration_plans"][0]["example_ids"].__setitem__(
+                    0, fixture_gate_ids(protected_name)[0]
+                ),
+            ),
+        )
+
+        def pack_load_exceeds_max(r, m, l):
+            l[0]["selected_plan"]["packed_lengths"][0] = 2049
+            relog(m, l)
+
+        mutate("pack_load_exceeds_maximum_sequence_length", pack_load_exceeds_max)
+
+        def non_best_fit_in_best_fit_cell(r, m, l):
+            l[0]["selected_plan"]["pack_assignments"] = [k % 8 for k in range(16)]
+            l[0]["reserve_accelerator_seconds"] = 39.84
+            relog(m, l)
+
+        mutate(
+            "deterministic_best_fit_cell_uses_non_best_fit_packing",
+            non_best_fit_in_best_fit_cell,
+        )
+
+        # Positive control: a fixed_budget_beam cell may use the balanced 3584-load
+        # packing when its reserve matches that packing's calibrated cost (39.84s).
+        _, _, beam_row = build_fixture_run(
+            directory,
+            section,
+            slices_by_setting,
+            {**identity, "cell": "measured_nonlinear__fixed_budget_beam"},
+            -0.2,
+            0.03,
+        )
+        beam_manifest, beam_ledger = load(beam_row)
+        beam_ledger[0]["selected_plan"]["pack_assignments"] = [k % 8 for k in range(16)]
+        beam_ledger[0]["reserve_accelerator_seconds"] = 39.84
+        rewrite_ledger(directory, beam_manifest, beam_ledger)
+        validate_run(beam_manifest, directory, beam_row, section, slices_by_setting)
+
+        def reserve_disagrees_with_calibrated_cost(r, m, l):
+            l[0]["reserve_accelerator_seconds"] -= 0.1
+            relog(m, l)
+
+        mutate(
+            "round_reserve_disagrees_with_calibrated_pack_cost",
+            reserve_disagrees_with_calibrated_cost,
+        )
+
+        def candidate_overlaps_gate_or_audit(r, m, l):
+            l[0]["selected_plan"]["example_ids"][0] = fixture_audit_ids(target_name)[0]
+            relog(m, l)
+
+        mutate("candidate_plan_overlaps_gate_or_audit", candidate_overlaps_gate_or_audit)
+
+        _, _, base_row = build_fixture_run(
+            directory, section, slices_by_setting, dict(identity), -0.2, 0.03
+        )
         _, _, failed_row = build_fixture_run(
             directory,
             section,
@@ -1433,6 +2003,14 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
             mutations["unpaired_initial_state"] = "rejected"
         else:
             raise LedgerError("unpaired initial state was accepted")
+        unpaired_calib = dict(closures["maximum_rounds"][1])
+        unpaired_calib["cost_calibration_bundle_sha256"] = fake_hash("other-calib")
+        try:
+            check_pairing([closures["reserve_exhausted"], (base_row, unpaired_calib)])
+        except LedgerError:
+            mutations["unpaired_cost_calibration_bundle"] = "rejected"
+        else:
+            raise LedgerError("unpaired cost_calibration_bundle_sha256 was accepted")
         for label, field, value in (
             ("unpaired_gate_partition", "gate_partitions", fake_hash("other-gate-partition")),
             ("unpaired_audit_partition", "audit_partitions", fake_hash("other-partition")),
