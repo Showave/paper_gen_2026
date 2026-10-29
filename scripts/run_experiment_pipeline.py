@@ -622,6 +622,7 @@ def validate_preregistration_section(
         if (
             reconstruction["status"] != "pass"
             or reconstruction["empirical_evidence"] is not False
+            or reconstruction.get("mutations_rejected", 0) < 20
         ):
             fail("RL raw trajectory reconstruction self-test did not pass")
     else:
@@ -1880,6 +1881,31 @@ def validate_real_stage_semantics(
             **content_validation,
             "audit_contrast_valid": True,
             "audit_interval_recomputed": expected_interval,
+        }
+
+    if paper == "rl" and stage_name == "build":
+        model_manifest = load_json(work_dir / "build" / "model_manifest.json")
+        schema_digest = digest_file(work_dir / "process" / "trajectory_schema.json")
+        stale = nested(section, "stale_actor")
+        pair = stale["frozen_policy_pair"]
+        kl_audit = model_manifest.get("kl_audit") if isinstance(model_manifest, dict) else None
+        if (
+            not isinstance(model_manifest, dict)
+            or model_manifest.get("trajectory_schema_sha256") != schema_digest
+            or model_manifest.get("frozen_policy_pair") != pair
+            or not isinstance(kl_audit, dict)
+            or kl_audit.get("batch_action") != "admit"
+            or not isinstance(kl_audit.get("measured_policy_kl"), (int, float))
+            or isinstance(kl_audit.get("measured_policy_kl"), bool)
+            or float(kl_audit["measured_policy_kl"]) > float(stale["maximum_policy_kl"])
+        ):
+            fail(
+                "RL build/model_manifest.json must bind process/trajectory_schema.json, "
+                "match frozen_policy_pair, and admit a measured_policy_kl <= maximum_policy_kl"
+            )
+        return {
+            **content_validation,
+            "rl_build_manifest_valid": True,
         }
 
     if paper == "rl" and stage_name == "train":
