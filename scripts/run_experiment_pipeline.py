@@ -59,6 +59,7 @@ from validate_eval_sequential_bundle import (
     BundleError as EvalBundleError,
     recompute_frame_hierarchy as recompute_eval_frame_hierarchy,
     self_test as run_eval_bundle_self_test,
+    validate_audit_contrast as validate_eval_audit_contrast,
     validate_bundle as validate_eval_sequential_bundle,
 )
 from recompute_eval_evi import (
@@ -638,7 +639,7 @@ def validate_preregistration_section(
             fail(f"evaluation sequential-bundle self-test failed: {exc}")
         if (
             bundle_audit.get("empirical_evidence") is not False
-            or bundle_audit.get("mutations_rejected", 0) < 17
+            or bundle_audit.get("mutations_rejected", 0) < 25
         ):
             fail("evaluation sequential-bundle self-test did not pass")
         require_bound_files(
@@ -1793,7 +1794,9 @@ def validate_real_stage_semantics(
                 "process/cell_manifest.json and its frame_hierarchy"
             )
         try:
-            bundle_validation = validate_eval_sequential_bundle(bundle, {"eval": section})
+            bundle_validation = validate_eval_sequential_bundle(
+                bundle, {"eval": section}, require_audit_sealed=True
+            )
             evi_validation = validate_eval_bundle_evi(
                 bundle, load_json(posterior_path), eval_evi_config(section)
             )
@@ -1819,68 +1822,34 @@ def validate_real_stage_semantics(
                 run_manifest, "evaluate", work_dir, audit_relative
             ),
         )
-        human = nested(section, "human_protocol")
-        audit = human["adaptive_audit"]
-        audit_slots = nested(
-            section, "acquisition.sealed_target_random_audit_attempts"
-        )
-        if (
-            len(audit_rows) != audit_slots
-            or {row.get("slot_id") for row in audit_rows}
-            != set(range(audit_slots))
-            or any(
-                row.get("replacement_attempted") is not False
-                or not isinstance(row.get("response_observed"), bool)
-                or row.get("target_to_draw_weight") != 1.0
-                for row in audit_rows
-            )
-        ):
-            fail("evaluation audit ledger violates the fixed-slot target draw")
-        lower_values = []
-        upper_values = []
-        for row in audit_rows:
-            if row["response_observed"]:
-                if row.get("outcome") not in {-1, 0, 1}:
-                    fail("observed audit outcome must be -1, 0, or 1")
-                lower_values.append(row["outcome"])
-                upper_values.append(row["outcome"])
-            else:
-                lower_values.append(-1)
-                upper_values.append(1)
-        alpha = 1 - nested(section, "decision.confidence_level")
-        radius = math.sqrt(2 * math.log(2 / alpha) / audit_slots)
-        expected_interval = [
-            max(-1.0, sum(lower_values) / audit_slots - radius),
-            min(1.0, sum(upper_values) / audit_slots + radius),
-        ]
+        bundle_path = work_dir / "train" / "sequential_bundle.json"
+        if not bundle_path.is_file() or bundle_path.is_symlink():
+            fail("real evaluation evaluate stage needs train/sequential_bundle.json")
+        bundle = load_json(bundle_path)
         train_validation = run_manifest["stages"].get("train", {}).get(
             "semantic_validation", {}
         )
-        reported = summary.get("adaptive_audit_contrast")
-        if (
-            train_validation.get("fixed_slots")
-            != nested(section, "acquisition.adaptive_fixed_budget_attempts")
-            or not isinstance(reported, dict)
-            or reported.get("equivalence_margin") != audit["equivalence_margin"]
-            or reported.get("covariance_implementation_sha256")
-            != audit["covariance_implementation_sha256"]
-            or reported.get("small_cluster_correction")
-            != audit["small_cluster_correction"]
-            or reported.get("audit_fixed_slots") != audit_slots
-            or not isinstance(reported.get("audit_interval"), list)
-            or len(reported["audit_interval"]) != 2
-            or any(
-                not math.isclose(observed, expected)
-                for observed, expected in zip(
-                    reported["audit_interval"], expected_interval
-                )
-            )
+        if train_validation.get("fixed_slots") != nested(
+            section, "acquisition.adaptive_fixed_budget_attempts"
         ):
-            fail("evaluation summary does not match the frozen audit contrast")
+            fail("evaluation train semantic validation fixed_slots mismatch")
+        try:
+            recomputed_contrast = validate_eval_audit_contrast(
+                bundle,
+                audit_rows,
+                {"eval": section},
+                summary.get("adaptive_audit_contrast"),
+            )
+        except (EvalBundleError, KeyError, TypeError, ValueError) as exc:
+            fail(
+                f"evaluation summary does not match the frozen audit and shared-rater CR1 contrast: {exc}"
+            )
         return {
             **content_validation,
             "audit_contrast_valid": True,
-            "audit_interval_recomputed": expected_interval,
+            "audit_interval_recomputed": recomputed_contrast["audit_interval"],
+            "contrast_interval_recomputed": recomputed_contrast["contrast_interval"],
+            "equivalence_status": recomputed_contrast["equivalence_status"],
         }
 
     if paper == "rl" and stage_name == "build":

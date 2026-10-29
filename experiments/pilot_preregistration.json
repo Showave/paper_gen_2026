@@ -586,12 +586,12 @@
       "validator_dependencies": [],
       "blocking_gaps": [
         "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
-        "root SHA-256 hash ranks, root--prompt--order cells, product target-unit masses, batch probabilities, sequential contributions, missingness bounds, terminal actions, and both fixed- and estimated-discrimination EVI values are recomputed from frozen artifacts, but the prompt generator, paired-response coupling, executable simulation DGPs, and shared-rater adaptive-minus-audit covariance remain unfrozen",
+        "root SHA-256 hash ranks, paired-response coupling and AB/BA swap symmetry, root--prompt--order cells, product target-unit masses, batch probabilities, sequential contributions, missingness bounds, terminal actions, shared-rater cluster-robust (CR1) adaptive-minus-audit covariance, and both fixed- and estimated-discrimination EVI values are recomputed from frozen artifacts, but the prompt generator, paired-response hashes, executable simulation DGPs, and equivalence margin remain unfrozen",
         "site-local sealed audit access isolation is required but not enforced by the repository runner"
       ],
       "required_before_freezing": [
         "reviewed overlap inventories and a segment-pair large-artifact engine plus a hash-frozen real/golden bundle validator with exact rational generated fixtures and mutation tests",
-        "frozen prompt-generator, paired-response, executable simulation DGP, and shared-rater covariance artifacts feeding the sequential bundle and EVI validators",
+        "frozen prompt-generator, paired-response, executable simulation DGP, and audit equivalence-margin artifacts feeding the sequential bundle and EVI validators",
         "site-local audit isolation and one-time-open attestation"
       ]
     },
@@ -830,20 +830,21 @@
     },
     "sequential_bundle_contract": {
       "validator_path": "scripts/validate_eval_sequential_bundle.py",
-      "validator_sha256": "ddeef73a56380244e716a21c922fcbf33213bde359ace6da7020aad9df830bd0",
+      "validator_sha256": "a9f18a8c7db243ac3d51aa30fa50bc6f46501e6854840191b38a06d3b0617008",
       "required_status": "pass",
       "current_status": "golden_fixture_only",
       "recomputed_fields": [
-        "per-source SHA-256(revision || question_id) root ranks, selected roots, prompt-variant weights, root--prompt--order cells, model-jury call count, and human target-unit product masses pi(i,c,h,o)=w_i*a_(c|i)*rho_h/2",
+        "per-source SHA-256(revision || question_id) root ranks, selected roots, prompt-variant weights, paired-response coupling and AB/BA display-order swap symmetry with stripped model identifiers, root--prompt--order cells, model-jury call count, and human target-unit product masses pi(i,c,h,o)=w_i*a_(c|i)*rho_h/2",
         "batch candidate-mixture draw probabilities from committed multisets, EVI values, costs, and temperature",
         "batch commitment hashes and strictly earlier predictor fit slots",
         "sequential augmented Hansen--Hurwitz and tie-rate contributions",
         "worst-case nonresponse endpoints and martingale--Hoeffding interval",
         "complete-outcome studentized interval, response-drift widenings, and terminal action",
-        "maximum weight and effective sample size"
+        "maximum weight and effective sample size",
+        "sealed 200-slot audit estimate/Hoeffding interval and shared-rater cluster-robust (CR1) adaptive-minus-audit covariance V_diff^CR1 = V_adap^CR1 + V_aud^CR1 - 2 C_(adap,aud)^CR1 with M/(M-1) small-cluster adjustment and worst-case nonresponse contrast bounds"
       ],
-      "golden_fixture": "exp(g) values are integers and root/variant/order/rater masses are exact rationals so draw probabilities and unit weights are exact rationals; the float recomputation must match an independent Fraction computation and reproduce the 528-root / 2112-cell / 8448-jury-call / 168960-unit pilot hierarchy",
-      "real_execution_rule": "real bundles are rejected while any frozen_artifact_hashes entry is null, the bundle config differs from this section, or the bundle fails to bind process/cell_manifest.json",
+      "golden_fixture": "exp(g) values are integers and root/variant/order/rater masses are exact rationals so draw probabilities, unit weights, and CR1 cluster-robust covariance components are exact rationals; the float recomputation must match an independent Fraction computation and reproduce the 528-root / 2112-cell / 8448-jury-call / 168960-unit pilot hierarchy",
+      "real_execution_rule": "real bundles are rejected while any frozen_artifact_hashes entry is null, the bundle config differs from this section, or the bundle fails to bind process/cell_manifest.json; train stage requires audit_slots to remain absent and evaluate stage recomputes the shared-rater CR1 audit contrast",
       "interpretation": "Generated golden bundles only; no human outcome exists."
     },
     "evi_recomputation_contract": {
