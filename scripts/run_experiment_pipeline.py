@@ -47,6 +47,7 @@ from validate_sft_train_ledger import (
     check_pairing as check_sft_pairing,
     protected_slices as sft_protected_slices,
     self_test as run_sft_train_ledger_self_test,
+    validate_cost_calibration_bundle as validate_sft_cost_calibration_bundle,
     validate_train_manifest as validate_sft_train_manifest,
 )
 from reconstruct_rl_trajectories import (
@@ -58,6 +59,7 @@ from validate_eval_sequential_bundle import (
     BundleError as EvalBundleError,
     recompute_frame_hierarchy as recompute_eval_frame_hierarchy,
     self_test as run_eval_bundle_self_test,
+    validate_audit_contrast as validate_eval_audit_contrast,
     validate_bundle as validate_eval_sequential_bundle,
 )
 from recompute_eval_evi import (
@@ -406,7 +408,7 @@ def validate_preregistration_section(
             fail(f"SFT train-ledger self-test failed: {exc}")
         if (
             sft_ledger_audit.get("empirical_evidence") is not False
-            or sft_ledger_audit.get("mutations_rejected", 0) < 30
+            or sft_ledger_audit.get("mutations_rejected", 0) < 38
         ):
             fail("SFT train-ledger self-test did not pass")
         window = nested(section, "optimizer_window")
@@ -621,6 +623,7 @@ def validate_preregistration_section(
         if (
             reconstruction["status"] != "pass"
             or reconstruction["empirical_evidence"] is not False
+            or reconstruction.get("mutations_rejected", 0) < 20
         ):
             fail("RL raw trajectory reconstruction self-test did not pass")
     else:
@@ -636,7 +639,7 @@ def validate_preregistration_section(
             fail(f"evaluation sequential-bundle self-test failed: {exc}")
         if (
             bundle_audit.get("empirical_evidence") is not False
-            or bundle_audit.get("mutations_rejected", 0) < 17
+            or bundle_audit.get("mutations_rejected", 0) < 25
         ):
             fail("evaluation sequential-bundle self-test did not pass")
         require_bound_files(
@@ -1418,6 +1421,65 @@ def validate_real_stage_semantics(
             if stage_name == "process":
                 return content_validation
 
+    if paper == "sft" and stage_name == "build":
+        model_manifest = load_json(work_dir / "build" / "model_manifest.json")
+        split_digest = digest_file(work_dir / "process" / "splits_manifest.json")
+        factorial = nested(section, "primary_factorial")
+        expected_pairs = {
+            f"{seed}|{target}": (seed, target)
+            for seed in section["seeds"]
+            for target in factorial["target_settings"]
+        }
+        calib_bundles = (
+            model_manifest.get("cost_calibration_bundles")
+            if isinstance(model_manifest, dict)
+            else None
+        )
+        if (
+            not isinstance(model_manifest, dict)
+            or model_manifest.get("split_manifest_sha256") != split_digest
+            or model_manifest.get("primary_factorial_model_key")
+            != section["primary_factorial_model_key"]
+            or model_manifest.get("held_out_transfer_model_key")
+            != section["held_out_transfer_model_key"]
+            or not isinstance(calib_bundles, dict)
+            or set(calib_bundles) != set(expected_pairs)
+        ):
+            fail(
+                "SFT build/model_manifest.json must bind process/splits_manifest.json, "
+                "primary and transfer model keys, and one cost_calibration_bundle per (seed, target)"
+            )
+        allowed_candidate_ids = {
+            record_id
+            for record_id, partition in lineage_validation["partition_by_id"].items()
+            if partition == "candidate"
+        }
+        for pair_key, (seed, target) in sorted(expected_pairs.items()):
+            entry = calib_bundles[pair_key]
+            if not isinstance(entry, dict) or not is_sha256(entry.get("sha256")):
+                fail(f"SFT cost_calibration_bundles[{pair_key}] needs path and sha256")
+            bundle_path = confined_work_path(work_dir, entry.get("path"), "build")
+            if not bundle_path.is_file() or digest_file(bundle_path) != entry["sha256"]:
+                fail(f"SFT cost_calibration_bundles[{pair_key}] hash mismatch")
+            try:
+                calib = validate_sft_cost_calibration_bundle(
+                    load_json(bundle_path),
+                    section,
+                    expected_seed=seed,
+                    expected_target_setting=target,
+                    require_real=True,
+                )
+            except SFTLedgerError as exc:
+                fail(f"SFT cost_calibration_bundles[{pair_key}] invalid: {exc}")
+            if not calib["calibration_example_ids"].issubset(allowed_candidate_ids):
+                fail(
+                    f"SFT cost_calibration_bundles[{pair_key}] uses examples outside the candidate split"
+                )
+        return {
+            **content_validation,
+            "cost_calibration_bundles_validated": len(expected_pairs),
+        }
+
     if paper == "sft" and stage_name == "train":
         run_ledger_relative = "train/run_ledger.jsonl"
         run_rows, run_ledger_sha256 = load_jsonl_with_sha256(
@@ -1436,6 +1498,14 @@ def validate_real_stage_semantics(
             for tolerance in factorial["protected_tolerance_grid"]
         }
         split_digest = digest_file(work_dir / "process" / "splits_manifest.json")
+        model_manifest = load_json(work_dir / "build" / "model_manifest.json")
+        build_calib_bundles = (
+            model_manifest.get("cost_calibration_bundles")
+            if isinstance(model_manifest, dict)
+            else None
+        )
+        if not isinstance(build_calib_bundles, dict):
+            fail("SFT build/model_manifest.json is missing cost_calibration_bundles")
         slices_by_setting = sft_protected_slices(
             Path(__file__).resolve().parents[1], section
         )
@@ -1443,6 +1513,11 @@ def validate_real_stage_semantics(
             record_id
             for record_id, partition in lineage_validation["partition_by_id"].items()
             if partition == "gate"
+        }
+        allowed_candidate_ids = {
+            record_id
+            for record_id, partition in lineage_validation["partition_by_id"].items()
+            if partition == "candidate"
         }
         seen_identities: set[tuple[Any, ...]] = set()
         closures: list[tuple[dict[str, Any], dict[str, Any]]] = []
@@ -1469,16 +1544,24 @@ def validate_real_stage_semantics(
             if not run_path.is_file() or digest_file(run_path) != row["run_manifest_sha256"]:
                 fail("SFT train/run_ledger.jsonl run manifest hash mismatch")
             per_run_manifest = load_json(run_path)
+            pair_key = f"{row['seed']}|{row['target_setting']}"
+            expected_calib_sha = (
+                build_calib_bundles.get(pair_key, {}).get("sha256")
+                if isinstance(build_calib_bundles.get(pair_key), dict)
+                else None
+            )
             if (
                 per_run_manifest.get("synthetic_audit") is not False
                 or per_run_manifest.get("preregistration_sha256")
                 != canonical_digest(section)
                 or per_run_manifest.get("split_manifest_sha256") != split_digest
+                or per_run_manifest.get("cost_calibration_bundle_sha256")
+                != expected_calib_sha
                 or per_run_manifest.get("audit_endpoint") is not None
             ):
                 fail(
                     "SFT train run manifest must be real, bind the processed split "
-                    "manifest, and keep sealed audits closed during train"
+                    "manifest and build cost-calibration bundle, and keep sealed audits closed during train"
                 )
             try:
                 closure = validate_sft_train_manifest(
@@ -1497,6 +1580,14 @@ def validate_real_stage_semantics(
             for gate_ids in closure["gate_partition_ids"].values():
                 if not gate_ids.issubset(allowed_gate_ids):
                     fail("SFT gate partition contains examples outside the processed gate split")
+            if not closure["candidate_example_ids"].issubset(
+                allowed_candidate_ids
+            ) or not closure["calibration_example_ids"].issubset(
+                allowed_candidate_ids
+            ):
+                fail(
+                    "SFT candidate plan or cost-calibration examples lie outside the processed candidate split"
+                )
             closures.append((row, closure))
         if seen_identities != expected_identities:
             fail("SFT train/run_ledger.jsonl omits a required factorial run")
@@ -1703,7 +1794,9 @@ def validate_real_stage_semantics(
                 "process/cell_manifest.json and its frame_hierarchy"
             )
         try:
-            bundle_validation = validate_eval_sequential_bundle(bundle, {"eval": section})
+            bundle_validation = validate_eval_sequential_bundle(
+                bundle, {"eval": section}, require_audit_sealed=True
+            )
             evi_validation = validate_eval_bundle_evi(
                 bundle, load_json(posterior_path), eval_evi_config(section)
             )
@@ -1729,68 +1822,59 @@ def validate_real_stage_semantics(
                 run_manifest, "evaluate", work_dir, audit_relative
             ),
         )
-        human = nested(section, "human_protocol")
-        audit = human["adaptive_audit"]
-        audit_slots = nested(
-            section, "acquisition.sealed_target_random_audit_attempts"
-        )
-        if (
-            len(audit_rows) != audit_slots
-            or {row.get("slot_id") for row in audit_rows}
-            != set(range(audit_slots))
-            or any(
-                row.get("replacement_attempted") is not False
-                or not isinstance(row.get("response_observed"), bool)
-                or row.get("target_to_draw_weight") != 1.0
-                for row in audit_rows
-            )
-        ):
-            fail("evaluation audit ledger violates the fixed-slot target draw")
-        lower_values = []
-        upper_values = []
-        for row in audit_rows:
-            if row["response_observed"]:
-                if row.get("outcome") not in {-1, 0, 1}:
-                    fail("observed audit outcome must be -1, 0, or 1")
-                lower_values.append(row["outcome"])
-                upper_values.append(row["outcome"])
-            else:
-                lower_values.append(-1)
-                upper_values.append(1)
-        alpha = 1 - nested(section, "decision.confidence_level")
-        radius = math.sqrt(2 * math.log(2 / alpha) / audit_slots)
-        expected_interval = [
-            max(-1.0, sum(lower_values) / audit_slots - radius),
-            min(1.0, sum(upper_values) / audit_slots + radius),
-        ]
+        bundle_path = work_dir / "train" / "sequential_bundle.json"
+        if not bundle_path.is_file() or bundle_path.is_symlink():
+            fail("real evaluation evaluate stage needs train/sequential_bundle.json")
+        bundle = load_json(bundle_path)
         train_validation = run_manifest["stages"].get("train", {}).get(
             "semantic_validation", {}
         )
-        reported = summary.get("adaptive_audit_contrast")
-        if (
-            train_validation.get("fixed_slots")
-            != nested(section, "acquisition.adaptive_fixed_budget_attempts")
-            or not isinstance(reported, dict)
-            or reported.get("equivalence_margin") != audit["equivalence_margin"]
-            or reported.get("covariance_implementation_sha256")
-            != audit["covariance_implementation_sha256"]
-            or reported.get("small_cluster_correction")
-            != audit["small_cluster_correction"]
-            or reported.get("audit_fixed_slots") != audit_slots
-            or not isinstance(reported.get("audit_interval"), list)
-            or len(reported["audit_interval"]) != 2
-            or any(
-                not math.isclose(observed, expected)
-                for observed, expected in zip(
-                    reported["audit_interval"], expected_interval
-                )
-            )
+        if train_validation.get("fixed_slots") != nested(
+            section, "acquisition.adaptive_fixed_budget_attempts"
         ):
-            fail("evaluation summary does not match the frozen audit contrast")
+            fail("evaluation train semantic validation fixed_slots mismatch")
+        try:
+            recomputed_contrast = validate_eval_audit_contrast(
+                bundle,
+                audit_rows,
+                {"eval": section},
+                summary.get("adaptive_audit_contrast"),
+            )
+        except (EvalBundleError, KeyError, TypeError, ValueError) as exc:
+            fail(
+                f"evaluation summary does not match the frozen audit and shared-rater CR1 contrast: {exc}"
+            )
         return {
             **content_validation,
             "audit_contrast_valid": True,
-            "audit_interval_recomputed": expected_interval,
+            "audit_interval_recomputed": recomputed_contrast["audit_interval"],
+            "contrast_interval_recomputed": recomputed_contrast["contrast_interval"],
+            "equivalence_status": recomputed_contrast["equivalence_status"],
+        }
+
+    if paper == "rl" and stage_name == "build":
+        model_manifest = load_json(work_dir / "build" / "model_manifest.json")
+        schema_digest = digest_file(work_dir / "process" / "trajectory_schema.json")
+        stale = nested(section, "stale_actor")
+        pair = stale["frozen_policy_pair"]
+        kl_audit = model_manifest.get("kl_audit") if isinstance(model_manifest, dict) else None
+        if (
+            not isinstance(model_manifest, dict)
+            or model_manifest.get("trajectory_schema_sha256") != schema_digest
+            or model_manifest.get("frozen_policy_pair") != pair
+            or not isinstance(kl_audit, dict)
+            or kl_audit.get("batch_action") != "admit"
+            or not isinstance(kl_audit.get("measured_policy_kl"), (int, float))
+            or isinstance(kl_audit.get("measured_policy_kl"), bool)
+            or float(kl_audit["measured_policy_kl"]) > float(stale["maximum_policy_kl"])
+        ):
+            fail(
+                "RL build/model_manifest.json must bind process/trajectory_schema.json, "
+                "match frozen_policy_pair, and admit a measured_policy_kl <= maximum_policy_kl"
+            )
+        return {
+            **content_validation,
+            "rl_build_manifest_valid": True,
         }
 
     if paper == "rl" and stage_name == "train":

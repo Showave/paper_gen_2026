@@ -232,10 +232,18 @@ make sft-ledger-audit
 ```
 
 `scripts/validate_sft_train_ledger.py` replays the run manifest's hash-bound
-per-round train ledger and per-draw gate-loss records. It checks the
+200-plan cost-calibration bundle, per-round train ledger, and per-draw
+gate-loss records. It checks the
 parameter-state and optimizer-step chain,
 with one step per accepted update and none for a rejected update or null
-action. It checks reserve admission before every round, complete charging of
+action. From the cost-calibration bundle it recomputes each calibration plan's
+predicted nonlinear pack cost, residual, nearest-rank 0.995 residual quantile
+margin, and worst-case gate reserve. For every non-null round it checks the
+selected candidate subset and physical pack assignment (disjoint candidate IDs,
+pack loads $\le L_{\max}=4096$, canonical length-descending best-fit assignment
+in best-fit cells, and reserve recomputed from sunk round overhead plus
+calibrated pack cost, 0.995 residual margin, and worst-case gate reserve),
+reserve admission before every round, complete charging of
 seven cost components, and the stop rule (maximum rounds, exhausted reserve,
 or a retained overrun marked as a protocol failure). Gate evidence must use a
 fresh 512-draw block per protected slice and round from that slice's gate
@@ -252,16 +260,21 @@ recomputed from hash-bound per-example records (`example_id`, `slice`,
 row-uniform mean of response-token-mean NLL. Records must be evaluated on the
 exact initial and final states, repeat no example, and cover exactly the
 audit partition identified by the SHA-256 of its sorted identifiers, which must
-be disjoint from every gate partition. A
+be disjoint from every gate, calibration, and candidate partition. A
 protocol-failure run must leave its sealed audits unopened. The real runner
-validates `train/run_ledger.jsonl` at the `train` stage and re-executes the
-aggregator at `evaluate`. The aggregator calls this closure for every row and
-requires paired rows to share the split-manifest hash, one gate partition per
-protected slice, one disjoint audit partition per slice, reference cost,
-initial state, and initial audit NLLs. Thirty generated mutations fail,
-including post-difference instead of per-example gate clipping, token-weighted
-gate or audit means, foreign gate draws, overlapping gate and audit
-partitions, an accepted state that differs from the committed scale's
+validates `build/model_manifest.json` cost-calibration bundles at the `build`
+stage, validates `train/run_ledger.jsonl` at the `train` stage, and re-executes
+the aggregator at `evaluate`. The aggregator calls this closure for every row
+and requires paired rows to share the split-manifest hash, one gate partition
+per protected slice, one disjoint audit partition per slice, reference cost,
+initial state, cost-calibration bundle, and initial audit NLLs. Thirty-eight
+generated mutations fail,
+including a wrong calibration plan count or 0.995 residual margin, calibration
+or candidate overlap with gate/audit partitions, a pack load above $L_{\max}$,
+a non-best-fit packing in a best-fit cell, a round reserve that disagrees with
+the calibrated pack cost, post-difference instead of per-example gate clipping,
+token-weighted gate or audit means, foreign gate draws, overlapping gate and
+audit partitions, an accepted state that differs from the committed scale's
 candidate state, a dropped audit example, and a final record evaluated on the
 initial state.
 
@@ -334,21 +347,30 @@ make rl-reconstruction-audit
 complete `K_gen`/`K_ver`/`K_score` cost ledger from
 `train/raw_trajectory_header.json` and `train/raw_trajectory_ledger.jsonl`.
 The header carries the frozen policy pair, decoder temperature, lambda,
-support floor, nuisance model, freeze record, normalized select/confirm prompt
-laws, nuisance training prompts, and the declared cost ledger. Every attempted
+support floor, residual second-moment and cost floors, maximum policy KL,
+nuisance model, freeze record, normalized select/confirm prompt laws with
+prior-iteration residual second-moment and cost predictions, nuisance training
+prompts, finite-vocabulary sequence-tree conformance counts, the KL audit, and
+the declared cost ledger. Every attempted
 row—including infrastructure-failed/aborted attempts—carries `response_tokens`,
 `verifier_called`, `added_score_passes` (`1` for `alpha<1` mixture candidates
 and `0` for `alpha=1` and reference rows), and `allocated_accelerator_seconds`;
 successful rows also carry prompt IDs, generator hash,
-scoring policies and temperature, both sequence log-probabilities, reward,
+scoring policies and temperature, per-step allowed-vocabulary token logits and
+EOS flags, both sequence log-probabilities, reward,
 termination, nuisance predictions, prior use count, and the
-projected score. The validator recomputes `w=P/M` in log space from header
+projected score. The validator recomputes the adaptive proposal
+$q_t(x)=\epsilon d(x)+(1-\epsilon)\overline q_t(x)$ (including the
+$Z_t^q=0\Rightarrow\overline q_t=D$ fallback), per-step masked
+temperature-softmax token log-probabilities, finite-vocabulary sequence-tree
+normalization, sampler--scorer frequency conformance, the KL-stratum bound, and
+`w=P/M` in log space from header
 prompt masses and both log-probabilities, then `U`, `h`, and the `A`, `B`, or
 `U*s` term, plus per-attempt `generated_tokens`, `verifier_calls`, and
 `added_score_tokens = response_tokens * added_score_passes`. It requires zero
 prior uses, the frozen generator and scorer pair,
 the frozen nuisance model, training prompts disjoint from audited prompts, one
-baseline per prompt, `q>=epsilon*d`, consistent truncation, and exact agreement
+baseline per prompt, `q>=epsilon*d`, consistent truncation and EOS steps, and exact agreement
 with the header's candidate, reference, aborted, per-cell, and total cost
 buckets. In a real
 train stage, the runner requires `train/trajectory_ledger.jsonl` and
@@ -358,14 +380,18 @@ policy tensor hashes are null.
 
 The self-test builds a golden raw ledger on the exact four-cell Gate 0 law.
 By enumeration, the alpha=1/2 cell, the alpha=1 cell, and the reference rows
-are unbiased to 1e-12, and the reconstructed weights normalize under `M`.
+are unbiased to 1e-12, the adaptive proposal and $Z_t^q=0$ fallback reproduce,
+and the reconstructed weights normalize under `M`.
 Five faults are replayed: omitted prompt ratio, weight clipping below the
-largest weight, base-versus-decoder scoring, focal nuisance fitting, and
-consumed-trajectory reuse. Each is rejected and each null control passes. The
-reconstructed base-scoring bias equals the Gate 0 module's exact value. A
-producer that records the frozen temperature while scoring with other logits
-cannot be detected from the ledger; that remains the job of the sampler-scorer
-conformance test.
+largest weight, base-versus-decoder scoring (both honest temperature mismatch
+and stealth base-logit scoring with a spoofed header temperature), focal
+nuisance fitting, and
+consumed-trajectory reuse. Each is rejected and each null control passes;
+twenty raw-ledger, proposal, step-logit, conformance, KL, and cost-counter
+mutations fail. The
+reconstructed base-scoring bias equals the Gate 0 module's exact value.
+Raw forward passes producing the step logits remain site-local hardware
+measurements.
 
 The Gate 0 fault injections run by exact enumeration:
 
@@ -406,15 +432,23 @@ make eval-bundle-audit
 
 `scripts/validate_eval_sequential_bundle.py` recomputes per-source
 `SHA-256(revision || question_id)` root ranks, selected roots, prompt-variant
-weights, root--prompt--order cells, model-jury call counts, human target-unit
+weights, paired-response coupling and AB/BA display-order swap symmetry with
+stripped model identifiers, root--prompt--order cells, model-jury call counts, human target-unit
 product masses $\pi(i,c,h,o)=w_i a_{c\mid i}\rho_h/2$, and every batch draw law
-from its commitment, checks commitment hashes and strictly earlier fit slots,
-and requires all fixed slots exactly once. It reproduces the sequential
+from its commitment, checks commitment hashes and strictly earlier predictor fit slots,
+and requires all fixed slots exactly once while keeping sealed audit slots
+absent during the train stage. It reproduces the sequential
 contributions, worst-case nonresponse bounds, intervals, drift widenings,
-terminal action, maximum weight, and ESS. Golden bundles have exact rational
-draw probabilities and unit masses and are checked against an independent
+terminal action, maximum weight, and ESS, and at the evaluation stage it
+validates the 200 fixed audit slots and recomputes the shared-rater
+cluster-robust (CR1) adaptive-minus-audit variance
+$V_{\mathrm{diff}}^{\mathrm{CR1}}=V_{\mathrm{adap}}^{\mathrm{CR1}}+V_{\mathrm{aud}}^{\mathrm{CR1}}-2C_{\mathrm{adap,aud}}^{\mathrm{CR1}}$
+with $M/(M-1)$ small-cluster adjustment and worst-case nonresponse contrast
+bounds. Golden bundles have exact rational
+draw probabilities, unit weights, and CR1 cluster-robust covariance components
+and are checked against an independent
 `Fraction` computation, and the self-test also validates the full 528-root,
-2,112-cell, 8,448-jury-call, 168,960-unit pilot hierarchy; seventeen mutations
+2,112-cell, 8,448-jury-call, 168,960-unit pilot hierarchy; twenty-five mutations
 must fail. Real bundles are refused while any
 estimand-defining artifact hash in the preregistration is null or while the
 bundle fails to bind `process/cell_manifest.json`.

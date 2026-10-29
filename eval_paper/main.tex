@@ -112,7 +112,7 @@ judges introduce additional structure: self-recognition can produce
 self-preference \cite{panickssery2024evaluators}, controlled perturbations
 reveal multiple biases \cite{ye2025justice}, and modern hierarchical methods
 estimate grader effects, confounding, or discrimination
-\cite{dubois2026biases,zhao2026care,qian2026jury}. TrustJudge formalizes
+\cite{dubois2026biases,zhao2026care,qian2026jury,xu2026judgeaware}. TrustJudge formalizes
 score--comparison and tie-transitivity inconsistencies and aggregates
 bidirectional likelihoods to reduce them \cite{wang2026trustjudge}, while
 distribution-calibrated inference-time compute fits a Bradley--Terry--Davidson
@@ -165,8 +165,12 @@ reduce static contamination through generated or refreshed tasks
 forms of memorized ordering \cite{oren2024contamination}. Freshness, however,
 changes the evaluation distribution and complicates longitudinal claims.
 ATLAS uses item-response information to adaptively estimate a scalar model
-ability from static benchmark items \cite{li2025atlas}. It is a relevant
-efficiency comparator, but its calibrated-item-bank target differs from our
+ability from static benchmark items \cite{li2025atlas}, while information-efficient
+arena designs use Fisher-information $A$- and $D$-optimality to choose which
+model pairs to battle under a Bradley--Terry model
+\cite{liu2026fewerbattles}. Both are relevant
+efficiency comparators, but their calibrated-item-bank and multi-model-arena
+targets differ from our
 crossed human pairwise mean and four-action replacement decision.
 Finally, non-transitive judge preferences can make a scalar rank
 baseline-dependent \cite{xu2025nontransitivity}. We therefore target one
@@ -900,28 +904,53 @@ not replace the preregistered condition grid or provide human evidence.
 The shared materialization validator now closes acquisition rows against
 retained, suppressed, and quarantined dispositions.
 \texttt{scripts/validate\_eval\_sequential\_bundle.py} is the shared
-real/golden validator for the sequential decision bundle and frame hierarchy.
+real/golden validator for the sequential decision bundle, frame hierarchy, and
+shared-rater audit contrast.
 It recomputes per-source $\operatorname{SHA-256}(\text{revision}\Vert
 \text{question\_id})$ root ranks, the selected roots and their weights $w_i$,
-the prompt-variant weights $a_{c\mid i}$, the root--prompt--order cells, the
+the prompt-variant weights $a_{c\mid i}$, each variant's paired-response
+coupling and seed agreement, the root--prompt--order cells and their AB/BA
+response-pair swap symmetry with stripped model identifiers, the
 model-jury call count, and every human target unit's product mass
 $\pi(i,c,h,o)=w_ia_{c\mid i}\rho_h/2$. From each batch
 commitment it recomputes the candidate-mixture law \cref{eq:explore}, using
 log-sum-exp with log multiplicities. It rejects commitment-hash mismatches and
 fit slots that are not strictly earlier. It requires every one of the $T$
 fixed slots exactly once, so a missing outcome is recorded in place rather
-than replaced. From these inputs it reproduces \cref{eq:psi}, the worst-case
+than replaced, and requires sealed audit slots to remain absent during the
+train stage. From these inputs it reproduces \cref{eq:psi}, the worst-case
 endpoints, the complete-outcome or martingale--Hoeffding interval, the tie
 interval, the drift widenings, the terminal action, the maximum weight, and
-the ESS. Its golden bundles set each EVI to $\log(a_x)/\lambda_E$ with integer
+the ESS. At the evaluation stage, it also validates the 200 fixed audit slots
+and recomputes the shared-rater cluster-robust (CR1) adaptive-minus-audit
+variance
+\[
+\widehat V_{\mathrm{diff}}^{\mathrm{CR1}}
+=\frac{M}{M-1}\sum_{h=1}^{M}(u_h^{\mathrm{adap}}-u_h^{\mathrm{aud}})^2
+=\widehat V_{\mathrm{adap}}^{\mathrm{CR1}}
++\widehat V_{\mathrm{aud}}^{\mathrm{CR1}}
+-2\widehat C_{\mathrm{adap,aud}}^{\mathrm{CR1}},
+\]
+where $u_h^{\mathrm{adap}}=T^{-1}\sum_{t:H_t=h}(\psi_t-\widehat\Delta_T)$ and
+$u_h^{\mathrm{aud}}=T_{\mathrm{aud}}^{-1}\sum_{s:H_s^{\mathrm{aud}}=h}
+(Y_s^{\mathrm{aud}}-\widehat\Delta_{\mathrm{aud}})$ over the $M$ active rater
+clusters, together with the worst-case nonresponse contrast interval and the
+concordance classification against the equivalence margin. Its golden bundles
+set each EVI to $\log(a_x)/\lambda_E$ with integer
 $a_x$ and use exact rational root, variant, order, and rater weights, so every
-draw probability and unit weight is an exact rational. The float recomputation
+draw probability, unit weight, and CR1 cluster-robust covariance component is
+an exact rational. The float recomputation
 must then match an independent \texttt{Fraction} implementation, and the
 self-test also reproduces the 528-root, 2,112-cell, 8,448-jury-call,
-168,960-unit pilot hierarchy. Seventeen
+168,960-unit pilot hierarchy. Twenty-five
 mutations fail, including a tampered root selection hash, a wrong hash-rank
 root selected, unnormalized variant weights, an incomplete cell crossing, a
-unit mass that disagrees with $w_ia_{c\mid i}\rho_h/2$, a tampered $p_t$, EVI
+unit mass that disagrees with $w_ia_{c\mid i}\rho_h/2$, a violated AB/BA
+response-pair swap symmetry, unstripped model identifiers, a shared-seed
+mismatch, a dropped or replacement audit slot, an omitted shared-rater
+covariance term in $\widehat V_{\mathrm{diff}}^{\mathrm{CR1}}$, a complete-case
+contrast claimed despite a missing audit slot, an unsealed audit in the train
+stage, a tampered $p_t$, EVI
 edited after commitment, a
 predictor fit on its own batch, a dropped or replacement slot, an outcome on a
 missing slot, and a complete-case interval reported despite missingness. A
@@ -962,9 +991,10 @@ term only, and an uncentered human-panel log-discrimination. The same self-test 
 values, and the maximum softmax tilt after 20, 40, 80, 120, and 200 generated
 fit outcomes; \cref{sec:method} quotes these design diagnostics. In a real
 train stage the runner now executes both the bundle
-validator and this EVI recomputation. The unfrozen prompt generator,
-paired-response coupling, executable simulation DGPs, and shared-rater
-adaptive-minus-audit covariance keep the
+validator (with sealed-audit enforcement) and this EVI recomputation, and at
+the evaluate stage it recomputes the shared-rater CR1 audit contrast. The
+unfrozen prompt generator,
+paired-response hashes, executable simulation DGPs, and equivalence margin keep the
 artifact-integrity gate closed even if source reviews later pass.
 
 \subsection{Proof of \cref{prop:unbiased}}

@@ -6,8 +6,10 @@ frame, one frozen commitment per batch, and every fixed assignment slot.  The
 validator independently recomputes
 
 * each source's SHA-256(revision || question_id) root ranks, selected roots,
-  prompt-variant weights, root--prompt--order cells, model-jury call count,
-  and human target-unit product masses pi(i,c,h,o) = w_i * a_(c|i) * rho_h / 2;
+  prompt-variant weights, paired-response coupling and AB/BA display-order swap
+  symmetry with stripped model identifiers, root--prompt--order cells,
+  model-jury call count, and human target-unit product masses
+  pi(i,c,h,o) = w_i * a_(c|i) * rho_h / 2;
 * each batch's candidate-mixture law p_b = eps*pi + (1-eps)*r_b from the
   committed candidate multiset, EVI values, annotation costs, and temperature;
 * predictability: the batch commitment hash and fit slots strictly before the
@@ -16,7 +18,11 @@ validator independently recomputes
   nonresponse endpoints, the tie-rate analogue, ESS, and maximum weight;
 * the complete-outcome studentized interval or the martingale--Hoeffding
   interval when any slot is missing, the response-drift widenings, and the
-  terminal four-way action.
+  terminal four-way action;
+* the sealed target-random human audit and the shared-rater cluster-robust (CR1)
+  adaptive-minus-audit covariance and equivalence contrast
+  V_diff^CR1 = V_adap^CR1 + V_aud^CR1 - 2 C_(adap,aud)^CR1 with M/(M-1)
+  small-cluster adjustment and worst-case nonresponse fallback.
 
 Every reported number must reproduce.  The self-test builds generated golden
 bundles whose probabilities and unit masses are exact rationals and checks the
@@ -83,14 +89,25 @@ def commitment_payload(batch: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def is_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
 def config_from_preregistration(section: dict[str, Any]) -> dict[str, Any]:
     acquisition = section["acquisition"]
     decision = section["decision"]
+    audit = section.get("human_protocol", {}).get("adaptive_audit", {})
     return {
         "exploration_epsilon": acquisition["exploration_epsilon"],
         "evi_temperature": acquisition["evi_temperature"],
         "batch_size": acquisition["batch_size"],
         "fixed_budget_attempts": acquisition["adaptive_fixed_budget_attempts"],
+        "audit_fixed_slots": acquisition["sealed_target_random_audit_attempts"],
+        "audit_equivalence_margin": audit.get("equivalence_margin"),
         "evi_candidate_multiset_size": acquisition["evi_candidate_multiset_size"],
         "alpha": round(1.0 - decision["confidence_level"], 12),
         "normal_quantile": decision["normal_quantile"],
@@ -216,6 +233,7 @@ def recompute_frame_hierarchy(
     row_uids: set[str] = set()
     selected_roots: dict[str, dict[str, Any]] = {}
     expected_cells: dict[tuple[str, str, int], float] = {}
+    expected_cell_responses: dict[tuple[str, str, int], tuple[str, str]] = {}
     for source_key, source_entry in sorted(sources.items()):
         require(isinstance(source_entry, dict), f"source {source_key} must be an object")
         revision = source_entry.get("revision")
@@ -286,10 +304,12 @@ def recompute_frame_hierarchy(
                 f"selected root {uid} must define prompt_variants_per_root variants",
             )
             variant_weights: dict[str, float] = {}
+            variant_pairs: dict[str, dict[str, Any]] = {}
             for variant in variants:
                 require(isinstance(variant, dict), f"root {uid} variant must be an object")
                 vid = variant.get("variant_id")
                 v_weight = variant.get("weight")
+                pair = variant.get("response_pair")
                 require(
                     isinstance(vid, str)
                     and vid
@@ -300,7 +320,35 @@ def recompute_frame_hierarchy(
                     and v_weight > 0,
                     f"root {uid} variant has invalid or duplicate variant_id or weight",
                 )
+                require(
+                    isinstance(pair, dict)
+                    and set(pair)
+                    == {
+                        "coupling_mode",
+                        "seed_a",
+                        "seed_b",
+                        "response_a_sha256",
+                        "response_b_sha256",
+                        "identifiers_stripped",
+                    }
+                    and pair["coupling_mode"]
+                    in {"shared_seed", "independent_seed", "deterministic"}
+                    and isinstance(pair["seed_a"], int)
+                    and not isinstance(pair["seed_a"], bool)
+                    and isinstance(pair["seed_b"], int)
+                    and not isinstance(pair["seed_b"], bool)
+                    and (
+                        pair["coupling_mode"] != "shared_seed"
+                        or pair["seed_a"] == pair["seed_b"]
+                    )
+                    and is_sha256(pair["response_a_sha256"])
+                    and is_sha256(pair["response_b_sha256"])
+                    and pair["response_a_sha256"] != pair["response_b_sha256"]
+                    and pair["identifiers_stripped"] is True,
+                    f"root {uid} variant {vid} has an invalid or unstripped response_pair",
+                )
                 variant_weights[vid] = float(v_weight)
+                variant_pairs[vid] = pair
             require(
                 close(math.fsum(variant_weights.values()), 1.0),
                 f"root {uid} prompt-variant weights do not sum to one",
@@ -311,9 +359,15 @@ def recompute_frame_hierarchy(
                 "variants": variant_weights,
             }
             for vid, v_weight in variant_weights.items():
+                pair = variant_pairs[vid]
                 for order in display_orders:
                     expected_cells[(uid, vid, order)] = (
                         expected_root_mass * v_weight / 2.0
+                    )
+                    expected_cell_responses[(uid, vid, order)] = (
+                        (pair["response_a_sha256"], pair["response_b_sha256"])
+                        if order == 1
+                        else (pair["response_b_sha256"], pair["response_a_sha256"])
                     )
 
     require(
@@ -335,6 +389,13 @@ def recompute_frame_hierarchy(
             and isinstance(cell.get("cell_mass"), (int, float))
             and close(float(cell["cell_mass"]), expected_cells[key]),
             f"root--prompt--order cell {key} is invalid, duplicated, or misweighted",
+        )
+        left_sha, right_sha = expected_cell_responses[key]
+        require(
+            cell.get("left_response_sha256") == left_sha
+            and cell.get("right_response_sha256") == right_sha
+            and cell.get("identifiers_stripped") is True,
+            f"root--prompt--order cell {key} violates AB/BA response-pair swap symmetry or identifier stripping",
         )
         seen_cells.add(key)
 
@@ -610,12 +671,210 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
         "maximum_weight": max(weights),
         "effective_sample_size": sum(weights) ** 2 / sum(w * w for w in weights),
     }
+    if bundle.get("audit_slots") is not None:
+        rater_by_unit = {row["unit_id"]: row["rater_id"] for row in frame}
+        slot_raters = [rater_by_unit[row["unit_id"]] for row in slots]
+        recomputed["adaptive_audit_contrast"] = recompute_audit_and_shared_rater_contrast(
+            bundle["audit_slots"],
+            config=config,
+            mass=mass,
+            rater_by_unit=rater_by_unit,
+            adaptive_slot_raters=slot_raters,
+            adaptive_psi=psi,
+            adaptive_missing=missing,
+            adaptive_estimate=recomputed.get("estimate"),
+            adaptive_interval=interval,
+        )
     return recomputed
 
 
-def validate_bundle(
-    bundle: dict[str, Any], preregistration: dict[str, Any]
+def recompute_audit_and_shared_rater_contrast(
+    audit_slots: Any,
+    *,
+    config: dict[str, Any],
+    mass: dict[str, float],
+    rater_by_unit: dict[str, str],
+    adaptive_slot_raters: list[str],
+    adaptive_psi: list[float],
+    adaptive_missing: int,
+    adaptive_estimate: float | None,
+    adaptive_interval: list[float],
 ) -> dict[str, Any]:
+    """Recompute the sealed audit and shared-rater CR1 adaptive-minus-audit contrast."""
+    expected_audit_slots = config.get("audit_fixed_slots")
+    margin_eq = config.get("audit_equivalence_margin")
+    require(
+        isinstance(expected_audit_slots, int)
+        and not isinstance(expected_audit_slots, bool)
+        and expected_audit_slots > 1
+        and isinstance(margin_eq, (int, float))
+        and not isinstance(margin_eq, bool)
+        and math.isfinite(margin_eq)
+        and margin_eq > 0,
+        "config needs positive audit_fixed_slots and audit_equivalence_margin",
+    )
+    require(
+        isinstance(audit_slots, list) and len(audit_slots) == expected_audit_slots,
+        "audit_slots must cover exactly audit_fixed_slots",
+    )
+    ordered = sorted(
+        audit_slots,
+        key=lambda row: row.get("slot_id", row.get("audit_slot", -1))
+        if isinstance(row, dict)
+        else -1,
+    )
+    require(
+        [row.get("slot_id", row.get("audit_slot")) for row in ordered]
+        == list(range(expected_audit_slots)),
+        "every fixed audit slot must appear exactly once",
+    )
+    audit_psi: list[float] = []
+    audit_lower: list[float] = []
+    audit_upper: list[float] = []
+    audit_tie: list[float] = []
+    audit_slot_raters: list[str] = []
+    audit_missing = 0
+    for arow in ordered:
+        slot_idx = arow.get("slot_id", arow.get("audit_slot"))
+        require(
+            arow.get("replacement_attempted") is False,
+            f"audit slot {slot_idx} cannot attempt replacement",
+        )
+        unit = arow.get("unit_id")
+        require(unit in mass, f"audit slot {slot_idx} draws a unit outside the frame")
+        rater_id = arow.get("rater_id")
+        require(
+            rater_id == rater_by_unit[unit],
+            f"audit slot {slot_idx} rater_id disagrees with frame unit {unit}",
+        )
+        require(
+            isinstance(arow.get("logged_probability"), (int, float))
+            and close(float(arow["logged_probability"]), mass[unit])
+            and isinstance(arow.get("target_to_draw_weight"), (int, float))
+            and close(float(arow["target_to_draw_weight"]), 1.0),
+            f"audit slot {slot_idx} violates the target-random draw law",
+        )
+        observed = (
+            arow.get("response_observed")
+            if "response_observed" in arow
+            else arow.get("observed")
+        )
+        require(isinstance(observed, bool), f"audit slot {slot_idx} needs boolean observed")
+        if observed:
+            require(
+                arow.get("outcome") in (-1, 0, 1),
+                f"audit slot {slot_idx} outcome invalid",
+            )
+            val = float(arow["outcome"])
+            audit_psi.append(val)
+            audit_lower.append(val)
+            audit_upper.append(val)
+            audit_tie.append(float(arow["outcome"] == 0))
+        else:
+            require(
+                arow.get("outcome") is None,
+                f"missing audit slot {slot_idx} carries an outcome",
+            )
+            audit_missing += 1
+            audit_lower.append(-1.0)
+            audit_upper.append(1.0)
+        audit_slot_raters.append(rater_id)
+
+    alpha = config["alpha"]
+    r_aud = math.sqrt(2.0 * math.log(2.0 / alpha) / expected_audit_slots)
+    audit_lower_mean = sum(audit_lower) / expected_audit_slots
+    audit_upper_mean = sum(audit_upper) / expected_audit_slots
+    audit_interval = [
+        max(-1.0, audit_lower_mean - r_aud),
+        min(1.0, audit_upper_mean + r_aud),
+    ]
+    active_raters = sorted(set(adaptive_slot_raters) | set(audit_slot_raters))
+    m_clusters = len(active_raters)
+    require(
+        m_clusters >= 2,
+        "shared-rater cluster-robust covariance requires at least two active rater clusters",
+    )
+    cr1_factor = m_clusters / (m_clusters - 1.0)
+    margin = float(margin_eq)
+
+    if adaptive_missing == 0 and audit_missing == 0:
+        require(adaptive_estimate is not None, "missing adaptive_estimate on complete bundle")
+        audit_estimate = sum(audit_psi) / expected_audit_slots
+        audit_tie_estimate = sum(audit_tie) / expected_audit_slots
+        total_adap = len(adaptive_psi)
+        u_adap = {r: 0.0 for r in active_raters}
+        for r_id, val in zip(adaptive_slot_raters, adaptive_psi):
+            u_adap[r_id] += (val - adaptive_estimate) / total_adap
+        u_aud = {r: 0.0 for r in active_raters}
+        for r_id, val in zip(audit_slot_raters, audit_psi):
+            u_aud[r_id] += (val - audit_estimate) / expected_audit_slots
+        v_adap_cr1 = cr1_factor * sum(u_adap[r] ** 2 for r in active_raters)
+        v_aud_cr1 = cr1_factor * sum(u_aud[r] ** 2 for r in active_raters)
+        cov_shared = cr1_factor * sum(u_adap[r] * u_aud[r] for r in active_raters)
+        v_diff_cr1 = cr1_factor * sum((u_adap[r] - u_aud[r]) ** 2 for r in active_raters)
+        require(
+            close(v_diff_cr1, v_adap_cr1 + v_aud_cr1 - 2.0 * cov_shared),
+            "CR1 contrast variance decomposition failed",
+        )
+        contrast_estimate = adaptive_estimate - audit_estimate
+        contrast_radius = config["normal_quantile"] * math.sqrt(max(0.0, v_diff_cr1))
+        contrast_interval = [
+            max(-2.0, contrast_estimate - contrast_radius),
+            min(2.0, contrast_estimate + contrast_radius),
+        ]
+        contrast_point: dict[str, Any] = {
+            "audit_estimate": audit_estimate,
+            "audit_tie_estimate": audit_tie_estimate,
+            "contrast_estimate": contrast_estimate,
+            "cr1_adaptive_variance": v_adap_cr1,
+            "cr1_audit_variance": v_aud_cr1,
+            "shared_rater_covariance": cov_shared,
+            "cr1_contrast_variance": v_diff_cr1,
+        }
+        contrast_interval_type = "shared_rater_cr1_complete"
+    else:
+        contrast_interval = [
+            max(-2.0, adaptive_interval[0] - audit_interval[1]),
+            min(2.0, adaptive_interval[1] - audit_interval[0]),
+        ]
+        contrast_point = {
+            "audit_estimate_lower": audit_lower_mean,
+            "audit_estimate_upper": audit_upper_mean,
+        }
+        contrast_interval_type = "worst_case_nonresponse_bounds"
+
+    if -margin <= contrast_interval[0] and contrast_interval[1] <= margin:
+        eq_status = "concordant_equivalent"
+    elif contrast_interval[0] > margin or contrast_interval[1] < -margin:
+        eq_status = "discordant"
+    else:
+        eq_status = "inconclusive"
+
+    return {
+        **contrast_point,
+        "audit_fixed_slots": expected_audit_slots,
+        "audit_missing_slots": audit_missing,
+        "audit_interval": audit_interval,
+        "active_rater_clusters": m_clusters,
+        "cr1_degree_of_freedom_factor": cr1_factor,
+        "equivalence_margin": margin,
+        "contrast_interval_type": contrast_interval_type,
+        "contrast_interval": contrast_interval,
+        "equivalence_status": eq_status,
+    }
+
+
+def validate_bundle(
+    bundle: dict[str, Any],
+    preregistration: dict[str, Any],
+    *,
+    require_audit_sealed: bool = False,
+) -> dict[str, Any]:
+    if require_audit_sealed:
+        require(
+            bundle.get("audit_slots") is None,
+            "sealed audit_slots must remain absent during the train stage",
+        )
     recomputed = recompute(bundle, preregistration)
     compare_reported(bundle.get("reported"), recomputed)
     return {
@@ -627,6 +886,36 @@ def validate_bundle(
         "batches": len(bundle["batches"]),
         "recomputed": recomputed,
     }
+
+
+def validate_audit_contrast(
+    bundle: dict[str, Any],
+    audit_rows: list[dict[str, Any]],
+    preregistration: dict[str, Any],
+    reported_contrast: Any,
+) -> dict[str, Any]:
+    """Validate evaluate-stage audit ledger and shared-rater contrast against bundle."""
+    validate_bundle(bundle, preregistration, require_audit_sealed=True)
+    combined = copy.deepcopy(bundle)
+    combined["audit_slots"] = audit_rows
+    recomputed = recompute(combined, preregistration)["adaptive_audit_contrast"]
+    section = preregistration["eval"]
+    audit_spec = section["human_protocol"]["adaptive_audit"]
+    require(isinstance(reported_contrast, dict), "adaptive_audit_contrast must be an object")
+    require(
+        reported_contrast.get("covariance_implementation_sha256")
+        == audit_spec.get("covariance_implementation_sha256")
+        and reported_contrast.get("small_cluster_correction")
+        == audit_spec.get("small_cluster_correction"),
+        "adaptive_audit_contrast metadata differs from the preregistration",
+    )
+    filtered_reported = {
+        k: v
+        for k, v in reported_contrast.items()
+        if k not in {"covariance_implementation_sha256", "small_cluster_correction"}
+    }
+    compare_reported(filtered_reported, recomputed)
+    return recomputed
 
 
 def compare_reported(reported: dict[str, Any], recomputed: dict[str, Any]) -> None:
@@ -672,8 +961,12 @@ def fraction_draw_probabilities(
     }
 
 
+def response_hash(*parts: Any) -> str:
+    return hashlib.sha256("|".join(map(str, parts)).encode("utf-8")).hexdigest()
+
+
 def build_fixture_hierarchy() -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Build an 8-unit frame hierarchy whose product masses equal raw/16."""
+    """Build an 8-unit frame hierarchy across 2 raters whose product masses equal raw/16."""
     source_specs = (
         ("source-a", "rev-a", (("v0", 0.25), ("v1", 0.75))),
         ("source-b", "rev-b", (("v0", 0.50), ("v1", 0.50))),
@@ -694,9 +987,26 @@ def build_fixture_hierarchy() -> tuple[dict[str, Any], list[dict[str, Any]]]:
         candidate_roots = []
         for rank, cand in enumerate(raw_candidates):
             selected = rank == 0
+            variant_list = []
             if selected:
                 selected_root_uids.append(cand["row_uid"])
                 for vid, v_weight in variants:
+                    resp_a = response_hash("resp-a", cand["row_uid"], vid)
+                    resp_b = response_hash("resp-b", cand["row_uid"], vid)
+                    variant_list.append(
+                        {
+                            "variant_id": vid,
+                            "weight": v_weight,
+                            "response_pair": {
+                                "coupling_mode": "shared_seed",
+                                "seed_a": 20260929,
+                                "seed_b": 20260929,
+                                "response_a_sha256": resp_a,
+                                "response_b_sha256": resp_b,
+                                "identifiers_stripped": True,
+                            },
+                        }
+                    )
                     for order in (-1, 1):
                         cells.append(
                             {
@@ -704,6 +1014,9 @@ def build_fixture_hierarchy() -> tuple[dict[str, Any], list[dict[str, Any]]]:
                                 "variant_id": vid,
                                 "display_order": order,
                                 "cell_mass": 0.5 * v_weight * 0.5,
+                                "left_response_sha256": resp_a if order == 1 else resp_b,
+                                "right_response_sha256": resp_b if order == 1 else resp_a,
+                                "identifiers_stripped": True,
                             }
                         )
             candidate_roots.append(
@@ -712,12 +1025,7 @@ def build_fixture_hierarchy() -> tuple[dict[str, Any], list[dict[str, Any]]]:
                     "hash_rank": rank,
                     "selected": selected,
                     "target_mass": 0.5 if selected else 0.0,
-                    "prompt_variants": [
-                        {"variant_id": vid, "weight": v_weight}
-                        for vid, v_weight in variants
-                    ]
-                    if selected
-                    else [],
+                    "prompt_variants": variant_list,
                 }
             )
         sources[source_key] = {
@@ -726,27 +1034,28 @@ def build_fixture_hierarchy() -> tuple[dict[str, Any], list[dict[str, Any]]]:
             "candidate_roots": candidate_roots,
         }
     r0, r1 = selected_root_uids
-    unit_map = [
-        ("u0", r0, "v0", "h0", -1, 1 / 16),
-        ("u1", r1, "v0", "h0", -1, 2 / 16),
-        ("u2", r0, "v1", "h0", -1, 3 / 16),
-        ("u3", r1, "v0", "h0", 1, 2 / 16),
-        ("u4", r0, "v0", "h0", 1, 1 / 16),
-        ("u5", r0, "v1", "h0", 1, 3 / 16),
-        ("u6", r1, "v1", "h0", -1, 2 / 16),
-        ("u7", r1, "v1", "h0", 1, 2 / 16),
-    ]
-    frame = [
-        {
-            "unit_id": uid,
-            "row_uid": root_uid,
-            "variant_id": vid,
-            "rater_id": rater_id,
-            "display_order": order,
-            "target_mass": target_mass,
-        }
-        for uid, root_uid, vid, rater_id, order, target_mass in unit_map
-    ]
+    rater_specs = (("h0", 1 / 4), ("h1", 3 / 4))
+    variant_weights_by_root = {
+        r0: (("v0", 0.25), ("v1", 0.75)),
+        r1: (("v0", 0.50), ("v1", 0.50)),
+    }
+    frame = []
+    unit_idx = 0
+    for root_uid in (r0, r1):
+        for vid, v_weight in variant_weights_by_root[root_uid]:
+            for rater_id, r_weight in rater_specs:
+                for order in (-1, 1):
+                    frame.append(
+                        {
+                            "unit_id": f"u{unit_idx}",
+                            "row_uid": root_uid,
+                            "variant_id": vid,
+                            "rater_id": rater_id,
+                            "display_order": order,
+                            "target_mass": 0.5 * v_weight * r_weight * 0.5,
+                        }
+                    )
+                    unit_idx += 1
     hierarchy = {
         "sources": sources,
         "prompt_variants_per_root": 2,
@@ -757,7 +1066,10 @@ def build_fixture_hierarchy() -> tuple[dict[str, Any], list[dict[str, Any]]]:
             "mistral-instruct-7b",
             "phi3-mini-instruct",
         ],
-        "raters": [{"rater_id": "h0", "target_weight": 1.0}],
+        "raters": [
+            {"rater_id": rater_id, "target_weight": r_weight}
+            for rater_id, r_weight in rater_specs
+        ],
         "cells": cells,
     }
     return hierarchy, frame
@@ -790,23 +1102,37 @@ def build_pilot_frame_hierarchy(section: dict[str, Any]) -> dict[str, Any]:
         candidate_roots = []
         for rank, cand in enumerate(raw_candidates):
             selected = rank < selected_count
-            variants = (
-                [
-                    {"variant_id": f"v{v}", "weight": 1.0 / variants_per_root}
-                    for v in range(variants_per_root)
-                ]
-                if selected
-                else []
-            )
+            variants = []
             if selected:
-                for variant in variants:
+                for v in range(variants_per_root):
+                    vid = f"v{v}"
+                    v_weight = 1.0 / variants_per_root
+                    resp_a = response_hash("pilot-resp-a", cand["row_uid"], vid)
+                    resp_b = response_hash("pilot-resp-b", cand["row_uid"], vid)
+                    variants.append(
+                        {
+                            "variant_id": vid,
+                            "weight": v_weight,
+                            "response_pair": {
+                                "coupling_mode": "shared_seed",
+                                "seed_a": 20260929,
+                                "seed_b": 20260929,
+                                "response_a_sha256": resp_a,
+                                "response_b_sha256": resp_b,
+                                "identifiers_stripped": True,
+                            },
+                        }
+                    )
                     for order in (-1, 1):
                         cells.append(
                             {
                                 "row_uid": cand["row_uid"],
-                                "variant_id": variant["variant_id"],
+                                "variant_id": vid,
                                 "display_order": order,
-                                "cell_mass": root_mass * variant["weight"] / 2.0,
+                                "cell_mass": root_mass * v_weight / 2.0,
+                                "left_response_sha256": resp_a if order == 1 else resp_b,
+                                "right_response_sha256": resp_b if order == 1 else resp_a,
+                                "identifiers_stripped": True,
                             }
                         )
             candidate_roots.append(
@@ -836,17 +1162,23 @@ def build_pilot_frame_hierarchy(section: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_fixture(missing_slots: tuple[int, ...] = ()) -> tuple[dict[str, Any], dict]:
+def build_fixture(
+    missing_slots: tuple[int, ...] = (),
+    missing_audit_slots: tuple[int, ...] = (),
+) -> tuple[dict[str, Any], dict]:
     """Generated golden bundle whose exp(g) values are integers."""
     hierarchy, frame = build_fixture_hierarchy()
     units = [row["unit_id"] for row in frame]
-    raw = [1, 2, 3, 2, 1, 3, 2, 2]
+    raw = [round(row["target_mass"] * 64) for row in frame]
     mass_fraction = {u: Fraction(r, sum(raw)) for u, r in zip(units, raw)}
+    rater_by_unit = {row["unit_id"]: row["rater_id"] for row in frame}
     config = {
         "exploration_epsilon": 0.25,
         "evi_temperature": 2.0,
         "batch_size": 10,
         "fixed_budget_attempts": 40,
+        "audit_fixed_slots": 20,
+        "audit_equivalence_margin": 0.1,
         "evi_candidate_multiset_size": 6,
         "alpha": 0.05,
         "normal_quantile": 1.959963984540054,
@@ -860,7 +1192,7 @@ def build_fixture(missing_slots: tuple[int, ...] = ()) -> tuple[dict[str, Any], 
     rng = random.Random(2026092901)
     batches: list[dict[str, Any]] = []
     slots: list[dict[str, Any]] = []
-    exact_rows: list[tuple[Fraction, Fraction, Fraction, Fraction, int]] = []
+    exact_rows: list[dict[str, Any]] = []
     for index in range(4):
         start = index * config["batch_size"]
         policy = "target_random" if index == 0 else "evi_candidate_mixture"
@@ -920,6 +1252,7 @@ def build_fixture(missing_slots: tuple[int, ...] = ()) -> tuple[dict[str, Any], 
             psi = m_bar + weight * (outcome - pred[unit])
             exact_rows.append(
                 {
+                    "rater_id": rater_by_unit[unit],
                     "psi": psi,
                     "tie": tie_bar + weight * (int(outcome == 0) - tie_pred[unit]),
                     "weight": weight,
@@ -927,6 +1260,35 @@ def build_fixture(missing_slots: tuple[int, ...] = ()) -> tuple[dict[str, Any], 
                     "upper": psi if observed else m_bar + weight * (1 - pred[unit]),
                 }
             )
+    audit_slots: list[dict[str, Any]] = []
+    exact_audit_rows: list[dict[str, Any]] = []
+    for aslot in range(config["audit_fixed_slots"]):
+        unit = rng.choices(units, weights=raw)[0]
+        win, tie = response[unit]
+        draw = rng.random()
+        outcome = 0 if draw < tie else (1 if draw < tie + win * (1 - tie) else -1)
+        observed = aslot not in missing_audit_slots
+        audit_slots.append(
+            {
+                "slot_id": aslot,
+                "unit_id": unit,
+                "rater_id": rater_by_unit[unit],
+                "logged_probability": float(mass_fraction[unit]),
+                "target_to_draw_weight": 1.0,
+                "replacement_attempted": False,
+                "response_observed": observed,
+                "outcome": outcome if observed else None,
+            }
+        )
+        exact_audit_rows.append(
+            {
+                "rater_id": rater_by_unit[unit],
+                "outcome": Fraction(outcome) if observed else None,
+                "tie": Fraction(int(outcome == 0)) if observed else None,
+                "lower": Fraction(outcome if observed else -1),
+                "upper": Fraction(outcome if observed else 1),
+            }
+        )
     bundle = {
         "schema_version": 1,
         "execution_class": "fixture",
@@ -937,9 +1299,10 @@ def build_fixture(missing_slots: tuple[int, ...] = ()) -> tuple[dict[str, Any], 
         "frame": frame,
         "batches": batches,
         "slots": slots,
+        "audit_slots": audit_slots,
         "reported": {},
     }
-    return bundle, {"rows": exact_rows}
+    return bundle, {"rows": exact_rows, "audit_rows": exact_audit_rows}
 
 
 def fill_reported(bundle: dict[str, Any], preregistration: dict[str, Any]) -> None:
@@ -958,13 +1321,19 @@ def expect_failure(
 
 def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
     results = {}
-    for label, missing in (("complete", ()), ("one_missing_slot", (17,))):
-        bundle, exact = build_fixture(missing)
+    for label, missing, missing_audit in (
+        ("complete", (), ()),
+        ("one_missing_slot", (17,), ()),
+        ("one_missing_audit_slot", (), (5,)),
+    ):
+        bundle, exact = build_fixture(missing, missing_audit)
         fill_reported(bundle, preregistration)
         summary = validate_bundle(bundle, preregistration)
         recomputed = summary["recomputed"]
         rows = exact["rows"]
+        audit_rows = exact["audit_rows"]
         count = len(rows)
+        audit_count = len(audit_rows)
         weights = [row["weight"] for row in rows]
         ess = float(sum(weights) ** 2 / sum(w * w for w in weights))
         require(close(recomputed["effective_sample_size"], ess), "ESS differs from Fraction")
@@ -972,6 +1341,7 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
             close(recomputed["maximum_weight"], float(max(weights))),
             "maximum weight differs from Fraction",
         )
+        contrast = recomputed["adaptive_audit_contrast"]
         if not missing:
             estimate = sum(row["psi"] for row in rows) / count
             variance = sum((row["psi"] - estimate) ** 2 for row in rows) / (count - 1)
@@ -991,6 +1361,49 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
                 "tie estimate differs from the independent Fraction computation",
             )
             require(recomputed["interval_type"] == "studentized_complete", "wrong interval")
+            if not missing_audit:
+                audit_est = sum(r["outcome"] for r in audit_rows) / audit_count
+                active_raters = sorted(
+                    {r["rater_id"] for r in rows} | {r["rater_id"] for r in audit_rows}
+                )
+                m_clusters = len(active_raters)
+                cr1 = Fraction(m_clusters, m_clusters - 1)
+                u_adap = {
+                    r: sum(
+                        (row["psi"] - estimate) / count
+                        for row in rows
+                        if row["rater_id"] == r
+                    )
+                    for r in active_raters
+                }
+                u_aud = {
+                    r: sum(
+                        (row["outcome"] - audit_est) / audit_count
+                        for row in audit_rows
+                        if row["rater_id"] == r
+                    )
+                    for r in active_raters
+                }
+                v_adap_cr1 = cr1 * sum(u_adap[r] ** 2 for r in active_raters)
+                v_aud_cr1 = cr1 * sum(u_aud[r] ** 2 for r in active_raters)
+                cov_shared = cr1 * sum(u_adap[r] * u_aud[r] for r in active_raters)
+                v_diff_cr1 = cr1 * sum((u_adap[r] - u_aud[r]) ** 2 for r in active_raters)
+                require(
+                    close(contrast["audit_estimate"], float(audit_est))
+                    and close(contrast["contrast_estimate"], float(estimate - audit_est))
+                    and close(contrast["cr1_adaptive_variance"], float(v_adap_cr1))
+                    and close(contrast["cr1_audit_variance"], float(v_aud_cr1))
+                    and close(contrast["shared_rater_covariance"], float(cov_shared))
+                    and close(contrast["cr1_contrast_variance"], float(v_diff_cr1))
+                    and contrast["contrast_interval_type"] == "shared_rater_cr1_complete",
+                    "CR1 shared-rater contrast differs from independent Fraction computation",
+                )
+            else:
+                require(
+                    contrast["contrast_interval_type"] == "worst_case_nonresponse_bounds"
+                    and contrast["audit_missing_slots"] == 1,
+                    "missing audit slot must force worst-case contrast bounds",
+                )
         else:
             require(
                 close(
@@ -1005,7 +1418,8 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
             )
             require(
                 recomputed["interval_type"] == "martingale_hoeffding_worst_case"
-                and recomputed["action"] == "not-established",
+                and recomputed["action"] == "not-established"
+                and contrast["contrast_interval_type"] == "worst_case_nonresponse_bounds",
                 "a missing slot must force the worst-case interval and abstention here",
             )
         results[label] = summary
@@ -1085,6 +1499,61 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
         "unit_mass_disagrees_with_cell_rater_product",
         lambda b: b["frame"][0].__setitem__("target_mass", b["frame"][0]["target_mass"] + 0.01),
     )
+    mutate(
+        "response_pair_ab_ba_swap_symmetry_violated",
+        lambda b: b["frame_hierarchy"]["cells"][0].__setitem__(
+            "left_response_sha256",
+            b["frame_hierarchy"]["cells"][0]["right_response_sha256"],
+        ),
+    )
+    mutate(
+        "response_pair_identifiers_not_stripped",
+        lambda b: b["frame_hierarchy"]["sources"]["source-a"]["candidate_roots"][0][
+            "prompt_variants"
+        ][0]["response_pair"].__setitem__("identifiers_stripped", False),
+    )
+    mutate(
+        "response_pair_shared_seed_mismatch",
+        lambda b: b["frame_hierarchy"]["sources"]["source-a"]["candidate_roots"][0][
+            "prompt_variants"
+        ][0]["response_pair"].__setitem__("seed_b", 99999),
+    )
+    mutate(
+        "audit_slot_dropped",
+        lambda b: b["audit_slots"].pop(),
+    )
+    mutate(
+        "audit_slot_replacement_attempted",
+        lambda b: b["audit_slots"][0].__setitem__("replacement_attempted", True),
+    )
+    mutate(
+        "shared_rater_covariance_omitted_from_contrast_variance",
+        lambda b: b["reported"]["adaptive_audit_contrast"].__setitem__(
+            "cr1_contrast_variance",
+            b["reported"]["adaptive_audit_contrast"]["cr1_adaptive_variance"]
+            + b["reported"]["adaptive_audit_contrast"]["cr1_audit_variance"],
+        ),
+    )
+
+    missing_audit_bundle, _ = build_fixture((), (5,))
+    fill_reported(missing_audit_bundle, preregistration)
+    complete_audit_claim = copy.deepcopy(missing_audit_bundle)
+    complete_audit_claim["reported"]["adaptive_audit_contrast"] = copy.deepcopy(
+        base["reported"]["adaptive_audit_contrast"]
+    )
+    expect_failure(
+        "complete_contrast_claimed_despite_missing_audit_slot",
+        complete_audit_claim,
+        preregistration,
+    )
+    mutations["complete_contrast_claimed_despite_missing_audit_slot"] = "rejected"
+
+    try:
+        validate_bundle(base, preregistration, require_audit_sealed=True)
+    except BundleError:
+        mutations["unsealed_audit_slots_in_train_stage"] = "rejected"
+    else:
+        raise BundleError("require_audit_sealed accepted a bundle containing audit_slots")
 
     section = preregistration["eval"]
     frame_spec = section["frame"]

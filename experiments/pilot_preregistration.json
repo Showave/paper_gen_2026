@@ -58,12 +58,12 @@
       "validator_dependencies": [],
       "blocking_gaps": [
         "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
-        "train and evaluation stages close per-draw gate blocks and per-example audit-loss records against the run manifest and split manifest, but per-example forward passes and profiled execution-cost calibration plans are not yet tied to a reviewed hardware measurement bundle",
+        "build, train, and evaluation stages close the 200-plan cost-calibration bundle (0.995 residual margin and worst-case gate reserve), physical pack plans, per-draw gate blocks, and per-example audit-loss records against the run manifest and split manifest, but per-example forward passes and hardware timing measurements are not yet tied to a reviewed hardware execution attestation",
         "site-local sealed-resource access isolation is required but not enforced by the repository runner"
       ],
       "required_before_freezing": [
         "reviewed overlap inventories covering every model-visible and protected textual field plus a segment-pair exact engine for artifacts above the exhaustive limit",
-        "reviewed hardware measurement bundle for the 200 independent cost-calibration plans and per-example gate/audit forward passes",
+        "reviewed hardware execution attestation for the 200 independent cost-calibration timings and per-example gate/audit forward passes",
         "site-local isolation attestation defining which stages can read score, gate, audit, and benchmark bytes"
       ]
     },
@@ -224,7 +224,7 @@
     },
     "train_ledger_contract": {
       "validator_path": "scripts/validate_sft_train_ledger.py",
-      "validator_sha256": "836694682dfbb59876dc069e6c751021308a83ea048861e490fa7160846065fb",
+      "validator_sha256": "bc4cc2f2b896875e22975962ad24ed45b7eda07769b0a82a439094319d3fb189",
       "aggregator_path": "scripts/aggregate_sft_factorial.py",
       "aggregator_sha256": "9c45ba798479dde41c23254c293f93ba27392b9fbd3b5c7bd97f6ed020d797ee",
       "required_status": "pass",
@@ -243,8 +243,8 @@
         "reserve_exhausted",
         "protocol_failure"
       ],
-      "pairing_rule": "all factorial rows share one split-manifest hash, one gate-partition hash per protected slice, and one disjoint audit-partition hash per slice; rows share the reference cost within a target setting and the initial state and initial audit NLLs within seed and target setting",
-      "interpretation": "Endpoint rows are replayed against hash-bound per-round ledgers: state and optimizer-step chain, reserve admission, complete charging, stop rule, fresh per-slice gate blocks, per-draw clipped gate-loss recomputation across paired scale candidates, largest passing scale committed to its candidate state, tolerance ledger, and final-state audit endpoint. Every declared initial and final audit NLL is recomputed from hash-bound per-example loss records as the row-uniform mean of response-token-mean NLL, evaluated on the exact initial and final states over exactly the identified audit partition; protocol-failure runs keep audits sealed. The real runner validates train/run_ledger.jsonl at the train stage and re-executes the aggregation over evaluate/endpoints.jsonl at the evaluate stage. Per-example forward passes remain site-local measurements."
+      "pairing_rule": "all factorial rows share one split-manifest hash, one gate-partition hash per protected slice, and one disjoint audit-partition hash per slice; rows share the reference cost within a target setting and the initial state, cost-calibration bundle, and initial audit NLLs within seed and target setting",
+      "interpretation": "Endpoint rows are replayed against hash-bound 200-plan cost-calibration bundles and per-round ledgers: state and optimizer-step chain, physical pack plan and canonical length-descending best-fit assignment for best-fit cells, reserve admission recomputed from calibrated pack cost plus the 0.995 residual quantile margin and worst-case gate reserve, complete charging, stop rule, fresh per-slice gate blocks, per-draw clipped gate-loss recomputation across paired scale candidates, largest passing scale committed to its candidate state, tolerance ledger, and final-state audit endpoint. Every declared initial and final audit NLL is recomputed from hash-bound per-example loss records as the row-uniform mean of response-token-mean NLL, evaluated on the exact initial and final states over exactly the identified audit partition; protocol-failure runs keep audits sealed. The real runner validates the build cost-calibration bundles at the build stage, validates train/run_ledger.jsonl at the train stage, and re-executes the aggregation over evaluate/endpoints.jsonl at the evaluate stage. Per-example forward passes and hardware timings remain site-local measurements."
     }
   },
   "rl": {
@@ -288,13 +288,13 @@
       "validator_dependencies": [],
       "blocking_gaps": [
         "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
-        "the raw trajectory and K_gen/K_ver/K_score cost-ledger reconstruction validator is executed by the runner but fails closed until the current and behavior policy tensor hashes, decoder specification, and verifier revision are frozen",
-        "sampler-scorer probability conformance on the frozen model pair is not yet bound to an immutable hardware test artifact"
+        "the raw trajectory, adaptive proposal, per-step token-logit, finite-vocabulary conformance, KL-stratum, and K_gen/K_ver/K_score cost-ledger reconstruction validator is executed by the runner but fails closed until the current and behavior policy tensor hashes, decoder specification, and verifier revision are frozen",
+        "hardware forward passes producing the recorded per-step logits and empirical sampler-scorer conformance counts on the frozen model pair are not yet bound to a reviewed hardware execution attestation"
       ],
       "required_before_freezing": [
         "reviewed overlap inventories and a segment-pair large-artifact engine",
-        "frozen policy-pair, decoder, and verifier records so raw trajectory and cost-ledger reconstruction can run on a real ledger",
-        "hash-bound sampler-scorer conformance artifact on the frozen current and stale policy checkpoints"
+        "frozen policy-pair, decoder, and verifier records so raw trajectory, step-logit, and cost-ledger reconstruction can run on a real ledger",
+        "reviewed hardware execution attestation for the frozen current and stale policy checkpoints and conformance suite"
       ]
     },
     "development_model_key": "qwen25-math-1p5b",
@@ -518,34 +518,36 @@
     },
     "raw_reconstruction_contract": {
       "validator_path": "scripts/reconstruct_rl_trajectories.py",
-      "validator_sha256": "88b2bfd830cdb3ac635c663989becd5f3b878c104902bde95902a4ef26a766d2",
+      "validator_sha256": "30b23d4a8400a0fabbe4b6cf345f63afe71d568525029e08ffe4fd1636d4eef0",
       "required_status": "pass",
       "current_status": "golden_fixture_only",
       "raw_artifacts": [
         "train/raw_trajectory_header.json",
         "train/raw_trajectory_ledger.jsonl"
       ],
-      "reconstructed_terms": "log P=log d(x)+log pi(y|x); log G=log q(x)+log mu(y|x); w=P/(alpha P+(1-alpha)G); U=R-lambda C; h=h^R-lambda h^C; current A=(h-b)s+alpha*w*(U-h)s, stale B=w*(U-h)s, reference U*s; K_gen=sum C(z), K_ver=sum 1{verifier called}, K_score=sum C(z)*N_added_score(z)",
+      "reconstructed_terms": "q_t(x)=eps*d(x)+(1-eps)*q_bar_t(x) from prior-iteration moment/cost predictions (with Z_t^q=0 -> q_bar_t=D fallback); log pi(y|x)=sum_l log softmax(z_(theta,l)/T_d)[y_l] and log mu(y|x)=sum_l log softmax(z_(mu,l)/T_d)[y_l] over allowed vocabulary V_l; log P=log d(x)+log pi(y|x); log G=log q(x)+log mu(y|x); w=P/(alpha P+(1-alpha)G); U=R-lambda C; h=h^R-lambda h^C; current A=(h-b)s+alpha*w*(U-h)s, stale B=w*(U-h)s, reference U*s; K_gen=sum C(z), K_ver=sum 1{verifier called}, K_score=sum C(z)*N_added_score(z)",
       "raw_field_detectors": [
-        "both sequence log-probabilities scored by the frozen current and behavior tensors under the frozen decoder temperature",
+        "both sequence log-probabilities recomputed from per-step allowed-vocabulary token logits under the frozen decoder temperature, catching stealth base-logit scoring even when the header temperature is spoofed",
+        "finite-vocabulary sequence-tree probability normalization, empirical sampler--scorer frequency conformance, and policy-to-behavior KL <= maximum_policy_kl",
+        "adaptive prompt proposal masses recomputed from frozen prior-iteration residual second-moment and cost predictions, including the Z_t^q=0 target-law fallback",
         "generator equals the frozen current tensor for current rows and the frozen behavior tensor for stale rows",
         "zero prior uses and the frozen iteration freeze record",
         "nuisance predictions from the frozen nuisance model whose training prompts are disjoint from every audited prompt",
         "one prompt-only baseline per prompt",
         "header prompt masses normalized per law with the proposal support floor q>=epsilon d",
-        "termination consistent with the response-token count",
+        "termination and per-step EOS flags consistent with the response-token count",
         "raw response_tokens, verifier_called, and added_score_passes on every attempted row (1 added pass for alpha<1 mixture candidates, 0 for alpha=1 and reference rows), reconstructing candidate, reference, aborted, per-cell, and total K_gen, K_ver, K_score, and accelerator-seconds"
       ],
       "replayed_faults": [
         "omitted prompt ratio",
         "weight clipping below 1/alpha",
-        "base-versus-decoder scoring",
+        "base-versus-decoder scoring (both honest temperature mismatch and stealth base-logit scoring with spoofed temperature)",
         "focal nuisance fitting",
         "consumed-trajectory reuse with and without a recomputed ratio"
       ],
       "term_relative_tolerance": 1e-09,
-      "real_execution_rule": "The train stage passes only if train/trajectory_ledger.jsonl and train/costs.json equal the raw reconstruction of projected terms and the K_gen/K_ver/K_score/accelerator-seconds cost ledger; reconstruction fails closed while the frozen current or behavior tensor hash is null.",
-      "interpretation": "Golden four-cell Gate 0 law with exact enumeration and aborted-attempt cost retention; software evidence only. A producer that records the frozen temperature while scoring with other logits is not detectable from the ledger and remains the job of the sampler-scorer conformance test."
+      "real_execution_rule": "The train stage passes only if train/trajectory_ledger.jsonl and train/costs.json equal the raw reconstruction of adaptive proposals, per-step token log-probabilities, projected terms, and the K_gen/K_ver/K_score/accelerator-seconds cost ledger; reconstruction fails closed while the frozen current or behavior tensor hash is null.",
+      "interpretation": "Golden four-cell Gate 0 law with exact enumeration, adaptive-proposal/step-logit/conformance/KL checks, and aborted-attempt cost retention; software evidence only. Raw forward passes producing the step logits remain site-local hardware measurements."
     }
   },
   "eval": {
@@ -584,12 +586,12 @@
       "validator_dependencies": [],
       "blocking_gaps": [
         "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
-        "root SHA-256 hash ranks, root--prompt--order cells, product target-unit masses, batch probabilities, sequential contributions, missingness bounds, terminal actions, and both fixed- and estimated-discrimination EVI values are recomputed from frozen artifacts, but the prompt generator, paired-response coupling, executable simulation DGPs, and shared-rater adaptive-minus-audit covariance remain unfrozen",
+        "root SHA-256 hash ranks, paired-response coupling and AB/BA swap symmetry, root--prompt--order cells, product target-unit masses, batch probabilities, sequential contributions, missingness bounds, terminal actions, shared-rater cluster-robust (CR1) adaptive-minus-audit covariance, and both fixed- and estimated-discrimination EVI values are recomputed from frozen artifacts, but the prompt generator, paired-response hashes, executable simulation DGPs, and equivalence margin remain unfrozen",
         "site-local sealed audit access isolation is required but not enforced by the repository runner"
       ],
       "required_before_freezing": [
         "reviewed overlap inventories and a segment-pair large-artifact engine plus a hash-frozen real/golden bundle validator with exact rational generated fixtures and mutation tests",
-        "frozen prompt-generator, paired-response, executable simulation DGP, and shared-rater covariance artifacts feeding the sequential bundle and EVI validators",
+        "frozen prompt-generator, paired-response, executable simulation DGP, and audit equivalence-margin artifacts feeding the sequential bundle and EVI validators",
         "site-local audit isolation and one-time-open attestation"
       ]
     },
@@ -828,20 +830,21 @@
     },
     "sequential_bundle_contract": {
       "validator_path": "scripts/validate_eval_sequential_bundle.py",
-      "validator_sha256": "ddeef73a56380244e716a21c922fcbf33213bde359ace6da7020aad9df830bd0",
+      "validator_sha256": "a9f18a8c7db243ac3d51aa30fa50bc6f46501e6854840191b38a06d3b0617008",
       "required_status": "pass",
       "current_status": "golden_fixture_only",
       "recomputed_fields": [
-        "per-source SHA-256(revision || question_id) root ranks, selected roots, prompt-variant weights, root--prompt--order cells, model-jury call count, and human target-unit product masses pi(i,c,h,o)=w_i*a_(c|i)*rho_h/2",
+        "per-source SHA-256(revision || question_id) root ranks, selected roots, prompt-variant weights, paired-response coupling and AB/BA display-order swap symmetry with stripped model identifiers, root--prompt--order cells, model-jury call count, and human target-unit product masses pi(i,c,h,o)=w_i*a_(c|i)*rho_h/2",
         "batch candidate-mixture draw probabilities from committed multisets, EVI values, costs, and temperature",
         "batch commitment hashes and strictly earlier predictor fit slots",
         "sequential augmented Hansen--Hurwitz and tie-rate contributions",
         "worst-case nonresponse endpoints and martingale--Hoeffding interval",
         "complete-outcome studentized interval, response-drift widenings, and terminal action",
-        "maximum weight and effective sample size"
+        "maximum weight and effective sample size",
+        "sealed 200-slot audit estimate/Hoeffding interval and shared-rater cluster-robust (CR1) adaptive-minus-audit covariance V_diff^CR1 = V_adap^CR1 + V_aud^CR1 - 2 C_(adap,aud)^CR1 with M/(M-1) small-cluster adjustment and worst-case nonresponse contrast bounds"
       ],
-      "golden_fixture": "exp(g) values are integers and root/variant/order/rater masses are exact rationals so draw probabilities and unit weights are exact rationals; the float recomputation must match an independent Fraction computation and reproduce the 528-root / 2112-cell / 8448-jury-call / 168960-unit pilot hierarchy",
-      "real_execution_rule": "real bundles are rejected while any frozen_artifact_hashes entry is null, the bundle config differs from this section, or the bundle fails to bind process/cell_manifest.json",
+      "golden_fixture": "exp(g) values are integers and root/variant/order/rater masses are exact rationals so draw probabilities, unit weights, and CR1 cluster-robust covariance components are exact rationals; the float recomputation must match an independent Fraction computation and reproduce the 528-root / 2112-cell / 8448-jury-call / 168960-unit pilot hierarchy",
+      "real_execution_rule": "real bundles are rejected while any frozen_artifact_hashes entry is null, the bundle config differs from this section, or the bundle fails to bind process/cell_manifest.json; train stage requires audit_slots to remain absent and evaluate stage recomputes the shared-rater CR1 audit contrast",
       "interpretation": "Generated golden bundles only; no human outcome exists."
     },
     "evi_recomputation_contract": {
