@@ -352,7 +352,8 @@ complete `K_gen`/`K_ver`/`K_score` cost ledger from
 `train/raw_trajectory_header.json` and `train/raw_trajectory_ledger.jsonl`.
 The header carries the frozen policy pair, decoder temperature, lambda,
 support floor, residual second-moment and cost floors, maximum policy KL,
-nuisance model, freeze record, normalized select/confirm prompt laws with
+nuisance model, freeze record, hash-ranked prompt frame, verifier reward table,
+normalized select/confirm prompt laws with
 prior-iteration residual second-moment and cost predictions, nuisance training
 prompts, finite-vocabulary sequence-tree conformance counts, the KL audit, and
 the declared cost ledger. Every attempted
@@ -360,13 +361,16 @@ row—including infrastructure-failed/aborted attempts—carries `response_token
 `verifier_called`, `added_score_passes` (`1` for `alpha<1` mixture candidates
 and `0` for `alpha=1` and reference rows), and `allocated_accelerator_seconds`;
 successful rows also carry prompt IDs, generator hash,
-scoring policies and temperature, per-step allowed-vocabulary token logits and
-EOS flags, both sequence log-probabilities, reward,
+scoring policies and temperature, per-step allowed-vocabulary token logits,
+EOS flags, and step score vectors, both sequence log-probabilities, verifier
+status, reward,
 termination, nuisance predictions, prior use count, and the
-projected score. The validator recomputes the adaptive proposal
+projected score. The validator recomputes the prompt-frame `SHA-256` hash ranks
+and 1,024/512/512 partition laws, the adaptive proposal
 $q_t(x)=\epsilon d(x)+(1-\epsilon)\overline q_t(x)$ (including the
 $Z_t^q=0\Rightarrow\overline q_t=D$ fallback), per-step masked
-temperature-softmax token log-probabilities, finite-vocabulary sequence-tree
+temperature-softmax token log-probabilities, unnormalized per-step score sums,
+deterministic verifier status-to-reward mapping, finite-vocabulary sequence-tree
 normalization, sampler--scorer frequency conformance, the KL-stratum bound, and
 `w=P/M` in log space from header
 prompt masses and both log-probabilities, then `U`, `h`, and the `A`, `B`, or
@@ -385,17 +389,19 @@ policy tensor hashes are null.
 The self-test builds a golden raw ledger on the exact four-cell Gate 0 law.
 By enumeration, the alpha=1/2 cell, the alpha=1 cell, and the reference rows
 are unbiased to 1e-12, the adaptive proposal and $Z_t^q=0$ fallback reproduce,
+the 2,048-prompt pilot frame reproduces its 1,024/512/512 partitions,
 and the reconstructed weights normalize under `M`.
 Five faults are replayed: omitted prompt ratio, weight clipping below the
 largest weight, base-versus-decoder scoring (both honest temperature mismatch
 and stealth base-logit scoring with a spoofed header temperature), focal
 nuisance fitting, and
 consumed-trajectory reuse. Each is rejected and each null control passes;
-twenty raw-ledger, proposal, step-logit, conformance, KL, and cost-counter
+twenty-six raw-ledger, prompt-frame, proposal, step-logit, step-score,
+verifier-status, conformance, KL, and cost-counter
 mutations fail. The
 reconstructed base-scoring bias equals the Gate 0 module's exact value.
-Raw forward passes producing the step logits remain site-local hardware
-measurements.
+Raw forward passes producing the step logits and step score vectors remain
+site-local hardware measurements.
 
 The Gate 0 fault injections run by exact enumeration:
 

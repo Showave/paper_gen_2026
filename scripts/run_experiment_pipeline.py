@@ -52,6 +52,7 @@ from validate_sft_train_ledger import (
 )
 from reconstruct_rl_trajectories import (
     ReconstructionError as RLReconstructionError,
+    recompute_prompt_frame as recompute_rl_prompt_frame,
     self_test as run_rl_raw_reconstruction_self_test,
     verify_work_dir as verify_rl_raw_reconstruction,
 )
@@ -623,7 +624,7 @@ def validate_preregistration_section(
         if (
             reconstruction["status"] != "pass"
             or reconstruction["empirical_evidence"] is not False
-            or reconstruction.get("mutations_rejected", 0) < 20
+            or reconstruction.get("mutations_rejected", 0) < 26
         ):
             fail("RL raw trajectory reconstruction self-test did not pass")
     else:
@@ -1375,6 +1376,40 @@ def validate_real_stage_semantics(
                         "reference_contract_status": "pass",
                         "reference_split_clusters": reference_summary["clusters"],
                         "reference_split_records": reference_summary["records"],
+                    }
+                )
+            elif paper == "rl":
+                trajectory_schema = load_json(
+                    work_dir / "process" / "trajectory_schema.json"
+                )
+                audit_spec = nested(section, "estimator_audit")
+                try:
+                    prompt_frame_summary = recompute_rl_prompt_frame(
+                        trajectory_schema.get("prompt_frame")
+                        if isinstance(trajectory_schema, dict)
+                        else None,
+                        expected_size=nested(section, "prompt_frame.size"),
+                        expected_fractions=(
+                            audit_spec["nuisance_fit_prompt_fraction"],
+                            audit_spec["alpha_selection_prompt_fraction"],
+                            audit_spec["untouched_confirmation_prompt_fraction"],
+                        ),
+                        require_uniform=True,
+                    )
+                except RLReconstructionError as exc:
+                    fail(f"RL trajectory_schema prompt_frame invalid: {exc}")
+                content_validation.update(
+                    {
+                        "selected_prompts": prompt_frame_summary["selected_count"],
+                        "nuisance_fit_prompts": len(
+                            prompt_frame_summary["partitions"]["nuisance_fit"]
+                        ),
+                        "select_prompts": len(
+                            prompt_frame_summary["partitions"]["select"]
+                        ),
+                        "confirm_prompts": len(
+                            prompt_frame_summary["partitions"]["confirm"]
+                        ),
                     }
                 )
             elif paper == "eval":
