@@ -125,7 +125,14 @@ rather than the target human estimand.
 \paragraph{Human-calibrated inference.}
 Binary sensitivity/specificity correction with propagated calibration
 uncertainty and pilot-based allocation across true-label classes is studied by
-\citet{lee2026report}. \citet{chen2026efficient} unify measurement-error and
+\citet{lee2026report}. \citet{fiedler2026bias} shows that sharing calibration
+across compared models can induce $1/J$ sensitivity to cross-model calibration
+drift and even reverse the sign of a comparison, while \citet{cai2026dial}
+separate judge-specific position bias from shared LLM preference structure and
+adaptively calibrate that structure toward human comparisons, and Soft-Elo
+propagates calibrated per-battle judge win probabilities into Bradley--Terry
+fits with model-level split-conformal intervals \cite{kargi2026softelo}.
+\citet{chen2026efficient} unify measurement-error and
 prediction-powered estimators for mean human outcomes, including pairwise win
 rates, under independently selected calibration/test designs. Those estimators
 do not by themselves justify reusing an outcome-adaptively acquired
@@ -914,13 +921,18 @@ response-pair swap symmetry with stripped model identifiers, the
 model-jury call count, and every human target unit's product mass
 $\pi(i,c,h,o)=w_ia_{c\mid i}\rho_h/2$. From each batch
 commitment it recomputes the candidate-mixture law \cref{eq:explore}, using
-log-sum-exp with log multiplicities. It rejects commitment-hash mismatches and
+log-sum-exp with log multiplicities, and verifies that predictable response
+propensities satisfy $e_b(x)\in[e_{\min},1]$. It rejects commitment-hash mismatches and
 fit slots that are not strictly earlier. It requires every one of the $T$
 fixed slots exactly once, so a missing outcome is recorded in place rather
-than replaced, and requires sealed audit slots to remain absent during the
+than replaced, requires tie outcomes to record a valid subtype
+(\texttt{equally\_good} or \texttt{both\_unacceptable}) and non-tie or missing
+outcomes to omit it, and requires sealed audit slots to remain absent during the
 train stage. From these inputs it reproduces \cref{eq:psi}, the worst-case
 endpoints, the complete-outcome or martingale--Hoeffding interval, the tie
-interval, the drift widenings, the terminal action, the maximum weight, and
+interval, the joint $(\widehat\Delta_T,\widehat\tau_T)$ sample covariance, the
+inverse-propensity tie-subtype rate estimates, the secondary MAR
+inverse-response-weighted contributions $\psi_t^{\mathrm{MAR}}$, the drift widenings, the terminal action, the maximum weight, and
 the ESS. At the evaluation stage, it also validates the 200 fixed audit slots
 and recomputes the shared-rater cluster-robust (CR1) adaptive-minus-audit
 variance
@@ -937,17 +949,20 @@ $u_h^{\mathrm{aud}}=T_{\mathrm{aud}}^{-1}\sum_{s:H_s^{\mathrm{aud}}=h}
 clusters, together with the worst-case nonresponse contrast interval and the
 concordance classification against the equivalence margin. Its golden bundles
 set each EVI to $\log(a_x)/\lambda_E$ with integer
-$a_x$ and use exact rational root, variant, order, and rater weights, so every
-draw probability, unit weight, and CR1 cluster-robust covariance component is
+$a_x$ and use exact rational root, variant, order, rater, and propensity weights, so every
+draw probability, unit weight, MAR contribution, tie-subtype rate, and CR1 cluster-robust covariance component is
 an exact rational. The float recomputation
 must then match an independent \texttt{Fraction} implementation, and the
 self-test also reproduces the 528-root, 2,112-cell, 8,448-jury-call,
-168,960-unit pilot hierarchy. Twenty-five
+168,960-unit pilot hierarchy. Thirty-one
 mutations fail, including a tampered root selection hash, a wrong hash-rank
 root selected, unnormalized variant weights, an incomplete cell crossing, a
 unit mass that disagrees with $w_ia_{c\mid i}\rho_h/2$, a violated AB/BA
 response-pair swap symmetry, unstripped model identifiers, a shared-seed
-mismatch, a dropped or replacement audit slot, an omitted shared-rater
+mismatch, a tie outcome missing its subtype, a non-tie outcome carrying a tie
+subtype, a response propensity below $e_{\min}$, a mismatched logged response
+propensity, a tampered secondary MAR estimate or $(\widehat\Delta_T,\widehat\tau_T)$
+covariance, a dropped or replacement audit slot, an omitted shared-rater
 covariance term in $\widehat V_{\mathrm{diff}}^{\mathrm{CR1}}$, a complete-case
 contrast claimed despite a missing audit slot, an unsealed audit in the train
 stage, a tampered $p_t$, EVI

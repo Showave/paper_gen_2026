@@ -13,9 +13,12 @@ validator independently recomputes
 * each batch's candidate-mixture law p_b = eps*pi + (1-eps)*r_b from the
   committed candidate multiset, EVI values, annotation costs, and temperature;
 * predictability: the batch commitment hash and fit slots strictly before the
-  batch;
+  batch, plus predictable response propensities e_b(x) in [e_min, 1];
 * the draw-level augmented Hansen--Hurwitz contributions, their worst-case
-  nonresponse endpoints, the tie-rate analogue, ESS, and maximum weight;
+  nonresponse endpoints, the tie-rate analogue, the tie-subtype decomposition
+  (equally_good vs both_unacceptable), the secondary MAR inverse-response-weighted
+  contributions psi_t^MAR, the joint (Delta_hat_T, tau_hat_T) sample covariance,
+  ESS, and maximum weight;
 * the complete-outcome studentized interval or the martingale--Hoeffding
   interval when any slot is missing, the response-drift widenings, and the
   terminal four-way action;
@@ -49,6 +52,7 @@ DEFAULT_PREREGISTRATION = ROOT / "experiments" / "pilot_preregistration.json"
 TOLERANCE = 1e-12
 ACTIONS = ("A", "B", "equivalent", "not-established")
 POLICIES = ("target_random", "evi_candidate_mixture")
+TIE_SUBTYPES = ("equally_good", "both_unacceptable")
 
 
 class BundleError(ValueError):
@@ -84,6 +88,7 @@ def commitment_payload(batch: dict[str, Any]) -> dict[str, Any]:
             "annotation_cost",
             "predictions",
             "tie_predictions",
+            "response_propensities",
             "fit_slots",
         )
     }
@@ -112,6 +117,7 @@ def config_from_preregistration(section: dict[str, Any]) -> dict[str, Any]:
         "alpha": round(1.0 - decision["confidence_level"], 12),
         "normal_quantile": decision["normal_quantile"],
         "practical_margin": decision["practical_margin"],
+        "response_propensity_floor": section["nonresponse"]["response_propensity_floor"],
         "response_drift_gamma_grid": section["nonresponse"]["response_drift_gamma_grid"],
     }
 
@@ -448,8 +454,16 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
         hierarchy = recompute_frame_hierarchy(bundle.get("frame_hierarchy"))
     config = bundle["config"]
     eps = config["exploration_epsilon"]
+    e_min = config.get("response_propensity_floor")
     total_slots = config["fixed_budget_attempts"]
-    require(0 < eps <= 1 and total_slots > 1, "invalid epsilon or fixed budget")
+    require(
+        0 < eps <= 1
+        and isinstance(e_min, (int, float))
+        and not isinstance(e_min, bool)
+        and 0 < float(e_min) <= 1
+        and total_slots > 1,
+        "invalid epsilon, response_propensity_floor, or fixed budget",
+    )
 
     frame = bundle["frame"]
     require(
@@ -511,13 +525,21 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
         )
         require(
             set(batch["predictions"]) == set(mass)
-            and set(batch["tie_predictions"]) == set(mass),
-            f"batch {index} predictions must cover the complete frame",
+            and set(batch["tie_predictions"]) == set(mass)
+            and isinstance(batch.get("response_propensities"), dict)
+            and set(batch["response_propensities"]) == set(mass),
+            f"batch {index} predictions and response_propensities must cover the complete frame",
         )
         require(
             all(-1.0 <= value <= 1.0 for value in batch["predictions"].values())
-            and all(0.0 <= value <= 1.0 for value in batch["tie_predictions"].values()),
-            f"batch {index} predictions are outside their bounded ranges",
+            and all(0.0 <= value <= 1.0 for value in batch["tie_predictions"].values())
+            and all(
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and float(e_min) - TOLERANCE <= float(value) <= 1.0 + TOLERANCE
+                for value in batch["response_propensities"].values()
+            ),
+            f"batch {index} predictions or response_propensities are outside their bounded ranges",
         )
         if batch["policy"] == "evi_candidate_mixture":
             multiset = batch["candidate_multiset"]
@@ -559,6 +581,10 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
     tie_psi: list[float] = []
     tie_lower: list[float] = []
     tie_upper: list[float] = []
+    eq_good_weights: list[float] = []
+    unacc_weights: list[float] = []
+    mar_psi: list[float] = []
+    mar_tie_psi: list[float] = []
     weights: list[float] = []
     missing = 0
     for row in slots:
@@ -580,14 +606,32 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
             f"slot {row['slot']} logged probability does not reproduce",
         )
         require(p >= eps * mass[unit] - TOLERANCE, f"slot {row['slot']} violates positivity")
+        e_prop = float(batch["response_propensities"][unit])
+        require(
+            isinstance(row.get("logged_response_propensity"), (int, float))
+            and not isinstance(row.get("logged_response_propensity"), bool)
+            and close(float(row["logged_response_propensity"]), e_prop),
+            f"slot {row['slot']} logged_response_propensity does not reproduce",
+        )
         weight = mass[unit] / p
         weights.append(weight)
         m_bar = sum(mass[u] * batch["predictions"][u] for u in mass)
         tie_bar = sum(mass[u] * batch["tie_predictions"][u] for u in mass)
         m = batch["predictions"][unit]
         m0 = batch["tie_predictions"][unit]
+        subtype = row.get("tie_subtype")
         if row["observed"]:
             require(row["outcome"] in (-1, 0, 1), f"slot {row['slot']} outcome invalid")
+            if row["outcome"] == 0:
+                require(
+                    subtype in TIE_SUBTYPES,
+                    f"slot {row['slot']} tie outcome requires tie_subtype in {TIE_SUBTYPES}",
+                )
+            else:
+                require(
+                    subtype is None,
+                    f"slot {row['slot']} non-tie outcome cannot carry tie_subtype",
+                )
             value = m_bar + weight * (row["outcome"] - m)
             tie = tie_bar + weight * (float(row["outcome"] == 0) - m0)
             psi.append(value)
@@ -596,17 +640,29 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
             tie_psi.append(tie)
             tie_lower.append(tie)
             tie_upper.append(tie)
+            eq_good_weights.append(weight if subtype == "equally_good" else 0.0)
+            unacc_weights.append(weight if subtype == "both_unacceptable" else 0.0)
+            mar_psi.append(m_bar + (weight / e_prop) * (row["outcome"] - m))
+            mar_tie_psi.append(tie_bar + (weight / e_prop) * (float(row["outcome"] == 0) - m0))
         else:
-            require(row["outcome"] is None, f"missing slot {row['slot']} carries an outcome")
+            require(
+                row["outcome"] is None and subtype is None,
+                f"missing slot {row['slot']} carries an outcome or tie_subtype",
+            )
             missing += 1
             lower.append(m_bar + weight * (-1.0 - m))
             upper.append(m_bar + weight * (1.0 - m))
             tie_lower.append(tie_bar + weight * (0.0 - m0))
             tie_upper.append(tie_bar + weight * (1.0 - m0))
+            mar_psi.append(m_bar)
+            mar_tie_psi.append(tie_bar)
 
     alpha = config["alpha"]
     delta = config["practical_margin"]
     count = total_slots
+    mar_estimate = sum(mar_psi) / count
+    mar_variance = sum((v - mar_estimate) ** 2 for v in mar_psi) / (count - 1)
+    mar_tie_estimate = sum(mar_tie_psi) / count
     if missing == 0:
         estimate = sum(psi) / count
         variance = sum((value - estimate) ** 2 for value in psi) / (count - 1)
@@ -619,11 +675,21 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
             max(0.0, tie_estimate - tie_radius),
             min(1.0, tie_estimate + tie_radius),
         ]
+        delta_tie_cov = (
+            sum((d - estimate) * (t - tie_estimate) for d, t in zip(psi, tie_psi))
+            / (count - 1)
+        )
+        eq_good_est = sum(eq_good_weights) / count
+        unacc_est = sum(unacc_weights) / count
         interval_type = "studentized_complete"
         point: dict[str, Any] = {
             "estimate": estimate,
             "variance": variance,
             "tie_estimate": tie_estimate,
+            "tie_variance": tie_variance,
+            "delta_tie_covariance": delta_tie_cov,
+            "equally_good_rate_estimate": eq_good_est,
+            "both_unacceptable_rate_estimate": unacc_est,
         }
     else:
         bound = 1.0 + 2.0 / eps
@@ -667,6 +733,11 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
         "interval": interval,
         "tie_interval": tie_interval,
         "action": action(interval),
+        "secondary_mar": {
+            "estimate": mar_estimate,
+            "variance": mar_variance,
+            "tie_estimate": mar_tie_estimate,
+        },
         "response_drift": drift,
         "maximum_weight": max(weights),
         "effective_sample_size": sum(weights) ** 2 / sum(w * w for w in weights),
@@ -1183,6 +1254,7 @@ def build_fixture(
         "alpha": 0.05,
         "normal_quantile": 1.959963984540054,
         "practical_margin": 0.05,
+        "response_propensity_floor": 0.1,
         "response_drift_gamma_grid": [0.0, 0.02, 0.05],
     }
     eps_fraction = Fraction(1, 4)
@@ -1221,6 +1293,10 @@ def build_fixture(
             "tie_predictions": {
                 u: 0.0 if index == 0 else 0.2 for u in units
             },
+            "response_propensities": {
+                u: 0.8 if (i + index) % 2 == 0 else 0.5
+                for i, u in enumerate(units)
+            },
             "fit_slots": list(range(start)),
         }
         batch["commitment_sha256"] = canonical_digest(commitment_payload(batch))
@@ -1229,6 +1305,7 @@ def build_fixture(
         require(sum(law.values()) == 1, "fixture Fraction law does not normalize")
         pred = {u: Fraction(str(v)) for u, v in batch["predictions"].items()}
         tie_pred = {u: Fraction(str(v)) for u, v in batch["tie_predictions"].items()}
+        prop = {u: Fraction(str(v)) for u, v in batch["response_propensities"].items()}
         m_bar = sum(mass_fraction[u] * pred[u] for u in units)
         tie_bar = sum(mass_fraction[u] * tie_pred[u] for u in units)
         for slot in range(start, start + config["batch_size"]):
@@ -1237,6 +1314,11 @@ def build_fixture(
             draw = rng.random()
             outcome = 0 if draw < tie else (1 if draw < tie + win * (1 - tie) else -1)
             observed = slot not in missing_slots
+            subtype = (
+                ("equally_good" if slot % 2 == 0 else "both_unacceptable")
+                if (observed and outcome == 0)
+                else None
+            )
             slots.append(
                 {
                     "slot": slot,
@@ -1244,17 +1326,33 @@ def build_fixture(
                     "batch_commitment_sha256": batch["commitment_sha256"],
                     "unit_id": unit,
                     "logged_probability": float(law[unit]),
+                    "logged_response_propensity": float(prop[unit]),
                     "observed": observed,
                     "outcome": outcome if observed else None,
+                    "tie_subtype": subtype,
                 }
             )
             weight = mass_fraction[unit] / law[unit]
             psi = m_bar + weight * (outcome - pred[unit])
+            mar_psi_val = (
+                m_bar + (weight / prop[unit]) * (outcome - pred[unit])
+                if observed
+                else m_bar
+            )
+            mar_tie_val = (
+                tie_bar + (weight / prop[unit]) * (int(outcome == 0) - tie_pred[unit])
+                if observed
+                else tie_bar
+            )
             exact_rows.append(
                 {
                     "rater_id": rater_by_unit[unit],
                     "psi": psi,
                     "tie": tie_bar + weight * (int(outcome == 0) - tie_pred[unit]),
+                    "eq_good": weight if subtype == "equally_good" else Fraction(0),
+                    "unacc": weight if subtype == "both_unacceptable" else Fraction(0),
+                    "mar_psi": mar_psi_val,
+                    "mar_tie": mar_tie_val,
                     "weight": weight,
                     "lower": psi if observed else m_bar + weight * (-1 - pred[unit]),
                     "upper": psi if observed else m_bar + weight * (1 - pred[unit]),
@@ -1342,9 +1440,26 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
             "maximum weight differs from Fraction",
         )
         contrast = recomputed["adaptive_audit_contrast"]
+        mar_est = sum(row["mar_psi"] for row in rows) / count
+        mar_var = sum((row["mar_psi"] - mar_est) ** 2 for row in rows) / (count - 1)
+        mar_tie = sum(row["mar_tie"] for row in rows) / count
+        require(
+            close(recomputed["secondary_mar"]["estimate"], float(mar_est))
+            and close(recomputed["secondary_mar"]["variance"], float(mar_var))
+            and close(recomputed["secondary_mar"]["tie_estimate"], float(mar_tie)),
+            "secondary MAR estimate or variance differs from Fraction",
+        )
         if not missing:
             estimate = sum(row["psi"] for row in rows) / count
             variance = sum((row["psi"] - estimate) ** 2 for row in rows) / (count - 1)
+            tie_est = sum(row["tie"] for row in rows) / count
+            tie_var = sum((row["tie"] - tie_est) ** 2 for row in rows) / (count - 1)
+            dt_cov = (
+                sum((row["psi"] - estimate) * (row["tie"] - tie_est) for row in rows)
+                / (count - 1)
+            )
+            eq_good = sum(row["eq_good"] for row in rows) / count
+            unacc = sum(row["unacc"] for row in rows) / count
             radius = 1.959963984540054 * math.sqrt(float(variance) / count)
             require(
                 close(recomputed["estimate"], float(estimate))
@@ -1354,11 +1469,12 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
                 "complete-case estimate or interval differs from Fraction",
             )
             require(
-                close(
-                    recomputed["tie_estimate"],
-                    float(sum(row["tie"] for row in rows) / count),
-                ),
-                "tie estimate differs from the independent Fraction computation",
+                close(recomputed["tie_estimate"], float(tie_est))
+                and close(recomputed["tie_variance"], float(tie_var))
+                and close(recomputed["delta_tie_covariance"], float(dt_cov))
+                and close(recomputed["equally_good_rate_estimate"], float(eq_good))
+                and close(recomputed["both_unacceptable_rate_estimate"], float(unacc)),
+                "tie estimate, covariance, or subtype rate differs from the independent Fraction computation",
             )
             require(recomputed["interval_type"] == "studentized_complete", "wrong interval")
             if not missing_audit:
@@ -1532,6 +1648,48 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
             "cr1_contrast_variance",
             b["reported"]["adaptive_audit_contrast"]["cr1_adaptive_variance"]
             + b["reported"]["adaptive_audit_contrast"]["cr1_audit_variance"],
+        ),
+    )
+
+    def omit_tie_subtype(b: dict[str, Any]) -> None:
+        tie_slot = next(s for s in b["slots"] if s["observed"] and s["outcome"] == 0)
+        tie_slot["tie_subtype"] = None
+
+    mutate("tie_outcome_missing_subtype", omit_tie_subtype)
+
+    def non_tie_with_subtype(b: dict[str, Any]) -> None:
+        nontie_slot = next(s for s in b["slots"] if s["observed"] and s["outcome"] != 0)
+        nontie_slot["tie_subtype"] = "equally_good"
+
+    mutate("non_tie_outcome_carries_tie_subtype", non_tie_with_subtype)
+
+    def violate_propensity_floor(b: dict[str, Any]) -> None:
+        batch = b["batches"][1]
+        first_unit = next(iter(batch["response_propensities"]))
+        batch["response_propensities"][first_unit] = 0.05
+        batch["commitment_sha256"] = canonical_digest(commitment_payload(batch))
+        for row in b["slots"]:
+            if row["batch"] == 1:
+                row["batch_commitment_sha256"] = batch["commitment_sha256"]
+                if row["unit_id"] == first_unit:
+                    row["logged_response_propensity"] = 0.05
+
+    mutate("response_propensity_below_floor", violate_propensity_floor)
+
+    mutate(
+        "logged_response_propensity_mismatch",
+        lambda b: b["slots"][0].__setitem__("logged_response_propensity", 0.99),
+    )
+    mutate(
+        "secondary_mar_estimate_tampered",
+        lambda b: b["reported"]["secondary_mar"].__setitem__(
+            "estimate", b["reported"]["secondary_mar"]["estimate"] + 0.01
+        ),
+    )
+    mutate(
+        "delta_tie_covariance_tampered",
+        lambda b: b["reported"].__setitem__(
+            "delta_tie_covariance", b["reported"]["delta_tie_covariance"] + 0.01
         ),
     )
 

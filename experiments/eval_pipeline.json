@@ -144,7 +144,7 @@
       ],
       "checks": [
         "Estimator, martingale variance, maximum weight, and ESS reproduce from the ledger",
-        "validate_eval_sequential_bundle.py recomputes root SHA-256 hash ranks, paired-response coupling and AB/BA swap symmetry, root--prompt--order cells, human target-unit product masses, and every batch draw law from its committed candidate multiset, EVI values, costs, and temperature; rejects commitment-hash mismatches and non-predictable fit slots; and reproduces contributions, worst-case bounds, intervals, drift widenings, and the terminal action",
+        "validate_eval_sequential_bundle.py recomputes root SHA-256 hash ranks, paired-response coupling and AB/BA swap symmetry, root--prompt--order cells, human target-unit product masses, and every batch draw law from its committed candidate multiset, EVI values, costs, and temperature; rejects commitment-hash mismatches and non-predictable fit slots; and reproduces contributions, tie subtypes, joint (Delta_hat_T, tau_hat_T) covariance, secondary MAR inverse-response-weighted contributions, worst-case bounds, intervals, drift widenings, and the terminal action",
         "Any nonresponse switches the primary decision to the two one-sided martingale-Hoeffding endpoint bounds",
         "All 200 audit slots remain; audit nonresponses use the frozen -1/+1 endpoint means and Hoeffding radius",
         "validate_eval_sequential_bundle.py recomputes the shared-rater cluster-robust (CR1) adaptive-minus-audit variance V_diff^CR1 = V_adap^CR1 + V_aud^CR1 - 2 C_(adap,aud)^CR1 with M/(M-1) small-cluster adjustment and worst-case nonresponse contrast bounds",

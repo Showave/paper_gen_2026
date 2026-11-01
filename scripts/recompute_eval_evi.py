@@ -750,6 +750,7 @@ def build_bilinear_fixture(config: dict[str, Any]) -> tuple[dict[str, Any], dict
             "annotation_cost": {},
             "predictions": {u: 0.0 for u in units},
             "tie_predictions": {u: 0.0 for u in units},
+            "response_propensities": {u: 0.8 for u in units},
             "fit_slots": [],
         },
         {
@@ -762,6 +763,7 @@ def build_bilinear_fixture(config: dict[str, Any]) -> tuple[dict[str, Any], dict
             "annotation_cost": {u: 1.0 for u in multiset},
             "predictions": {u: 0.1 for u in units},
             "tie_predictions": {u: 0.2 for u in units},
+            "response_propensities": {u: 0.8 for u in units},
             "fit_slots": fit_slots,
         },
     ]
@@ -843,6 +845,7 @@ def build_fixture(config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any
             "annotation_cost": {},
             "predictions": {u: 0.0 for u in units},
             "tie_predictions": {u: 0.0 for u in units},
+            "response_propensities": {u: 0.8 for u in units},
             "fit_slots": [],
         },
         {
@@ -855,6 +858,7 @@ def build_fixture(config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any
             "annotation_cost": {u: 1.0 for u in multiset},
             "predictions": {u: 0.1 for u in units},
             "tie_predictions": {u: 0.2 for u in units},
+            "response_propensities": {u: 0.8 for u in units},
             "fit_slots": fit_slots,
         },
     ]
