@@ -5,8 +5,33 @@ The estimator aggregator consumes projected per-trajectory terms.  This
 validator rebuilds every such term from hash-bound raw fields instead of
 trusting the producer:
 
-* prompt masses come only from the frozen header laws, so
+* prompt frame selection and partition laws: each source prompt's
+  ``selection_sha256 = SHA-256(source_revision || problem_id)``, ascending
+  ``(selection_sha256, problem_id)`` hash ranks, the selected prompt frame, and
+  exact hash-rank partition boundaries into ``nuisance_fit``,
+  ``alpha_selection`` (``select``), and ``confirmation`` (``confirm``) with
+  uniform target masses ``d(x) = 1/|partition|``;
+* prompt masses come only from the frozen header laws, with the adaptive
+  proposal ``q_t(x) = eps*d(x) + (1-eps)*q_bar_t(x)`` recomputed from frozen
+  prior-iteration residual second-moment and cost predictions (including the
+  ``Z_t^q = 0 -> q_bar_t = D`` fallback), so
   ``log P = log d(x) + log pi(y|x)`` and ``log G = log q(x) + log mu(y|x)``;
+* per-step masked temperature-softmax token log-probabilities are recomputed
+  from raw allowed-vocabulary step logits under ``decoder_temperature`` and
+  must sum to ``current_sequence_log_prob`` and ``behavior_sequence_log_prob``,
+  catching even a producer that spoofs the header temperature while scoring
+  with base logits;
+* per-step decoder score vectors ``s_l = d log pi_theta(y_l|x,y_<l)/d theta``
+  are summed across steps ``1..|Y|`` without length normalization and must
+  equal ``projected_score``, rejecting token-average or length-normalized score
+  functions;
+* deterministic verifier status mapping: every successful trajectory records a
+  verifier status in ``{verified_pass, verified_fail, parse_error, timeout,
+  sandbox_error, truncated}`` consistent with ``termination`` and mapped
+  deterministically by the header's ``verifier_reward_table`` to ``reward``;
+* finite-vocabulary sequence-tree normalization, empirical sampler--scorer
+  frequency agreement, and the policy-to-behavior KL stratum bound are
+  verified from the header conformance and KL-audit blocks;
 * ``w = P / (alpha P + (1 - alpha) G)`` is recomputed in log space;
 * ``U = R - lambda C`` and ``h = h^R - lambda h^C`` use the frozen lambda;
 * current rows give ``A=(h-b)s+alpha*w*(U-h)s``, stale rows ``B=w*(U-h)s``,
@@ -69,14 +94,24 @@ TRAJECTORY_FIELDS = (
     "prompt_id",
     "generating_policy_sha256",
     "scoring",
+    "token_steps",
     "current_sequence_log_prob",
     "behavior_sequence_log_prob",
+    "verifier_status",
     "reward",
     "termination",
     "nuisance",
     "prior_use_count",
     "freeze_record_sha256",
     "projected_score",
+)
+VERIFIER_STATUSES = (
+    "verified_pass",
+    "verified_fail",
+    "parse_error",
+    "timeout",
+    "sandbox_error",
+    "truncated",
 )
 NUISANCE_FIELDS = ("model_sha256", "reward_prediction", "length_prediction", "prompt_baseline")
 HEADER_FROZEN_FIELDS = (
@@ -86,6 +121,9 @@ HEADER_FROZEN_FIELDS = (
     "maximum_response_tokens",
     "lambda",
     "support_floor_epsilon",
+    "residual_second_moment_floor",
+    "cost_prediction_floor_tokens",
+    "maximum_policy_kl",
     "nuisance_training_partition",
     "nuisance_model_sha256",
     "prompt_baseline_sha256",
@@ -106,6 +144,164 @@ def require(condition: bool, message: str) -> None:
 def canonical_digest(value: Any) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
     return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def prompt_selection_sha256(source_revision: str, problem_id: str) -> str:
+    return hashlib.sha256(f"{source_revision}||{problem_id}".encode("utf-8")).hexdigest()
+
+
+def recompute_prompt_frame(
+    frame: Any,
+    *,
+    expected_size: int | None = None,
+    expected_fractions: tuple[float, float, float] | None = None,
+    require_uniform: bool = False,
+) -> dict[str, Any]:
+    """Recompute SHA-256(source_revision || problem_id) hash ranks and partitions."""
+    require(
+        isinstance(frame, dict)
+        and set(frame)
+        == {
+            "source_key",
+            "source_revision",
+            "selected_count",
+            "partition_fractions",
+            "candidate_prompts",
+        },
+        "prompt_frame has an invalid schema",
+    )
+    source_key = frame["source_key"]
+    revision = frame["source_revision"]
+    selected_count = frame["selected_count"]
+    fractions = frame["partition_fractions"]
+    candidates = frame["candidate_prompts"]
+    require(
+        isinstance(source_key, str)
+        and source_key
+        and isinstance(revision, str)
+        and revision
+        and isinstance(selected_count, int)
+        and not isinstance(selected_count, bool)
+        and selected_count >= 4
+        and isinstance(fractions, dict)
+        and set(fractions) == {"nuisance_fit", "select", "confirm"}
+        and all(is_number(fractions[k]) and fractions[k] > 0 for k in fractions)
+        and abs(math.fsum(float(fractions[k]) for k in fractions) - 1.0) <= MASS_TOLERANCE
+        and isinstance(candidates, list)
+        and len(candidates) >= selected_count,
+        "prompt_frame fields are invalid",
+    )
+    if expected_size is not None:
+        require(
+            selected_count == expected_size,
+            "prompt_frame selected_count differs from the preregistration",
+        )
+    if expected_fractions is not None:
+        require(
+            abs(float(fractions["nuisance_fit"]) - expected_fractions[0]) <= MASS_TOLERANCE
+            and abs(float(fractions["select"]) - expected_fractions[1]) <= MASS_TOLERANCE
+            and abs(float(fractions["confirm"]) - expected_fractions[2]) <= MASS_TOLERANCE,
+            "prompt_frame partition_fractions differ from the preregistration",
+        )
+    fit_end = round(selected_count * float(fractions["nuisance_fit"]))
+    select_end = fit_end + round(selected_count * float(fractions["select"]))
+    require(
+        0 < fit_end < select_end < selected_count
+        and abs(fit_end / selected_count - float(fractions["nuisance_fit"])) <= MASS_TOLERANCE
+        and abs((select_end - fit_end) / selected_count - float(fractions["select"]))
+        <= MASS_TOLERANCE,
+        "prompt_frame selected_count does not divide cleanly by partition_fractions",
+    )
+    seen_problems: set[str] = set()
+    seen_prompts: set[str] = set()
+    recomputed = []
+    for cand in candidates:
+        require(
+            isinstance(cand, dict)
+            and set(cand)
+            == {
+                "problem_id",
+                "prompt_id",
+                "selection_sha256",
+                "hash_rank",
+                "selected",
+                "partition",
+                "target_mass",
+            },
+            "prompt_frame candidate prompt has an invalid schema",
+        )
+        prob_id = cand["problem_id"]
+        pr_id = cand["prompt_id"]
+        sel_sha = cand["selection_sha256"]
+        require(
+            isinstance(prob_id, str)
+            and prob_id
+            and prob_id not in seen_problems
+            and isinstance(pr_id, str)
+            and pr_id
+            and pr_id not in seen_prompts
+            and sel_sha == prompt_selection_sha256(revision, prob_id),
+            "prompt_frame candidate has invalid problem_id, prompt_id, or selection_sha256",
+        )
+        seen_problems.add(prob_id)
+        seen_prompts.add(pr_id)
+        recomputed.append((sel_sha, prob_id, cand))
+    recomputed.sort(key=lambda item: (item[0], item[1]))
+    partition_counts = {
+        "nuisance_fit": fit_end,
+        "select": select_end - fit_end,
+        "confirm": selected_count - select_end,
+    }
+    partitions: dict[str, dict[str, float]] = {
+        "nuisance_fit": {},
+        "select": {},
+        "confirm": {},
+    }
+    for expected_rank, (_, _, cand) in enumerate(recomputed):
+        pr_id = cand["prompt_id"]
+        require(
+            cand["hash_rank"] == expected_rank,
+            f"prompt_frame prompt {pr_id} hash_rank does not reproduce from sorted SHA-256(revision || problem_id)",
+        )
+        should_select = expected_rank < selected_count
+        require(
+            cand["selected"] is should_select,
+            f"prompt_frame prompt {pr_id} selected flag violates the hash-rank cutoff",
+        )
+        if not should_select:
+            require(
+                cand["partition"] is None and cand["target_mass"] in (None, 0.0),
+                f"unselected prompt {pr_id} cannot carry a partition or positive target_mass",
+            )
+            continue
+        if expected_rank < fit_end:
+            expected_part = "nuisance_fit"
+        elif expected_rank < select_end:
+            expected_part = "select"
+        else:
+            expected_part = "confirm"
+        require(
+            cand["partition"] == expected_part
+            and is_number(cand["target_mass"])
+            and float(cand["target_mass"]) > 0,
+            f"selected prompt {pr_id} partition or target_mass violates the hash-rank partition law",
+        )
+        if require_uniform:
+            expected_mass = 1.0 / partition_counts[expected_part]
+            require(
+                abs(float(cand["target_mass"]) - expected_mass) <= MASS_TOLERANCE,
+                f"selected prompt {pr_id} target_mass is not uniform on {expected_part}",
+            )
+        partitions[expected_part][pr_id] = float(cand["target_mass"])
+    for part_name, masses in partitions.items():
+        require(
+            abs(math.fsum(masses.values()) - 1.0) <= MASS_TOLERANCE,
+            f"prompt_frame {part_name} target masses do not sum to one",
+        )
+    return {
+        "selected_count": selected_count,
+        "partitions": partitions,
+    }
 
 
 def fake_hash(*parts: Any) -> str:
@@ -144,12 +340,46 @@ def frozen_constants(section: dict[str, Any]) -> dict[str, Any]:
         "maximum_response_tokens": section["decoder"]["maximum_response_tokens"],
         "lambda": audit["audit_lambda"],
         "support_floor_epsilon": section["proposal"]["support_floor_epsilon"],
+        "residual_second_moment_floor": section["proposal"]["residual_second_moment_floor"],
+        "cost_prediction_floor_tokens": section["proposal"]["cost_prediction_floor_tokens"],
+        "maximum_policy_kl": section["stale_actor"]["maximum_policy_kl"],
         "nuisance_training_partition": section["nuisance_models"]["training_partition"],
         "projection_dimension": audit["projection_dimension"],
         "cells": sorted(
             (row["alpha"], row["allocation_id"]) for row in audit["stratum_counts_by_alpha"]
         ),
     }
+
+
+def recompute_step_log_prob(
+    logits: Any, allowed_token_ids: Any, token_id: Any, temperature: float
+) -> float:
+    require(
+        isinstance(allowed_token_ids, list)
+        and allowed_token_ids
+        and all(
+            isinstance(t, int) and not isinstance(t, bool) and t >= 0
+            for t in allowed_token_ids
+        )
+        and len(set(allowed_token_ids)) == len(allowed_token_ids),
+        "token step needs unique nonnegative integer allowed_token_ids",
+    )
+    require(
+        isinstance(logits, list)
+        and len(logits) == len(allowed_token_ids)
+        and all(is_number(val) for val in logits),
+        "token step needs finite logits matching allowed_token_ids",
+    )
+    require(
+        isinstance(token_id, int)
+        and not isinstance(token_id, bool)
+        and token_id in allowed_token_ids,
+        "sampled token_id lies outside the allowed vocabulary",
+    )
+    scaled = [float(val) / temperature for val in logits]
+    top = max(scaled)
+    log_norm = top + math.log(math.fsum(math.exp(val - top) for val in scaled))
+    return scaled[allowed_token_ids.index(token_id)] - log_norm
 
 
 def validate_header(header: Any, frozen: dict[str, Any]) -> dict[str, Any]:
@@ -167,6 +397,9 @@ def validate_header(header: Any, frozen: dict[str, Any]) -> dict[str, Any]:
         "maximum_response_tokens",
         "lambda",
         "support_floor_epsilon",
+        "residual_second_moment_floor",
+        "cost_prediction_floor_tokens",
+        "maximum_policy_kl",
         "nuisance_training_partition",
         "projection_dimension",
     ):
@@ -190,21 +423,47 @@ def validate_header(header: Any, frozen: dict[str, Any]) -> dict[str, Any]:
         isinstance(laws, dict) and set(laws) == {"select", "confirm"},
         "raw trajectory header must define the select and confirm prompt laws",
     )
-    epsilon = declared["support_floor_epsilon"]
+    epsilon = float(declared["support_floor_epsilon"])
+    v_min = float(declared["residual_second_moment_floor"])
+    c_min = float(declared["cost_prediction_floor_tokens"])
+    require(v_min > 0 and c_min > 0, "proposal floors must be positive")
     prompt_sets: dict[str, set[str]] = {}
     for law, masses in laws.items():
         require(isinstance(masses, dict) and masses, f"{law} prompt law is empty")
         target_total = []
         proposal_total = []
+        raw_a: dict[str, float] = {}
+        all_zero_moment = True
         for prompt_id, mass in masses.items():
             require(
-                isinstance(mass, dict) and set(mass) == {"target_mass", "proposal_mass"},
-                f"{law} prompt {prompt_id} needs target and proposal masses",
+                isinstance(mass, dict)
+                and set(mass)
+                == {
+                    "target_mass",
+                    "proposal_mass",
+                    "predicted_residual_second_moment",
+                    "predicted_cost_tokens",
+                },
+                f"{law} prompt {prompt_id} needs target/proposal masses and moment/cost predictions",
             )
             d, q = mass["target_mass"], mass["proposal_mass"]
+            v_hat = mass["predicted_residual_second_moment"]
+            c_hat = mass["predicted_cost_tokens"]
             require(
-                is_number(d) and is_number(q) and d > 0 and q > 0,
-                f"{law} prompt {prompt_id} needs positive finite masses",
+                is_number(d)
+                and is_number(q)
+                and is_number(v_hat)
+                and is_number(c_hat)
+                and d > 0
+                and q > 0
+                and v_hat >= 0
+                and c_hat > 0,
+                f"{law} prompt {prompt_id} needs positive finite masses and valid moment/cost predictions",
+            )
+            if v_hat > 0:
+                all_zero_moment = False
+            raw_a[prompt_id] = float(d) * math.sqrt(
+                max(float(v_hat), v_min) / max(float(c_hat), c_min)
             )
             require(
                 q >= epsilon * d * (1.0 - MASS_TOLERANCE),
@@ -216,6 +475,15 @@ def validate_header(header: Any, frozen: dict[str, Any]) -> dict[str, Any]:
             require(
                 abs(math.fsum(values) - 1.0) <= MASS_TOLERANCE,
                 f"{law} {name} prompt masses do not sum to one",
+            )
+        z_q = 0.0 if all_zero_moment else math.fsum(raw_a.values())
+        for prompt_id, mass in masses.items():
+            d = float(mass["target_mass"])
+            q_bar = d if z_q == 0.0 else raw_a[prompt_id] / z_q
+            expected_q = epsilon * d + (1.0 - epsilon) * q_bar
+            require(
+                abs(float(mass["proposal_mass"]) - expected_q) <= MASS_TOLERANCE,
+                f"{law} prompt {prompt_id} proposal_mass does not reproduce from the adaptive proposal equation",
             )
         prompt_sets[law] = set(masses)
     require(
@@ -234,7 +502,149 @@ def validate_header(header: Any, frozen: dict[str, Any]) -> dict[str, Any]:
         not set(training) & (prompt_sets["select"] | prompt_sets["confirm"]),
         "nuisance models were fitted on audited prompts (focal or partition leak)",
     )
-    return {"declared": declared, "reward_range": reward_range, "laws": laws}
+    conformance = header.get("sampler_scorer_conformance")
+    require(
+        isinstance(conformance, dict)
+        and set(conformance)
+        == {
+            "current_policy_sha256",
+            "behavior_policy_sha256",
+            "decoder_temperature",
+            "sample_count",
+            "max_frequency_abs_error_tolerance",
+            "prompt_trees",
+        }
+        and conformance["current_policy_sha256"] == declared["current_policy_sha256"]
+        and conformance["behavior_policy_sha256"] == declared["behavior_policy_sha256"]
+        and conformance["decoder_temperature"] == declared["decoder_temperature"]
+        and isinstance(conformance["sample_count"], int)
+        and not isinstance(conformance["sample_count"], bool)
+        and conformance["sample_count"] > 0
+        and is_number(conformance["max_frequency_abs_error_tolerance"])
+        and 0 < float(conformance["max_frequency_abs_error_tolerance"]) < 1,
+        "raw trajectory header needs a valid sampler_scorer_conformance block",
+    )
+    prompt_trees = conformance["prompt_trees"]
+    require(
+        isinstance(prompt_trees, dict) and set(prompt_trees) == set(laws["select"]),
+        "sampler_scorer_conformance must cover every select-law prompt",
+    )
+    freq_tol = float(conformance["max_frequency_abs_error_tolerance"])
+    max_tokens = declared["maximum_response_tokens"]
+    recomputed_kl = 0.0
+    for prompt_id, tree in sorted(prompt_trees.items()):
+        require(
+            isinstance(tree, list) and len(tree) >= 2,
+            f"conformance tree for {prompt_id} must list at least two complete sequences",
+        )
+        cur_probs = []
+        beh_probs = []
+        emp_cur = []
+        emp_beh = []
+        prompt_kl = 0.0
+        for traj in tree:
+            require(
+                isinstance(traj, dict)
+                and set(traj)
+                == {
+                    "tokens",
+                    "termination",
+                    "current_log_prob",
+                    "behavior_log_prob",
+                    "empirical_current_freq",
+                    "empirical_behavior_freq",
+                }
+                and isinstance(traj["tokens"], int)
+                and not isinstance(traj["tokens"], bool)
+                and 1 <= traj["tokens"] <= max_tokens
+                and (
+                    traj["termination"] == "eos"
+                    or (traj["termination"] == "truncated" and traj["tokens"] == max_tokens)
+                )
+                and all(
+                    is_number(traj[k])
+                    for k in (
+                        "current_log_prob",
+                        "behavior_log_prob",
+                        "empirical_current_freq",
+                        "empirical_behavior_freq",
+                    )
+                )
+                and traj["current_log_prob"] <= 0
+                and traj["behavior_log_prob"] <= 0,
+                f"conformance sequence in {prompt_id} is invalid",
+            )
+            p_cur = math.exp(float(traj["current_log_prob"]))
+            p_beh = math.exp(float(traj["behavior_log_prob"]))
+            f_cur = float(traj["empirical_current_freq"])
+            f_beh = float(traj["empirical_behavior_freq"])
+            require(
+                abs(f_cur - p_cur) <= freq_tol and abs(f_beh - p_beh) <= freq_tol,
+                f"conformance empirical frequency for {prompt_id} disagrees with scored probability",
+            )
+            cur_probs.append(p_cur)
+            beh_probs.append(p_beh)
+            emp_cur.append(f_cur)
+            emp_beh.append(f_beh)
+            prompt_kl += p_cur * (
+                float(traj["current_log_prob"]) - float(traj["behavior_log_prob"])
+            )
+        for label_mass, vals in (
+            ("current_prob", cur_probs),
+            ("behavior_prob", beh_probs),
+            ("empirical_current", emp_cur),
+            ("empirical_behavior", emp_beh),
+        ):
+            require(
+                abs(math.fsum(vals) - 1.0) <= MASS_TOLERANCE,
+                f"conformance tree {label_mass} for {prompt_id} does not sum to one",
+            )
+        recomputed_kl += float(laws["select"][prompt_id]["target_mass"]) * prompt_kl
+
+    kl_audit = header.get("kl_audit")
+    require(
+        isinstance(kl_audit, dict)
+        and set(kl_audit)
+        == {"prompt_law", "measured_policy_kl", "maximum_policy_kl", "batch_action"}
+        and kl_audit["prompt_law"] == "select"
+        and kl_audit["maximum_policy_kl"] == declared["maximum_policy_kl"]
+        and kl_audit["batch_action"] == "admit"
+        and is_number(kl_audit["measured_policy_kl"])
+        and abs(float(kl_audit["measured_policy_kl"]) - recomputed_kl) <= MASS_TOLERANCE
+        and recomputed_kl <= float(declared["maximum_policy_kl"]) + MASS_TOLERANCE,
+        "kl_audit does not reproduce or exceeds maximum_policy_kl",
+    )
+    frame_info = recompute_prompt_frame(header.get("prompt_frame"))
+    require(
+        set(training) == set(frame_info["partitions"]["nuisance_fit"])
+        and set(laws["select"]) == set(frame_info["partitions"]["select"])
+        and set(laws["confirm"]) == set(frame_info["partitions"]["confirm"]),
+        "header prompt_laws or nuisance_training_prompt_ids do not match the prompt_frame hash-rank partitions",
+    )
+    for law_name in ("select", "confirm"):
+        for pr_id, expected_d in frame_info["partitions"][law_name].items():
+            require(
+                abs(float(laws[law_name][pr_id]["target_mass"]) - expected_d)
+                <= MASS_TOLERANCE,
+                f"{law_name} prompt {pr_id} target_mass differs from its prompt_frame partition mass",
+            )
+    reward_table = header.get("verifier_reward_table")
+    require(
+        isinstance(reward_table, dict)
+        and set(reward_table) == set(VERIFIER_STATUSES)
+        and all(
+            is_number(reward_table[status])
+            and reward_range[0] <= float(reward_table[status]) <= reward_range[1]
+            for status in VERIFIER_STATUSES
+        ),
+        "raw trajectory header needs a complete bounded verifier_reward_table",
+    )
+    return {
+        "declared": declared,
+        "reward_range": reward_range,
+        "laws": laws,
+        "reward_table": {k: float(v) for k, v in reward_table.items()},
+    }
 
 
 def finite_vector(value: Any, dimension: int, label: str) -> list[float]:
@@ -369,6 +779,7 @@ def reconstruct(
     checked = validate_header(header, frozen)
     declared = checked["declared"]
     laws = checked["laws"]
+    reward_table = checked["reward_table"]
     low, high = checked["reward_range"]
     dimension = declared["projection_dimension"]
     lam = declared["lambda"]
@@ -522,12 +933,84 @@ def reconstruct(
             and log_behavior <= 0,
             f"{label} needs finite nonpositive sequence log-probabilities",
         )
+        verifier_status = raw["verifier_status"]
         reward = raw["reward"]
-        require(is_number(reward) and low <= reward <= high, f"{label} reward lies outside its range")
+        require(
+            isinstance(verifier_status, str) and verifier_status in reward_table,
+            f"{label} has an unknown verifier_status",
+        )
+        require(
+            is_number(reward)
+            and low <= reward <= high
+            and abs(float(reward) - reward_table[verifier_status]) <= MASS_TOLERANCE,
+            f"{label} reward does not match verifier_reward_table[{verifier_status}]",
+        )
         require(
             raw["termination"] == "eos"
             or (raw["termination"] == "truncated" and tokens == maximum),
             f"{label} termination does not match its token count",
+        )
+        require(
+            (raw["termination"] == "truncated") == (verifier_status == "truncated"),
+            f"{label} verifier_status={verifier_status} is inconsistent with termination={raw['termination']}",
+        )
+        token_steps = raw["token_steps"]
+        require(
+            isinstance(token_steps, list) and len(token_steps) == tokens,
+            f"{label} token_steps length does not match response_tokens",
+        )
+        recomputed_cur_steps: list[float] = []
+        recomputed_beh_steps: list[float] = []
+        recomputed_step_scores = [[0.0] * tokens for _ in range(dimension)]
+        for step_idx, step in enumerate(token_steps):
+            step_label = f"{label} step {step_idx}"
+            require(
+                isinstance(step, dict)
+                and set(step)
+                == {
+                    "token_id",
+                    "is_eos",
+                    "allowed_token_ids",
+                    "current_logits",
+                    "behavior_logits",
+                    "projected_step_score",
+                }
+                and isinstance(step["is_eos"], bool),
+                f"{step_label} has an unexpected schema",
+            )
+            expected_eos = raw["termination"] == "eos" and step_idx == tokens - 1
+            require(
+                step["is_eos"] is expected_eos,
+                f"{step_label} is_eos violates the EOS/truncation rule",
+            )
+            recomputed_cur_steps.append(
+                recompute_step_log_prob(
+                    step["current_logits"],
+                    step["allowed_token_ids"],
+                    step["token_id"],
+                    float(declared["decoder_temperature"]),
+                )
+            )
+            recomputed_beh_steps.append(
+                recompute_step_log_prob(
+                    step["behavior_logits"],
+                    step["allowed_token_ids"],
+                    step["token_id"],
+                    float(declared["decoder_temperature"]),
+                )
+            )
+            step_score = finite_vector(
+                step["projected_step_score"], dimension, f"{step_label} projected_step_score"
+            )
+            for dim_idx, val in enumerate(step_score):
+                recomputed_step_scores[dim_idx][step_idx] = val
+        require(
+            abs(math.fsum(recomputed_cur_steps) - float(log_current)) <= MASS_TOLERANCE,
+            f"{label} current_sequence_log_prob disagrees with per-step decoder temperature softmax",
+        )
+        require(
+            abs(math.fsum(recomputed_beh_steps) - float(log_behavior)) <= MASS_TOLERANCE,
+            f"{label} behavior_sequence_log_prob disagrees with per-step decoder temperature softmax",
         )
         nuisance = raw["nuisance"]
         require(
@@ -541,6 +1024,14 @@ def reconstruct(
         known = baselines.setdefault((law, prompt_id), baseline)
         require(known == baseline, f"{label} prompt baseline depends on more than the prompt")
         score = finite_vector(raw["projected_score"], dimension, f"{label} projected score")
+        recomputed_score = [math.fsum(vals) for vals in recomputed_step_scores]
+        require(
+            all(
+                abs(a - b) <= MASS_TOLERANCE * max(1.0, abs(a), abs(b))
+                for a, b in zip(score, recomputed_score)
+            ),
+            f"{label} projected_score does not equal the unnormalized sum of projected_step_score",
+        )
         utility = reward - lam * tokens
         h = nuisance["reward_prediction"] - lam * nuisance["length_prediction"]
         if role in {"r1", "r2"}:
@@ -644,6 +1135,17 @@ def verify_work_dir(
     )
     header = json.loads(header_path.read_text(encoding="utf-8"))
     require(header.get("execution_class") == "real", "raw trajectory header is not real")
+    audit = section["estimator_audit"]
+    recompute_prompt_frame(
+        header.get("prompt_frame"),
+        expected_size=section["prompt_frame"]["size"],
+        expected_fractions=(
+            audit["nuisance_fit_prompt_fraction"],
+            audit["alpha_selection_prompt_fraction"],
+            audit["untouched_confirmation_prompt_fraction"],
+        ),
+        require_uniform=True,
+    )
     result = reconstruct(header, load_jsonl(ledger_path), frozen)
     compare_ledgers(result["rows"], declared_rows)
     return {
@@ -667,7 +1169,10 @@ HALF_CELL = (gate0.ALPHA, "half")
 ON_POLICY_CELL = (1.0, "on-policy")
 
 
-def golden_frozen(temperature: float = gate0.DECODER_TEMPERATURE) -> dict[str, Any]:
+def golden_frozen(
+    temperature: float = gate0.DECODER_TEMPERATURE,
+    maximum_policy_kl: float = 0.5,
+) -> dict[str, Any]:
     return {
         "current_policy_sha256": GOLDEN_CURRENT,
         "behavior_policy_sha256": GOLDEN_BEHAVIOR,
@@ -675,6 +1180,9 @@ def golden_frozen(temperature: float = gate0.DECODER_TEMPERATURE) -> dict[str, A
         "maximum_response_tokens": 3,
         "lambda": gate0.DUAL,
         "support_floor_epsilon": 0.2,
+        "residual_second_moment_floor": 1e-8,
+        "cost_prediction_floor_tokens": 1.0,
+        "maximum_policy_kl": maximum_policy_kl,
         "nuisance_training_partition": "nuisance_fit",
         "projection_dimension": 1,
         "cells": sorted([HALF_CELL, ON_POLICY_CELL]),
@@ -736,16 +1244,174 @@ def golden_cost_ledger() -> dict[str, Any]:
     }
 
 
+def build_golden_prompt_frame() -> dict[str, Any]:
+    revision = "golden-dapo-rev"
+    raw_problems = [
+        (prompt_selection_sha256(revision, f"prob-{idx:02d}"), f"prob-{idx:02d}")
+        for idx in range(10)
+    ]
+    raw_problems.sort()
+    prompt_specs = (
+        ("fit-0", "nuisance_fit", 0.25),
+        ("fit-1", "nuisance_fit", 0.25),
+        ("fit-2", "nuisance_fit", 0.25),
+        ("fit-3", "nuisance_fit", 0.25),
+        ("p0", "select", gate0.PROMPT_MASS[0]),
+        ("p1", "select", gate0.PROMPT_MASS[1]),
+        ("c0", "confirm", 0.5),
+        ("c1", "confirm", 0.5),
+    )
+    candidates = []
+    for rank, (sel_sha, prob_id) in enumerate(raw_problems):
+        if rank < 8:
+            pr_id, part, mass = prompt_specs[rank]
+            candidates.append(
+                {
+                    "problem_id": prob_id,
+                    "prompt_id": pr_id,
+                    "selection_sha256": sel_sha,
+                    "hash_rank": rank,
+                    "selected": True,
+                    "partition": part,
+                    "target_mass": mass,
+                }
+            )
+        else:
+            candidates.append(
+                {
+                    "problem_id": prob_id,
+                    "prompt_id": f"unselected-{rank}",
+                    "selection_sha256": sel_sha,
+                    "hash_rank": rank,
+                    "selected": False,
+                    "partition": None,
+                    "target_mass": 0.0,
+                }
+            )
+    return {
+        "source_key": "dapo-math-rl",
+        "source_revision": revision,
+        "selected_count": 8,
+        "partition_fractions": {
+            "nuisance_fit": 0.5,
+            "select": 0.25,
+            "confirm": 0.25,
+        },
+        "candidate_prompts": candidates,
+    }
+
+
+def build_pilot_prompt_frame(section: dict[str, Any]) -> dict[str, Any]:
+    frame_spec = section["prompt_frame"]
+    audit_spec = section["estimator_audit"]
+    selected_count = frame_spec["size"]
+    revision = "pinned-dapo-math-rev"
+    f_fit = float(audit_spec["nuisance_fit_prompt_fraction"])
+    f_sel = float(audit_spec["alpha_selection_prompt_fraction"])
+    f_conf = float(audit_spec["untouched_confirmation_prompt_fraction"])
+    fit_end = round(selected_count * f_fit)
+    select_end = fit_end + round(selected_count * f_sel)
+    raw_problems = [
+        (prompt_selection_sha256(revision, f"dapo-prob-{idx:04d}"), f"dapo-prob-{idx:04d}")
+        for idx in range(selected_count + 32)
+    ]
+    raw_problems.sort()
+    candidates = []
+    for rank, (sel_sha, prob_id) in enumerate(raw_problems):
+        if rank < selected_count:
+            if rank < fit_end:
+                part = "nuisance_fit"
+                mass = 1.0 / fit_end
+            elif rank < select_end:
+                part = "select"
+                mass = 1.0 / (select_end - fit_end)
+            else:
+                part = "confirm"
+                mass = 1.0 / (selected_count - select_end)
+            candidates.append(
+                {
+                    "problem_id": prob_id,
+                    "prompt_id": f"prompt-{rank:04d}",
+                    "selection_sha256": sel_sha,
+                    "hash_rank": rank,
+                    "selected": True,
+                    "partition": part,
+                    "target_mass": mass,
+                }
+            )
+        else:
+            candidates.append(
+                {
+                    "problem_id": prob_id,
+                    "prompt_id": f"unselected-{rank:04d}",
+                    "selection_sha256": sel_sha,
+                    "hash_rank": rank,
+                    "selected": False,
+                    "partition": None,
+                    "target_mass": 0.0,
+                }
+            )
+    return {
+        "source_key": "dapo-math-rl",
+        "source_revision": revision,
+        "selected_count": selected_count,
+        "partition_fractions": {
+            "nuisance_fit": f_fit,
+            "select": f_sel,
+            "confirm": f_conf,
+        },
+        "candidate_prompts": candidates,
+    }
+
+
 def golden_header(
     frozen: dict[str, Any],
     proposal: tuple[float, float] = gate0.STALE_PROMPT_MASS,
-    training_ids: tuple[str, ...] = ("fit-0", "fit-1"),
+    training_ids: tuple[str, ...] = ("fit-0", "fit-1", "fit-2", "fit-3"),
     cost_ledger: dict[str, Any] | None = None,
+    current_success: tuple[float, float] = gate0.DECODER_SUCCESS,
+    zero_moment_fallback: bool = False,
 ) -> dict[str, Any]:
+    if zero_moment_fallback:
+        moments = (0.0, 0.0)
+    elif proposal == gate0.STALE_PROMPT_MASS:
+        moments = (4.0, 729.0)
+    else:
+        moments = (1.0, 1.0)
     prompts = {
-        f"p{x}": {"target_mass": gate0.PROMPT_MASS[x], "proposal_mass": proposal[x]}
+        f"p{x}": {
+            "target_mass": gate0.PROMPT_MASS[x],
+            "proposal_mass": proposal[x],
+            "predicted_residual_second_moment": moments[x],
+            "predicted_cost_tokens": 1.0,
+        }
         for x in range(2)
     }
+    max_tokens = frozen["maximum_response_tokens"]
+    prompt_trees: dict[str, list[dict[str, Any]]] = {}
+    measured_kl = 0.0
+    for x in range(2):
+        tree = []
+        prompt_kl = 0.0
+        for y in (0, 1):
+            tokens = 1 + y + x
+            cur_lp = log_mass(current_success, x, y)
+            beh_lp = log_mass(gate0.STALE_SUCCESS, x, y)
+            p_cur = math.exp(cur_lp)
+            p_beh = math.exp(beh_lp)
+            prompt_kl += p_cur * (cur_lp - beh_lp)
+            tree.append(
+                {
+                    "tokens": tokens,
+                    "termination": "truncated" if tokens == max_tokens else "eos",
+                    "current_log_prob": cur_lp,
+                    "behavior_log_prob": beh_lp,
+                    "empirical_current_freq": p_cur,
+                    "empirical_behavior_freq": p_beh,
+                }
+            )
+        prompt_trees[f"p{x}"] = tree
+        measured_kl += gate0.PROMPT_MASS[x] * prompt_kl
     return {
         "schema_version": 1,
         "execution_class": "golden",
@@ -756,11 +1422,47 @@ def golden_header(
             "freeze_record_sha256": GOLDEN_FREEZE,
         },
         "reward_range": [0.0, 1.0],
+        "verifier_reward_table": {
+            "verified_pass": 1.0,
+            "verified_fail": 0.0,
+            "parse_error": 0.0,
+            "timeout": 0.0,
+            "sandbox_error": 0.0,
+            "truncated": 0.0,
+        },
+        "prompt_frame": build_golden_prompt_frame(),
         "prompt_laws": {
             "select": prompts,
-            "confirm": {"c0": {"target_mass": 1.0, "proposal_mass": 1.0}},
+            "confirm": {
+                "c0": {
+                    "target_mass": 0.5,
+                    "proposal_mass": 0.5,
+                    "predicted_residual_second_moment": 0.0 if zero_moment_fallback else 1.0,
+                    "predicted_cost_tokens": 1.0,
+                },
+                "c1": {
+                    "target_mass": 0.5,
+                    "proposal_mass": 0.5,
+                    "predicted_residual_second_moment": 0.0 if zero_moment_fallback else 1.0,
+                    "predicted_cost_tokens": 1.0,
+                },
+            },
         },
         "nuisance_training_prompt_ids": list(training_ids),
+        "sampler_scorer_conformance": {
+            "current_policy_sha256": frozen["current_policy_sha256"],
+            "behavior_policy_sha256": frozen["behavior_policy_sha256"],
+            "decoder_temperature": frozen["decoder_temperature"],
+            "sample_count": 4096,
+            "max_frequency_abs_error_tolerance": 0.01,
+            "prompt_trees": prompt_trees,
+        },
+        "kl_audit": {
+            "prompt_law": "select",
+            "measured_policy_kl": measured_kl,
+            "maximum_policy_kl": frozen["maximum_policy_kl"],
+            "batch_action": "admit",
+        },
         "cost_ledger": copy.deepcopy(cost_ledger) if cost_ledger is not None else golden_cost_ledger(),
     }
 
@@ -776,6 +1478,45 @@ def log_mass(success: tuple[float, float], x: int, y: int) -> float:
     return math.log(success[x] if y else 1.0 - success[x])
 
 
+def build_token_steps(
+    x: int,
+    y: int,
+    tokens: int,
+    termination: str,
+    decoder_temperature: float,
+    raw_logit_temperature: float | None = None,
+) -> list[dict[str, Any]]:
+    logit_temp = decoder_temperature if raw_logit_temperature is None else raw_logit_temperature
+    first_step_score = gate0.score(0.0, x, y)
+    steps: list[dict[str, Any]] = [
+        {
+            "token_id": y,
+            "is_eos": tokens == 1 and termination == "eos",
+            "allowed_token_ids": [0, 1],
+            "current_logits": [0.0, logit_temp * gate0.logit(gate0.DECODER_SUCCESS[x])],
+            "behavior_logits": [
+                0.0,
+                decoder_temperature * gate0.logit(gate0.STALE_SUCCESS[x]),
+            ],
+            "projected_step_score": [first_step_score],
+        }
+    ]
+    for step_idx in range(1, tokens):
+        is_eos = step_idx == tokens - 1 and termination == "eos"
+        tok_id = 99 if is_eos else 2
+        steps.append(
+            {
+                "token_id": tok_id,
+                "is_eos": is_eos,
+                "allowed_token_ids": [tok_id],
+                "current_logits": [0.0],
+                "behavior_logits": [0.0],
+                "projected_step_score": [0.0],
+            }
+        )
+    return steps
+
+
 def golden_raw_row(
     attempt: str,
     role: str,
@@ -785,10 +1526,19 @@ def golden_raw_row(
     cell: tuple[float, str] | None,
     frozen: dict[str, Any],
     current_success: tuple[float, float] = gate0.DECODER_SUCCESS,
+    raw_logit_temperature: float | None = None,
 ) -> dict[str, Any]:
     tokens = 1 + y + x
     h = gate0.frozen_h(x, y)
     added_passes = 1 if (role == "candidate" and cell is not None and cell[0] < 1.0) else 0
+    termination = "truncated" if tokens == frozen["maximum_response_tokens"] else "eos"
+    reward = float(y if x == 0 else 1 - y)
+    if termination == "truncated":
+        v_status = "truncated"
+    elif reward > 0.0:
+        v_status = "verified_pass"
+    else:
+        v_status = "verified_fail"
     row: dict[str, Any] = {
         "attempt_id": attempt,
         "target_law": "select",
@@ -807,10 +1557,19 @@ def golden_raw_row(
             "behavior_policy_sha256": GOLDEN_BEHAVIOR,
             "temperature": frozen["decoder_temperature"],
         },
+        "token_steps": build_token_steps(
+            x,
+            y,
+            tokens,
+            termination,
+            float(frozen["decoder_temperature"]),
+            raw_logit_temperature=raw_logit_temperature,
+        ),
         "current_sequence_log_prob": log_mass(current_success, x, y),
         "behavior_sequence_log_prob": log_mass(gate0.STALE_SUCCESS, x, y),
-        "reward": float(y if x == 0 else 1 - y),
-        "termination": "truncated" if tokens == frozen["maximum_response_tokens"] else "eos",
+        "verifier_status": v_status,
+        "reward": reward,
+        "termination": termination,
         "nuisance": {
             "model_sha256": GOLDEN_NUISANCE,
             "reward_prediction": h + gate0.DUAL * tokens,
@@ -827,15 +1586,17 @@ def golden_raw_row(
 
 
 def golden_raw_rows(
-    frozen: dict[str, Any], current_success: tuple[float, float] = gate0.DECODER_SUCCESS
+    frozen: dict[str, Any],
+    current_success: tuple[float, float] = gate0.DECODER_SUCCESS,
+    raw_logit_temperature: float | None = None,
 ) -> list[dict[str, Any]]:
     rows = []
     for x, y in gate0.CELLS:
         z = f"{x}{y}"
-        rows.append(golden_raw_row(f"half-current-{z}", "candidate", "current", x, y, HALF_CELL, frozen, current_success))
-        rows.append(golden_raw_row(f"half-stale-{z}", "candidate", "stale", x, y, HALF_CELL, frozen, current_success))
-        rows.append(golden_raw_row(f"on-policy-{z}", "candidate", "current", x, y, ON_POLICY_CELL, frozen, current_success))
-        rows.append(golden_raw_row(f"reference-{z}", "r1", "current", x, y, None, frozen, current_success))
+        rows.append(golden_raw_row(f"half-current-{z}", "candidate", "current", x, y, HALF_CELL, frozen, current_success, raw_logit_temperature))
+        rows.append(golden_raw_row(f"half-stale-{z}", "candidate", "stale", x, y, HALF_CELL, frozen, current_success, raw_logit_temperature))
+        rows.append(golden_raw_row(f"on-policy-{z}", "candidate", "current", x, y, ON_POLICY_CELL, frozen, current_success, raw_logit_temperature))
+        rows.append(golden_raw_row(f"reference-{z}", "r1", "current", x, y, None, frozen, current_success, raw_logit_temperature))
     return rows
 
 
@@ -956,6 +1717,14 @@ def self_test() -> dict[str, Any]:
         "weight_bound_holds": golden["maximum_alpha_times_weight"] <= 1.0 + MASS_TOLERANCE,
         "cost_ledger_reconstructs": golden["cost_ledger"] == golden_cost_ledger(),
         "aborted_attempt_costs_retained": aborted_attempt_fixture_passes(frozen),
+        "zero_normalizer_fallback_passes": rejected(
+            lambda: reconstruct(
+                golden_header(frozen, proposal=gate0.PROMPT_MASS, zero_moment_fallback=True),
+                golden_raw_rows(frozen),
+                frozen,
+            )
+        )
+        is None,
         "independent_producer_matches": rejected(
             lambda: compare_ledgers(golden["rows"], independent_projected_ledger())
         )
@@ -997,11 +1766,21 @@ def self_test() -> dict[str, Any]:
 
     # 3. Base logits (temperature one) instead of the rollout decoder.
     base_success = decoder_success(gate0.DECODER_TEMPERATURE)
-    base_rows = golden_raw_rows(frozen, base_success)
+    spoofed_base_rows = golden_raw_rows(
+        frozen, base_success, raw_logit_temperature=gate0.DECODER_TEMPERATURE
+    )
+    base_rows = copy.deepcopy(spoofed_base_rows)
     for row in base_rows:
         row["scoring"]["temperature"] = 1.0
     relaxed = golden_frozen(temperature=1.0)
-    base_terms = reconstruct(golden_header(relaxed), relabel(base_rows, 1.0), relaxed)["rows"]
+    relaxed_base_rows = golden_raw_rows(
+        relaxed, base_success, raw_logit_temperature=gate0.DECODER_TEMPERATURE
+    )
+    base_terms = reconstruct(
+        golden_header(relaxed, current_success=base_success),
+        relaxed_base_rows,
+        relaxed,
+    )["rows"]
     gate0_base = gate0.run_base_decoder_fault()
     unit_frozen = golden_frozen(temperature=1.0)
     faults["base_versus_decoder_scoring"] = {
@@ -1010,6 +1789,9 @@ def self_test() -> dict[str, Any]:
         "bias_matches_gate0": abs(weight_bias(base_terms) - gate0_base["base_scored_bias"])
         <= IDENTITY_TOLERANCE,
         "rejection": rejected(lambda: reconstruct(header, base_rows, frozen)),
+        "rejection_stealth_base_logits": rejected(
+            lambda: reconstruct(header, spoofed_base_rows, frozen)
+        ),
         "null_control_passes": rejected(
             lambda: reconstruct(golden_header(unit_frozen), golden_raw_rows(unit_frozen), unit_frozen)
         )
@@ -1104,16 +1886,88 @@ def self_test() -> dict[str, Any]:
         "declared_cost_counter_tampered": rejected(
             lambda: compare_ledgers(golden["rows"], tamper_declared_cost(golden["rows"]))
         ),
+        "adaptive_proposal_mass_mismatch": rejected(
+            lambda: reconstruct(tamper_proposal_moment(header), golden_raw_rows(frozen), frozen)
+        ),
+        "zero_normalizer_fallback_violated": rejected(
+            lambda: reconstruct(
+                golden_header(frozen, proposal=gate0.STALE_PROMPT_MASS, zero_moment_fallback=True),
+                golden_raw_rows(frozen),
+                frozen,
+            )
+        ),
+        "stealth_base_logit_scoring_with_spoofed_temperature": rejected(
+            lambda: reconstruct(header, spoofed_base_rows, frozen)
+        ),
+        "sampled_token_outside_allowed_vocabulary": rejected(
+            lambda: reconstruct(header, mask_sampled_token(golden_raw_rows(frozen)), frozen)
+        ),
+        "premature_eos_before_final_token": rejected(
+            lambda: reconstruct(header, premature_eos_step(golden_raw_rows(frozen)), frozen)
+        ),
+        "conformance_sequence_tree_not_normalized": rejected(
+            lambda: reconstruct(tamper_conformance_tree(header), golden_raw_rows(frozen), frozen)
+        ),
+        "policy_kl_exceeds_maximum_stratum": rejected(
+            lambda: reconstruct(
+                golden_header(golden_frozen(maximum_policy_kl=0.1)),
+                golden_raw_rows(golden_frozen(maximum_policy_kl=0.1)),
+                golden_frozen(maximum_policy_kl=0.1),
+            )
+        ),
+        "prompt_frame_selection_hash_tampered": rejected(
+            lambda: reconstruct(tamper_prompt_selection_hash(header), golden_raw_rows(frozen), frozen)
+        ),
+        "prompt_frame_wrong_hash_rank_selected": rejected(
+            lambda: reconstruct(swap_prompt_frame_rank(header), golden_raw_rows(frozen), frozen)
+        ),
+        "prompt_frame_partition_boundary_violated": rejected(
+            lambda: reconstruct(shift_prompt_frame_partition(header), golden_raw_rows(frozen), frozen)
+        ),
+        "length_normalized_score_instead_of_unnormalized_sum": rejected(
+            lambda: reconstruct(header, length_normalize_projected_score(golden_raw_rows(frozen)), frozen)
+        ),
+        "verifier_reward_disagrees_with_status_table": rejected(
+            lambda: reconstruct(header, tamper_verifier_reward(golden_raw_rows(frozen)), frozen)
+        ),
+        "truncated_trajectory_claims_verified_pass": rejected(
+            lambda: reconstruct(header, truncated_claims_pass(golden_raw_rows(frozen)), frozen)
+        ),
     }
     require(
         all(isinstance(value, str) for value in mutations.values()),
         f"a raw-ledger mutation was accepted: {mutations}",
+    )
+    preregistration = json.loads(DEFAULT_PREREGISTRATION.read_text(encoding="utf-8"))
+    rl_section = preregistration["rl"]
+    pilot_frame = recompute_prompt_frame(
+        build_pilot_prompt_frame(rl_section),
+        expected_size=rl_section["prompt_frame"]["size"],
+        expected_fractions=(
+            rl_section["estimator_audit"]["nuisance_fit_prompt_fraction"],
+            rl_section["estimator_audit"]["alpha_selection_prompt_fraction"],
+            rl_section["estimator_audit"]["untouched_confirmation_prompt_fraction"],
+        ),
+        require_uniform=True,
+    )
+    require(
+        pilot_frame["selected_count"] == 2048
+        and len(pilot_frame["partitions"]["nuisance_fit"]) == 1024
+        and len(pilot_frame["partitions"]["select"]) == 512
+        and len(pilot_frame["partitions"]["confirm"]) == 512,
+        "2048-prompt pilot frame did not reproduce 1024/512/512 partitions",
     )
     return {
         "schema_version": 1,
         "audit_type": "rl_raw_trajectory_reconstruction",
         "empirical_evidence": False,
         "status": "pass",
+        "pilot_prompt_frame": {
+            "selected_count": pilot_frame["selected_count"],
+            "nuisance_fit_prompts": len(pilot_frame["partitions"]["nuisance_fit"]),
+            "select_prompts": len(pilot_frame["partitions"]["select"]),
+            "confirm_prompts": len(pilot_frame["partitions"]["confirm"]),
+        },
         "target_gradient": target,
         "golden_expectations": expectations,
         "golden_cost_ledger": golden["cost_ledger"],
@@ -1246,6 +2100,89 @@ def mislabel_truncation(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             row["termination"] = "truncated"
             break
     return rows
+
+
+def tamper_proposal_moment(header: dict[str, Any]) -> dict[str, Any]:
+    changed = copy.deepcopy(header)
+    changed["prompt_laws"]["select"]["p0"]["predicted_residual_second_moment"] = 9.0
+    return changed
+
+
+def mask_sampled_token(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    changed = copy.deepcopy(rows)
+    changed[0]["token_steps"][0]["allowed_token_ids"] = [1]
+    changed[0]["token_steps"][0]["current_logits"] = [0.0]
+    changed[0]["token_steps"][0]["behavior_logits"] = [0.0]
+    return changed
+
+
+def premature_eos_step(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    changed = copy.deepcopy(rows)
+    for row in changed:
+        if row["response_tokens"] == 2 and row["termination"] == "eos":
+            row["token_steps"][0]["is_eos"] = True
+            break
+    return changed
+
+
+def tamper_conformance_tree(header: dict[str, Any]) -> dict[str, Any]:
+    changed = copy.deepcopy(header)
+    changed["sampler_scorer_conformance"]["prompt_trees"]["p0"][0]["current_log_prob"] -= 0.05
+    return changed
+
+
+def tamper_prompt_selection_hash(header: dict[str, Any]) -> dict[str, Any]:
+    changed = copy.deepcopy(header)
+    changed["prompt_frame"]["candidate_prompts"][0]["selection_sha256"] = "0" * 64
+    return changed
+
+
+def swap_prompt_frame_rank(header: dict[str, Any]) -> dict[str, Any]:
+    changed = copy.deepcopy(header)
+    cands = changed["prompt_frame"]["candidate_prompts"]
+    cands[7]["selected"] = False
+    cands[7]["partition"] = None
+    cands[7]["target_mass"] = 0.0
+    cands[8]["selected"] = True
+    cands[8]["partition"] = "confirm"
+    cands[8]["target_mass"] = 0.5
+    return changed
+
+
+def shift_prompt_frame_partition(header: dict[str, Any]) -> dict[str, Any]:
+    changed = copy.deepcopy(header)
+    cands = changed["prompt_frame"]["candidate_prompts"]
+    cands[3]["partition"] = "select"
+    cands[4]["partition"] = "nuisance_fit"
+    return changed
+
+
+def length_normalize_projected_score(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    changed = copy.deepcopy(rows)
+    for row in changed:
+        if row["response_tokens"] >= 2 and abs(row["projected_score"][0]) > 1e-6:
+            row["projected_score"] = [
+                val / row["response_tokens"] for val in row["projected_score"]
+            ]
+            break
+    return changed
+
+
+def tamper_verifier_reward(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    changed = copy.deepcopy(rows)
+    changed[0]["reward"] = 1.0 - float(changed[0]["reward"])
+    return changed
+
+
+def truncated_claims_pass(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    changed = copy.deepcopy(rows)
+    for row in changed:
+        if row["termination"] == "truncated":
+            row["verifier_status"] = "verified_pass"
+            row["reward"] = 1.0
+            break
+    return changed
+
 
 
 def main() -> None:
