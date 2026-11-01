@@ -408,7 +408,7 @@ def validate_preregistration_section(
             fail(f"SFT train-ledger self-test failed: {exc}")
         if (
             sft_ledger_audit.get("empirical_evidence") is not False
-            or sft_ledger_audit.get("mutations_rejected", 0) < 38
+            or sft_ledger_audit.get("mutations_rejected", 0) < 44
         ):
             fail("SFT train-ledger self-test did not pass")
         window = nested(section, "optimizer_window")
@@ -1519,6 +1519,14 @@ def validate_real_stage_semantics(
             for record_id, partition in lineage_validation["partition_by_id"].items()
             if partition == "candidate"
         }
+        reference_contract = load_json(
+            Path(__file__).resolve().parents[1]
+            / nested(section, "reference_contract.specification_path")
+        )
+        capability_by_source = {
+            cap["source_key"]: cap["capability_id"]
+            for cap in reference_contract["capabilities"]
+        }
         seen_identities: set[tuple[Any, ...]] = set()
         closures: list[tuple[dict[str, Any], dict[str, Any]]] = []
         for row in run_rows:
@@ -1588,6 +1596,14 @@ def validate_real_stage_semantics(
                 fail(
                     "SFT candidate plan or cost-calibration examples lie outside the processed candidate split"
                 )
+            for ex_id, declared_slice in closure["candidate_slices_by_id"].items():
+                source_key = lineage_validation["source_metadata_by_id"].get(
+                    ex_id, {}
+                ).get("source_key")
+                if capability_by_source.get(source_key) != declared_slice:
+                    fail(
+                        "SFT candidate example source_slice does not match its retained provenance source"
+                    )
             closures.append((row, closure))
         if seen_identities != expected_identities:
             fail("SFT train/run_ledger.jsonl omits a required factorial run")

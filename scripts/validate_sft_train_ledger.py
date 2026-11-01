@@ -13,13 +13,22 @@ validator replays the ledger under the frozen SFT preregistration and requires
   reason that reproduces the stop rule (maximum rounds, exhausted reserve, or
   a retained reserve overrun marked as a protocol failure);
 * the frozen response-token window, pack capacity, per-round physical pack
-  assignment and capacity, deterministic length-descending best-fit packing for
-  best-fit cells, reserve recomputation from the 200-plan cost-calibration
-  bundle (0.995 residual quantile margin plus worst-case gate reserve), fresh
-  per-slice gate blocks, per-draw clipped gate-loss recomputation across paired
-  scale candidates, the heuristic upper statistic, largest-passing-scale
-  commitment to that scale's candidate state, and the cumulative
-  protected-tolerance ledger;
+  assignment and capacity, per-example source-slice coverage floor
+  (at least ``source_coverage_floor`` of selected examples per capability
+  slice), deterministic length-descending best-fit packing for best-fit cells,
+  reserve recomputation from the 200-plan cost-calibration bundle (0.995
+  residual quantile margin plus worst-case gate reserve), fresh per-slice gate
+  blocks, per-draw clipped gate-loss recomputation across paired scale
+  candidates, the heuristic upper statistic, largest-passing-scale commitment
+  to that scale's candidate state, and the cumulative protected-tolerance
+  ledger;
+* each non-null round's 16-plan shortlist re-scoring and selection rule:
+  estimated sketch scores ``widehat S_c = -u_c^T v + eta u_c^T q_B``,
+  penalized lower scores ``underline S_c = widehat S_c - e_c`` across target
+  and protected slices, upper step-norm bound ``overline q = widehat q + e^q``,
+  protected curvature/tolerance and trust-radius feasibility, and selection of
+  the feasible shortlist plan maximizing ``underline S_0`` (or a rejected/null
+  round if no shortlist plan is feasible);
 * audit endpoints evaluated on the final ledger state, from which the row's
   target and worst-protected NLL changes are recomputed;
 * every declared initial and final audit NLL recomputed from hash-bound
@@ -33,9 +42,9 @@ cost per target setting, the initial state, cost-calibration bundle, and
 initial audit NLLs per seed and target setting, and one disjoint gate-partition
 and audit-partition identity per slice.  The per-example forward passes and
 hardware timing measurements themselves are still produced by the build,
-training, and evaluation stages; this closes their pack plans, reserve
-calibration, clipping, pairing, aggregation, and state binding, not the
-hardware execution that measured them.
+training, and evaluation stages; this closes their shortlist selection, source
+coverage, pack plans, reserve calibration, clipping, pairing, aggregation, and
+state binding, not the hardware execution that measured them.
 """
 
 from __future__ import annotations
@@ -388,11 +397,19 @@ def recompute_round_plans_and_reserves(
     rows: list[dict[str, Any]],
     section: dict[str, Any],
     calibration: dict[str, Any],
-) -> set[str]:
-    """Verify every round's physical pack plan and reserve_accelerator_seconds."""
+    target_slice: str,
+    protected: list[str],
+) -> tuple[set[str], dict[str, str]]:
+    """Verify every round's physical pack plan, source coverage, shortlist selection, and reserve."""
     window = section["optimizer_window"]
+    selector = section["selector"]
+    gate = section["actual_update_gate"]
     max_seq_len = window["maximum_sequence_length"]
     max_packs = window["physical_packs_per_update"]
+    shortlist_size = selector["shortlist_size"]
+    source_floor = float(section["data_roles"]["source_coverage_floor"])
+    require(0 < source_floor <= 1.0 / 3.0, "invalid source_coverage_floor")
+    all_slices = {target_slice, *protected}
     cell = manifest["run_identity"]["cell"]
     require_best_fit = cell.endswith("deterministic_best_fit")
     cost_model = calibration["cost_model"]
@@ -400,6 +417,7 @@ def recompute_round_plans_and_reserves(
     margin = calibration["reserve_margin_seconds"]
     calibration_ids = calibration["calibration_example_ids"]
     candidate_ids: set[str] = set()
+    candidate_slices_by_id: dict[str, str] = {}
     for row in rows:
         label = f"round {row['round']}"
         decision = row["decision"]
@@ -409,26 +427,36 @@ def recompute_round_plans_and_reserves(
             for k in ("packing", "reference_gradients", "candidate_scoring", "solving")
         )
         plan = row.get("selected_plan")
+        shortlist = row.get("shortlist")
         if decision == "null_action":
-            require(plan is None, f"{label} null action cannot carry a selected_plan")
+            require(
+                plan is None and shortlist is None,
+                f"{label} null action cannot carry a selected_plan or shortlist",
+            )
             continue
         require(
             isinstance(plan, dict)
             and set(plan)
             == {
+                "plan_id",
                 "example_ids",
+                "source_slices",
                 "packed_lengths",
                 "response_tokens_by_example",
                 "pack_assignments",
             },
             f"{label} selected_plan has an invalid schema",
         )
+        plan_id = plan["plan_id"]
         ex_ids = plan["example_ids"]
+        source_slices = plan["source_slices"]
         lengths = plan["packed_lengths"]
         resp_tokens = plan["response_tokens_by_example"]
         assignments = plan["pack_assignments"]
         require(
-            isinstance(ex_ids, list)
+            isinstance(plan_id, str)
+            and plan_id
+            and isinstance(ex_ids, list)
             and ex_ids
             and all(isinstance(x, str) and x for x in ex_ids)
             and len(set(ex_ids)) == len(ex_ids)
@@ -437,6 +465,24 @@ def recompute_round_plans_and_reserves(
         )
         candidate_ids.update(ex_ids)
         count = len(ex_ids)
+        require(
+            isinstance(source_slices, list)
+            and len(source_slices) == count
+            and all(isinstance(s, str) and s in all_slices for s in source_slices),
+            f"{label} selected_plan source_slices are invalid",
+        )
+        for ex_id, s_name in zip(ex_ids, source_slices):
+            previous_slice = candidate_slices_by_id.setdefault(ex_id, s_name)
+            require(
+                previous_slice == s_name,
+                f"{label} example {ex_id} changes capability slice across rounds",
+            )
+        for s_name in sorted(all_slices):
+            s_count = sum(1 for s in source_slices if s == s_name)
+            require(
+                s_count >= source_floor * count - TOLERANCE,
+                f"{label} selected_plan violates source_coverage_floor for {s_name}",
+            )
         require(
             isinstance(lengths, list)
             and len(lengths) == count
@@ -494,7 +540,180 @@ def recompute_round_plans_and_reserves(
             close(row["reserve_accelerator_seconds"], expected_reserve),
             f"{label} reserve_accelerator_seconds does not reproduce from calibrated pack cost + margin + gate reserve",
         )
-    return candidate_ids
+
+        require(
+            isinstance(shortlist, dict)
+            and set(shortlist)
+            == {
+                "learning_rate",
+                "trust_radius_sq",
+                "curvature_upper",
+                "candidates",
+            },
+            f"{label} shortlist has an invalid schema",
+        )
+        eta = shortlist["learning_rate"]
+        rho_sq = shortlist["trust_radius_sq"]
+        beta_upper = shortlist["curvature_upper"]
+        candidates = shortlist["candidates"]
+        require(
+            close(eta, float(section["adamw"]["learning_rate"]))
+            and isinstance(rho_sq, (int, float))
+            and not isinstance(rho_sq, bool)
+            and math.isfinite(rho_sq)
+            and rho_sq > 0
+            and isinstance(beta_upper, dict)
+            and set(beta_upper) == set(protected)
+            and all(
+                isinstance(beta_upper[s], (int, float))
+                and not isinstance(beta_upper[s], bool)
+                and math.isfinite(beta_upper[s])
+                and beta_upper[s] > 0
+                for s in protected
+            )
+            and isinstance(candidates, list)
+            and len(candidates) == shortlist_size,
+            f"{label} shortlist parameters or candidate count are invalid",
+        )
+        seen_shortlist_ids: set[str] = set()
+        feasible_candidates: list[tuple[float, float, str]] = []
+        selected_entry: dict[str, Any] | None = None
+        remaining_budget = float(row["remaining_budget_before"])
+        round_tau = float(gate["per_round_tolerance"])
+        for c_idx, cand in enumerate(candidates):
+            c_label = f"{label} shortlist candidate {c_idx}"
+            require(
+                isinstance(cand, dict)
+                and set(cand)
+                == {
+                    "plan_id",
+                    "pack_loads",
+                    "reserve_accelerator_seconds",
+                    "step_norm_sq_hat",
+                    "step_norm_sq_margin",
+                    "step_norm_sq_upper",
+                    "target_score",
+                    "protected_scores",
+                    "feasible",
+                },
+                f"{c_label} has an unexpected schema",
+            )
+            c_id = cand["plan_id"]
+            require(
+                isinstance(c_id, str) and c_id and c_id not in seen_shortlist_ids,
+                f"{c_label} has a missing or duplicate plan_id",
+            )
+            seen_shortlist_ids.add(c_id)
+            c_loads = cand["pack_loads"]
+            require(
+                isinstance(c_loads, list)
+                and 1 <= len(c_loads) <= max_packs
+                and all(
+                    isinstance(ld, int) and not isinstance(ld, bool) and 1 <= ld <= max_seq_len
+                    for ld in c_loads
+                ),
+                f"{c_label} has invalid pack_loads",
+            )
+            c_reserve = math.fsum(
+                [
+                    sunk_cost,
+                    predicted_pack_cost(c_loads, cost_model),
+                    margin,
+                    gate_reserve,
+                ]
+            )
+            require(
+                close(cand["reserve_accelerator_seconds"], c_reserve),
+                f"{c_label} reserve_accelerator_seconds does not reproduce",
+            )
+            q_hat = cand["step_norm_sq_hat"]
+            q_margin = cand["step_norm_sq_margin"]
+            q_upper = cand["step_norm_sq_upper"]
+            require(
+                isinstance(q_hat, (int, float))
+                and not isinstance(q_hat, bool)
+                and isinstance(q_margin, (int, float))
+                and not isinstance(q_margin, bool)
+                and q_hat >= 0
+                and q_margin >= 0
+                and close(q_upper, float(q_hat) + float(q_margin)),
+                f"{c_label} step_norm_sq_upper does not equal step_norm_sq_hat + step_norm_sq_margin",
+            )
+            q_bar = float(q_hat) + float(q_margin)
+
+            def check_score_block(block: Any, block_label: str) -> float:
+                require(
+                    isinstance(block, dict)
+                    and set(block)
+                    == {"u_dot_v", "u_dot_q", "margin", "hat_s", "lower_s"}
+                    and all(
+                        isinstance(block[k], (int, float))
+                        and not isinstance(block[k], bool)
+                        and math.isfinite(block[k])
+                        for k in ("u_dot_v", "u_dot_q", "margin", "hat_s", "lower_s")
+                    )
+                    and block["margin"] >= 0,
+                    f"{block_label} has an invalid score schema",
+                )
+                expected_hat = -float(block["u_dot_v"]) + float(eta) * float(block["u_dot_q"])
+                expected_lower = expected_hat - float(block["margin"])
+                require(
+                    close(block["hat_s"], expected_hat)
+                    and close(block["lower_s"], expected_lower),
+                    f"{block_label} hat_s or lower_s does not reproduce from -u^T v + eta u^T q - margin",
+                )
+                return expected_lower
+
+            s0_lower = check_score_block(cand["target_score"], f"{c_label} target_score")
+            prot_scores = cand["protected_scores"]
+            require(
+                isinstance(prot_scores, dict) and set(prot_scores) == set(protected),
+                f"{c_label} protected_scores must cover exactly the protected slices",
+            )
+            prot_feasible = True
+            for s_name in protected:
+                sc_lower = check_score_block(
+                    prot_scores[s_name], f"{c_label} protected_scores[{s_name}]"
+                )
+                threshold = 0.5 * float(beta_upper[s_name]) * q_bar - round_tau
+                if sc_lower < threshold - TOLERANCE:
+                    prot_feasible = False
+            is_feasible = (
+                s0_lower >= -TOLERANCE
+                and prot_feasible
+                and q_bar <= float(rho_sq) + TOLERANCE
+                and c_reserve <= remaining_budget + TOLERANCE
+            )
+            require(
+                cand["feasible"] is is_feasible,
+                f"{c_label} feasible flag does not reproduce from Eq. (selection)",
+            )
+            if is_feasible:
+                feasible_candidates.append((s0_lower, -c_reserve, c_id))
+            if c_id == plan_id:
+                selected_entry = cand
+
+        require(
+            selected_entry is not None
+            and selected_entry["pack_loads"] == pack_loads
+            and close(selected_entry["reserve_accelerator_seconds"], expected_reserve),
+            f"{label} selected_plan does not match its shortlist entry",
+        )
+        require(
+            feasible_candidates,
+            f"{label} selected a non-null plan when no shortlist candidate was feasible",
+        )
+        best_s0 = max(item[0] for item in feasible_candidates)
+        best_ids = {
+            item[2]
+            for item in feasible_candidates
+            if abs(item[0] - best_s0) <= TOLERANCE * max(1.0, abs(best_s0))
+        }
+        require(
+            plan_id in best_ids,
+            f"{label} did not select the feasible shortlist plan maximizing target lower_s",
+        )
+    return candidate_ids, candidate_slices_by_id
 
 
 def replay_ledger(
@@ -964,7 +1183,10 @@ def validate_train_manifest(
     row: dict[str, Any],
     section: dict[str, Any],
     slices_by_setting: dict[str, list[str]],
+    targets_by_setting: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    if targets_by_setting is None:
+        targets_by_setting = target_slices(ROOT, section)
     require(manifest.get("schema_version") == 1, "unsupported run-manifest schema")
     identity = manifest.get("run_identity")
     expected_identity = {
@@ -989,6 +1211,7 @@ def validate_train_manifest(
         "run budget is not the frozen fraction of the reference cost",
     )
     slices = slices_by_setting[row["target_setting"]]
+    target_slice = targets_by_setting[row["target_setting"]]
     rows = load_ledger(
         safe_child(manifest_root, manifest.get("train_ledger_path")),
         manifest["train_ledger_sha256"],
@@ -1004,8 +1227,8 @@ def validate_train_manifest(
         expected_seed=row["seed"],
         expected_target_setting=row["target_setting"],
     )
-    candidate_example_ids = recompute_round_plans_and_reserves(
-        manifest, rows, section, calibration
+    candidate_example_ids, candidate_slices_by_id = recompute_round_plans_and_reserves(
+        manifest, rows, section, calibration, target_slice, slices
     )
     closure = replay_ledger(manifest, rows, section, slices)
     gate_partitions, gate_partition_ids = recompute_gate_blocks(
@@ -1043,6 +1266,7 @@ def validate_train_manifest(
         "gate_partitions": gate_partitions,
         "gate_partition_ids": gate_partition_ids,
         "candidate_example_ids": candidate_example_ids,
+        "candidate_slices_by_id": candidate_slices_by_id,
         "calibration_example_ids": calibration["calibration_example_ids"],
     }
 
@@ -1058,11 +1282,12 @@ def validate_run(
     if targets_by_setting is None:
         targets_by_setting = target_slices(ROOT, section)
     closure = validate_train_manifest(
-        manifest, manifest_root, row, section, slices_by_setting
+        manifest, manifest_root, row, section, slices_by_setting, targets_by_setting
     )
     slices = slices_by_setting[row["target_setting"]]
     gate_partition_ids = closure.pop("gate_partition_ids")
     candidate_example_ids = closure.pop("candidate_example_ids")
+    closure.pop("candidate_slices_by_id", None)
     calibration_example_ids = closure.pop("calibration_example_ids")
     endpoint = manifest.get("audit_endpoint")
     audit_nll: dict[str, dict[str, float]] = {}
@@ -1383,6 +1608,11 @@ def build_fixture_run(
     )
     calib_name = f"{run_key}-cost-calibration.json"
     (directory / calib_name).write_bytes(calib_bytes)
+    target_name = target_slices(ROOT, section)[identity["target_setting"]]
+    ordered_all_slices = [target_name, *slices]
+    eta = float(section["adamw"]["learning_rate"])
+    shortlist_size = section["selector"]["shortlist_size"]
+    round_tau = float(gate["per_round_tolerance"])
     initial = fake_hash("initial", identity["seed"], identity["target_setting"])
     state = initial
     step = 0
@@ -1411,6 +1641,7 @@ def build_fixture_run(
             "response_tokens": None,
             "physical_packs": None,
             "selected_plan": None,
+            "shortlist": None,
         }
         candidate_states = [
             fake_hash("candidate-state", run_key, round_index, scale)
@@ -1456,11 +1687,73 @@ def build_fixture_run(
             row["tolerance"] = dict.fromkeys(slices, gate["per_round_tolerance"])
             row["response_tokens"] = 6144
             row["physical_packs"] = section["optimizer_window"]["physical_packs_per_update"]
+            selected_plan_id = f"plan-{round_index:02d}-00"
+            selected_pack_loads = [4096 if p < 4 else 3072 for p in range(8)]
             row["selected_plan"] = {
+                "plan_id": selected_plan_id,
                 "example_ids": [f"cand-{round_index:02d}-{k:02d}" for k in range(16)],
+                "source_slices": [ordered_all_slices[k % 3] for k in range(16)],
                 "packed_lengths": [2048 if k < 8 else 1536 for k in range(16)],
                 "response_tokens_by_example": [384] * 16,
                 "pack_assignments": [k // 2 for k in range(16)],
+            }
+            shortlist_candidates = []
+            for m in range(shortlist_size):
+                u_dot_v_0 = -0.02
+                u_dot_q_0 = 200.0 - 5.0 * m if m < 14 else -500.0
+                margin_0 = 0.01
+                hat_s_0 = -u_dot_v_0 + eta * u_dot_q_0
+                lower_s_0 = hat_s_0 - margin_0
+                q_hat = 0.08 + 0.002 * m
+                q_margin = 0.02 if m < 15 else 0.40
+                q_upper = q_hat + q_margin
+                prot_scores = {}
+                prot_ok = True
+                for s_idx, s_name in enumerate(slices):
+                    u_dot_v_c = -0.01
+                    u_dot_q_c = 50.0 - 2.0 * s_idx if m != 13 else -500.0
+                    margin_c = 0.005
+                    hat_s_c = -u_dot_v_c + eta * u_dot_q_c
+                    lower_s_c = hat_s_c - margin_c
+                    prot_scores[s_name] = {
+                        "u_dot_v": u_dot_v_c,
+                        "u_dot_q": u_dot_q_c,
+                        "margin": margin_c,
+                        "hat_s": hat_s_c,
+                        "lower_s": lower_s_c,
+                    }
+                    if lower_s_c < 0.5 * 0.1 * q_upper - round_tau:
+                        prot_ok = False
+                cand_feasible = (
+                    lower_s_0 >= 0.0
+                    and prot_ok
+                    and q_upper <= 0.25
+                    and reserve <= budget - charged_total
+                )
+                shortlist_candidates.append(
+                    {
+                        "plan_id": f"plan-{round_index:02d}-{m:02d}",
+                        "pack_loads": list(selected_pack_loads),
+                        "reserve_accelerator_seconds": reserve,
+                        "step_norm_sq_hat": q_hat,
+                        "step_norm_sq_margin": q_margin,
+                        "step_norm_sq_upper": q_upper,
+                        "target_score": {
+                            "u_dot_v": u_dot_v_0,
+                            "u_dot_q": u_dot_q_0,
+                            "margin": margin_0,
+                            "hat_s": hat_s_0,
+                            "lower_s": lower_s_0,
+                        },
+                        "protected_scores": prot_scores,
+                        "feasible": cand_feasible,
+                    }
+                )
+            row["shortlist"] = {
+                "learning_rate": eta,
+                "trust_radius_sq": 0.25,
+                "curvature_upper": dict.fromkeys(slices, 0.1),
+                "candidates": shortlist_candidates,
             }
             if decision == "accepted":
                 row["committed_scale"] = scales[first_pass]
@@ -1936,6 +2229,8 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
         def non_best_fit_in_best_fit_cell(r, m, l):
             l[0]["selected_plan"]["pack_assignments"] = [k % 8 for k in range(16)]
             l[0]["reserve_accelerator_seconds"] = 39.84
+            l[0]["shortlist"]["candidates"][0]["pack_loads"] = [3584] * 8
+            l[0]["shortlist"]["candidates"][0]["reserve_accelerator_seconds"] = 39.84
             relog(m, l)
 
         mutate(
@@ -1956,6 +2251,8 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
         beam_manifest, beam_ledger = load(beam_row)
         beam_ledger[0]["selected_plan"]["pack_assignments"] = [k % 8 for k in range(16)]
         beam_ledger[0]["reserve_accelerator_seconds"] = 39.84
+        beam_ledger[0]["shortlist"]["candidates"][0]["pack_loads"] = [3584] * 8
+        beam_ledger[0]["shortlist"]["candidates"][0]["reserve_accelerator_seconds"] = 39.84
         rewrite_ledger(directory, beam_manifest, beam_ledger)
         validate_run(beam_manifest, directory, beam_row, section, slices_by_setting)
 
@@ -1973,6 +2270,61 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
             relog(m, l)
 
         mutate("candidate_plan_overlaps_gate_or_audit", candidate_overlaps_gate_or_audit)
+
+        def source_coverage_floor_violated(r, m, l):
+            l[0]["selected_plan"]["source_slices"] = [target_name] * 16
+            relog(m, l)
+
+        mutate(
+            "source_coverage_floor_violated",
+            source_coverage_floor_violated,
+        )
+
+        def shortlist_size_wrong(r, m, l):
+            l[0]["shortlist"]["candidates"].pop()
+            relog(m, l)
+
+        mutate(
+            "shortlist_size_wrong",
+            shortlist_size_wrong,
+        )
+
+        def shortlist_hat_s_mismatch(r, m, l):
+            l[0]["shortlist"]["candidates"][0]["target_score"]["hat_s"] += 0.01
+            l[0]["shortlist"]["candidates"][0]["target_score"]["lower_s"] += 0.01
+            relog(m, l)
+
+        mutate(
+            "shortlist_hat_s_disagrees_with_sketch_equation",
+            shortlist_hat_s_mismatch,
+        )
+
+        def shortlist_protected_constraint_violated(r, m, l):
+            l[0]["shortlist"]["candidates"][13]["feasible"] = True
+            relog(m, l)
+
+        mutate(
+            "shortlist_protected_constraint_violated",
+            shortlist_protected_constraint_violated,
+        )
+
+        def shortlist_trust_radius_violated(r, m, l):
+            l[0]["shortlist"]["candidates"][15]["feasible"] = True
+            relog(m, l)
+
+        mutate(
+            "shortlist_trust_radius_violated",
+            shortlist_trust_radius_violated,
+        )
+
+        def shortlist_non_argmax_selected(r, m, l):
+            l[0]["selected_plan"]["plan_id"] = "plan-00-01"
+            relog(m, l)
+
+        mutate(
+            "shortlist_suboptimal_feasible_plan_selected",
+            shortlist_non_argmax_selected,
+        )
 
         _, _, base_row = build_fixture_run(
             directory, section, slices_by_setting, dict(identity), -0.2, 0.03

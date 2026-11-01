@@ -240,8 +240,10 @@ action. From the cost-calibration bundle it recomputes each calibration plan's
 predicted nonlinear pack cost, residual, nearest-rank 0.995 residual quantile
 margin, and worst-case gate reserve. For every non-null round it checks the
 selected candidate subset and physical pack assignment (disjoint candidate IDs,
-pack loads $\le L_{\max}=4096$, canonical length-descending best-fit assignment
-in best-fit cells, and reserve recomputed from sunk round overhead plus
+pack loads $\le L_{\max}=4096$, per-slice source-coverage floor $\ge0.1|B|$,
+canonical length-descending best-fit assignment
+in best-fit cells, shortlist sketch-score/feasibility/argmax selection across
+the 16-plan shortlist, and reserve recomputed from sunk round overhead plus
 calibrated pack cost, 0.995 residual margin, and worst-case gate reserve),
 reserve admission before every round, complete charging of
 seven cost components, and the stop rule (maximum rounds, exhausted reserve,
@@ -267,12 +269,14 @@ stage, validates `train/run_ledger.jsonl` at the `train` stage, and re-executes
 the aggregator at `evaluate`. The aggregator calls this closure for every row
 and requires paired rows to share the split-manifest hash, one gate partition
 per protected slice, one disjoint audit partition per slice, reference cost,
-initial state, cost-calibration bundle, and initial audit NLLs. Thirty-eight
+initial state, cost-calibration bundle, and initial audit NLLs. Forty-four
 generated mutations fail,
 including a wrong calibration plan count or 0.995 residual margin, calibration
 or candidate overlap with gate/audit partitions, a pack load above $L_{\max}$,
 a non-best-fit packing in a best-fit cell, a round reserve that disagrees with
-the calibrated pack cost, post-difference instead of per-example gate clipping,
+the calibrated pack cost, a violated source-coverage floor, a wrong shortlist
+size, a tampered shortlist sketch score or feasibility flag, a non-argmax
+shortlist selection, post-difference instead of per-example gate clipping,
 token-weighted gate or audit means, foreign gate draws, overlapping gate and
 audit partitions, an accepted state that differs from the committed scale's
 candidate state, a dropped audit example, and a final record evaluated on the

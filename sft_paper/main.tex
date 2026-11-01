@@ -166,9 +166,15 @@ policy-based sample selection \cite{yang2026dataagent}, and in-context
 holdout-loss reweighting \cite{zhang2026ica} all recognize that
 data value changes during training. Layer-wise studies find family-specific
 gradient patterns even when relative quality trends persist
-\cite{li2026gradients}. Unlike source-level mixture adaptation or scalar
+\cite{li2026gradients}. Long-horizon selection studies further warn that greedy
+gradient-based selectors can be myopic---improving current-stage loss while
+narrowing adapter subspaces and worsening later forgetting
+\cite{yang2026lhas}---and systematic analyses of incomplete learning show that
+aggregate convergence can mask unlearned rare patterns and sequential
+forgetting \cite{xue2026ilp}. Unlike source-level mixture adaptation or scalar
 sample-weight policies, our decision
-variable is a complete physical pack plan for one optimizer step.
+variable is a complete physical pack plan for one optimizer step, subject to a
+per-round source-coverage floor and explicit protected-slice gates.
 
 \paragraph{Compute-aware selection.}
 Compute-constrained data selection charges selection and fine-tuning jointly
@@ -848,8 +854,15 @@ margin $q_{0.995}$, and worst-case gate reserve $R_{\mathrm{gate}}$. For every
 non-null round it verifies that the selected candidate subset $B$ and pack
 assignment $\pi$ are disjoint from calibration, gate, and audit examples, use
 $1\le|\operatorname{range}(\pi)|\le P$ packs within $L_{\max}=4096$, sum to
-$N_B\in[4096,8192]$ response tokens, match the canonical length-descending
-best-fit packing $\pi^{\mathrm{BF}}(B)$ in best-fit cells, and reproduce the
+$N_B\in[4096,8192]$ response tokens, satisfy the per-slice source-coverage
+floor ($\ge0.1|B|$ examples per capability slice, matched against retained
+provenance in real runs), match the canonical length-descending
+best-fit packing $\pi^{\mathrm{BF}}(B)$ in best-fit cells, reproduce every
+shortlist candidate's sketch score $\widehat S_{c,t}=-u_{c,t}^\top v_t+\eta_tu_{c,t}^\top q_{B,t}$,
+penalized lower score $\underline S_{c,t}=\widehat S_{c,t}-e_{c,t}$, upper
+step-norm bound $\overline q_t=\widehat q_t+e_t^q$, and \cref{eq:selection}
+feasibility (requiring the selected plan to maximize $\underline S_{0,t}$ among
+feasible shortlist candidates), and reproduce the
 round's reserve from sunk round overhead plus
 $\widehat C_{\mathrm{pack}}(\pi)+q_{0.995}+R_{\mathrm{gate}}$, together with
 charging of all seven cost components (packing, reference gradients,
@@ -875,11 +888,13 @@ protocol-failure run must leave its sealed audits
 unopened. Paired rows must share one split-manifest hash, one gate partition
 per protected slice, and one disjoint audit partition per slice, the reference
 cost within a target setting, and the initial state, cost-calibration bundle,
-and initial audit NLLs within seed and target setting. Thirty-eight generated
+and initial audit NLLs within seed and target setting. Forty-four generated
 mutations fail, including a wrong calibration plan count or $0.995$ residual
 margin, a calibration or candidate example overlapping gate or audit
 partitions, a pack load above $L_{\max}$, a non-best-fit packing in a best-fit
-cell, a round reserve that disagrees with the calibrated pack cost, a hidden
+cell, a round reserve that disagrees with the calibrated pack cost, a violated
+source-coverage floor, a wrong shortlist size, a tampered sketch score or
+protected/trust-radius feasibility flag, a non-argmax shortlist selection, a hidden
 charge, a rejected update that advances the
 optimizer, a smaller-than-largest passing scale, a reused gate block, a
 dropped round, an unmarked overrun, post-difference instead of per-example gate
