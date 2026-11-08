@@ -54,6 +54,7 @@
         "The record-pair external audit remains blocking for a multi-field export; a reviewed successor must cover the full cross-record segment-pair space and independently reproduce every qualifying segment pair",
         "The trajectory schema embeds the passing content-readiness ledger hash and accounts for every scanned record with an included partition or explicit exclusion reason",
         "Prompt and protected verifier/reference fields reproduce from a reviewed multi-field projection attestation; generated or null inventories cannot clear real execution",
+        "process/trajectory_schema.json embeds prompt_frame and reconstruct_rl_trajectories.py recomputes SHA-256(revision || problem_id) hash ranks, the 2048 selected prompts, and exact 1024/512/512 nuisance_fit, select, and confirm partition laws",
         "Sampler frequencies agree with scored masses in finite-vocabulary conformance tests",
         "Current and stale sampler/scorer pairs agree on normalized masses, EOS-at-limit, and truncation semantics",
         "Prompt and sequence mixture masses normalize in high precision",
@@ -82,9 +83,10 @@
         "Nuisance and proposal models use only prior-iteration disjoint data",
         "Current and behavior scorers share tokenizer, masks, and decoder semantics",
         "Policy and nuisance tensor hashes are frozen before each audit",
+        "build/model_manifest.json binds process/trajectory_schema.json, matches frozen_policy_pair, and admits a measured_policy_kl <= maximum_policy_kl",
         "Gate 0 reproduces target gradient, mixture normalization, weight bound, and implemented-weight bias identities",
         "rl_gate0_fault_injections.py detects base-versus-decoder scoring, focal-nuisance fitting, and consumed-trajectory reuse by exact enumeration, reproduces frozen-h, independent-prior-fit, and fresh-draw positive controls, and silences each detector under its null-fault control",
-        "reconstruct_rl_trajectories.py replays omitted-prompt-ratio, weight-clipping, base-versus-decoder, focal-nuisance, and consumed-trajectory-reuse faults through raw trajectory reconstruction on the golden four-cell law; each must be rejected and each null control must pass"
+        "reconstruct_rl_trajectories.py recomputes the prompt-frame SHA-256 hash ranks and 1024/512/512 partition laws, the adaptive proposal q_t(x) (including the Z_t^q=0 fallback), per-step masked temperature-softmax token log-probabilities, per-token logit-Jacobian step scores (1/T_d)*(g_y - sum_v p_theta(v) g_v), unnormalized sequence score sums over per-step score vectors, deterministic verifier status-to-reward mapping, finite-vocabulary sequence-tree conformance, the KL stratum bound, and per-cell/source mixture-weight diagnostics (max_weight, max(alpha*w)<=1, and Kish ESS), and replays omitted-prompt-ratio, weight-clipping, base-versus-decoder (including stealth base-logit scoring with spoofed temperature), focal-nuisance, and consumed-trajectory-reuse faults through raw trajectory reconstruction on the golden four-cell law; each must be rejected and each null control must pass"
       ],
       "costs": [
         "cpu_seconds",
@@ -108,7 +110,7 @@
         "Every theorem-facing trajectory is generated after iteration choices freeze and has use_count one",
         "Every theorem-facing draw reaches a scored outcome; an infrastructure-failed replication is retained but cannot enter a success-conditioned estimator claim",
         "Each successful current, stale, R1, and R2 row declares the exact projected-term semantics and every attempted row retains allocated accelerator-seconds, generated_tokens, verifier_calls, and added_score_tokens",
-        "train/trajectory_ledger.jsonl and train/costs.json must equal the row-for-row reconstruction of U, h, w, A, B, U*s, and the candidate/reference/aborted K_gen, K_ver, K_score, and accelerator-seconds cost ledger from train/raw_trajectory_header.json and train/raw_trajectory_ledger.jsonl by reconstruct_rl_trajectories.py, which fails closed while the frozen policy tensor hashes are null",
+        "train/trajectory_ledger.jsonl and train/costs.json must equal the row-for-row reconstruction of prompt-frame hash-rank partitions, adaptive proposal q_t(x), per-step masked temperature-softmax token log-probabilities, logit-Jacobian step scores, unnormalized per-step score sums, verifier status rewards, U, h, w, per-cell/source mixture-weight diagnostics, A, B, U*s, and the candidate/reference/aborted K_gen, K_ver, K_score, and accelerator-seconds cost ledger from train/raw_trajectory_header.json and train/raw_trajectory_ledger.jsonl by reconstruct_rl_trajectories.py, which fails closed while the frozen policy tensor hashes are null",
         "The numerical mixture-weight bound and source-specific ESS are checked",
         "The exploratory alpha-allocation coupling is logged as a design restriction rather than an unbiasedness requirement",
         "Generated-token, verifier-call, and added-scoring counters retain aborted candidates and are verified by both raw reconstruction and evaluation aggregation"

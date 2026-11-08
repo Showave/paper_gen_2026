@@ -12,11 +12,30 @@ validator replays the ledger under the frozen SFT preregistration and requires
   accelerator-second budget, complete component charging, and a terminal
   reason that reproduces the stop rule (maximum rounds, exhausted reserve, or
   a retained reserve overrun marked as a protocol failure);
-* the frozen response-token window, pack capacity, fresh per-slice gate
+* the frozen response-token window, pack capacity, per-round physical pack
+  assignment and capacity, per-example source-slice coverage floor
+  (at least ``source_coverage_floor`` of selected examples per capability
+  slice), deterministic length-descending best-fit packing for best-fit cells,
+  reserve recomputation from the 200-plan cost-calibration bundle (0.995
+  residual quantile margin plus worst-case gate reserve), fresh per-slice gate
   blocks, per-draw clipped gate-loss recomputation across paired scale
   candidates, the heuristic upper statistic, largest-passing-scale commitment
   to that scale's candidate state, and the cumulative protected-tolerance
   ledger;
+* each non-null round's 16-plan shortlist re-scoring, per-example sketch
+  aggregation, and selection rule: candidate-independent ``u_c^T v`` across the
+  shortlist, global-``N_B``-normalized selected-plan sketch inner products
+  ``u_c^T q_B = (1/N_B) sum_{i in B} u_c^T q_i`` and
+  ``v^T q_B = (1/N_B) sum_{i in B} v^T q_i``, estimated sketch scores
+  ``widehat S_c = -u_c^T v + eta u_c^T q_B``, penalized lower scores
+  ``underline S_c = widehat S_c - e_c`` across target and protected slices,
+  sketched step-norm quadratic
+  ``widehat q = ||v||_2^2 - 2 eta v^T q_B + eta^2 ||q_B||_2^2`` with
+  Cauchy--Schwarz check ``(v^T q_B)^2 <= ||v||_2^2 ||q_B||_2^2``, upper
+  step-norm bound ``overline q = widehat q + e^q``, protected
+  curvature/tolerance and trust-radius feasibility, and selection of
+  the feasible shortlist plan maximizing ``underline S_0`` (or a rejected/null
+  round if no shortlist plan is feasible);
 * audit endpoints evaluated on the final ledger state, from which the row's
   target and worst-protected NLL changes are recomputed;
 * every declared initial and final audit NLL recomputed from hash-bound
@@ -26,11 +45,13 @@ validator replays the ledger under the frozen SFT preregistration and requires
 * sealed audits for protocol-failure runs, which enter only as failures.
 
 Across rows, paired runs must share the split-manifest hash, the reference
-cost per target setting, the initial state and initial audit NLLs per seed and
-target setting, and one disjoint gate-partition and audit-partition identity
-per slice.  The per-example forward passes themselves are still produced by
-the training and evaluation stages; this closes their clipping, pairing,
-aggregation, and state binding, not the model forward pass that measured them.
+cost per target setting, the initial state, cost-calibration bundle, and
+initial audit NLLs per seed and target setting, and one disjoint gate-partition
+and audit-partition identity per slice.  The per-example forward passes and
+hardware timing measurements themselves are still produced by the build,
+training, and evaluation stages; this closes their shortlist selection, source
+coverage, pack plans, reserve calibration, clipping, pairing, aggregation, and
+state binding, not the hardware execution that measured them.
 """
 
 from __future__ import annotations
@@ -138,6 +159,657 @@ def load_ledger(
         require(isinstance(value, dict), f"{path}:{line_number}: expected an object")
         rows.append(value)
     return rows
+
+
+def load_json_verified(
+    path: Path, expected_sha256: str, kind: str = "JSON artifact"
+) -> dict[str, Any]:
+    require(path.is_file(), f"{kind} not found: {path}")
+    payload = path.read_bytes()
+    require(
+        hashlib.sha256(payload).hexdigest() == expected_sha256,
+        f"{kind} hash mismatch: {path}",
+    )
+    try:
+        value = json.loads(payload.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise LedgerError(f"{path}: invalid JSON: {exc}") from exc
+    require(isinstance(value, dict), f"{path}: expected an object")
+    return value
+
+
+def predicted_pack_cost(pack_loads: list[int], cost_model: dict[str, Any]) -> float:
+    c0 = float(cost_model["launch_overhead_seconds"])
+    c1 = float(cost_model["linear_token_coeff"])
+    c2 = float(cost_model["quadratic_load_coeff"])
+    max_len = float(cost_model["max_sequence_length"])
+    return math.fsum(
+        [c0 * len(pack_loads)]
+        + [c1 * load + c2 * (load * load) / max_len for load in pack_loads]
+    )
+
+
+def deterministic_best_fit_packing(
+    example_ids: list[str],
+    packed_lengths: list[int],
+    max_sequence_length: int,
+    max_packs: int,
+) -> list[int]:
+    """Canonical length-descending (tie: example_id) best-fit pack assignment."""
+    ordered = sorted(
+        range(len(example_ids)),
+        key=lambda idx: (-packed_lengths[idx], example_ids[idx], idx),
+    )
+    pack_loads: list[int] = []
+    assignments = [-1] * len(example_ids)
+    for idx in ordered:
+        length = packed_lengths[idx]
+        fitting = [
+            pack_id
+            for pack_id, current in enumerate(pack_loads)
+            if current + length <= max_sequence_length
+        ]
+        if fitting:
+            best_pack = min(
+                fitting,
+                key=lambda pack_id: (
+                    max_sequence_length - (pack_loads[pack_id] + length),
+                    pack_id,
+                ),
+            )
+            pack_loads[best_pack] += length
+            assignments[idx] = best_pack
+        else:
+            best_pack = len(pack_loads)
+            require(
+                best_pack < max_packs,
+                "deterministic best-fit packing exceeds physical pack capacity",
+            )
+            pack_loads.append(length)
+            assignments[idx] = best_pack
+    return assignments
+
+
+def validate_cost_calibration_bundle(
+    bundle: dict[str, Any],
+    section: dict[str, Any],
+    *,
+    expected_seed: int | None = None,
+    expected_target_setting: str | None = None,
+    require_real: bool = False,
+) -> dict[str, Any]:
+    """Validate the 200-plan hardware cost-calibration bundle and reserve margin."""
+    require(bundle.get("schema_version") == 1, "unsupported cost-calibration bundle schema")
+    if require_real:
+        require(
+            bundle.get("synthetic_audit") is False
+            and bundle.get("empirical_evidence") is True,
+            "real SFT execution cannot use a synthetic cost-calibration bundle",
+        )
+    else:
+        require(
+            isinstance(bundle.get("synthetic_audit"), bool)
+            and isinstance(bundle.get("empirical_evidence"), bool),
+            "cost-calibration bundle needs synthetic_audit and empirical_evidence flags",
+        )
+    require(
+        bundle.get("model_key") == section["primary_factorial_model_key"],
+        "cost-calibration bundle model_key differs from primary_factorial_model_key",
+    )
+    if expected_seed is not None:
+        require(
+            bundle.get("seed") == expected_seed,
+            "cost-calibration bundle seed differs from the run seed",
+        )
+    if expected_target_setting is not None:
+        require(
+            bundle.get("target_setting") == expected_target_setting,
+            "cost-calibration bundle target_setting differs from the run target_setting",
+        )
+    window = section["optimizer_window"]
+    gate = section["actual_update_gate"]
+    cost_design = section["cost_design"]
+    max_seq_len = window["maximum_sequence_length"]
+    max_packs = window["physical_packs_per_update"]
+    cost_model = bundle.get("cost_model")
+    require(
+        isinstance(cost_model, dict)
+        and set(cost_model)
+        == {
+            "launch_overhead_seconds",
+            "linear_token_coeff",
+            "quadratic_load_coeff",
+            "max_sequence_length",
+        }
+        and cost_model["max_sequence_length"] == max_seq_len
+        and all(
+            isinstance(cost_model[k], (int, float))
+            and not isinstance(cost_model[k], bool)
+            and math.isfinite(cost_model[k])
+            and cost_model[k] > 0
+            for k in (
+                "launch_overhead_seconds",
+                "linear_token_coeff",
+                "quadratic_load_coeff",
+            )
+        ),
+        "cost-calibration bundle cost_model is invalid",
+    )
+    c_fwd = bundle.get("gate_forward_cost_per_example_seconds")
+    require(
+        isinstance(c_fwd, (int, float))
+        and not isinstance(c_fwd, bool)
+        and math.isfinite(c_fwd)
+        and c_fwd > 0,
+        "cost-calibration bundle needs positive gate_forward_cost_per_example_seconds",
+    )
+    expected_gate_reserve = (
+        float(c_fwd)
+        * (len(gate["scale_grid"]) + 1)
+        * gate["protected_slices"]
+        * gate["samples_per_slice_round"]
+    )
+    require(
+        close(bundle.get("worst_case_gate_reserve_seconds"), expected_gate_reserve),
+        "cost-calibration bundle worst_case_gate_reserve_seconds does not reproduce",
+    )
+    plans = bundle.get("calibration_plans")
+    expected_plan_count = cost_design["independent_cost_calibration_plans"]
+    require(
+        isinstance(plans, list) and len(plans) == expected_plan_count,
+        f"cost-calibration bundle must contain exactly {expected_plan_count} independent plans",
+    )
+    plan_ids: set[str] = set()
+    calibration_example_ids: set[str] = set()
+    residuals: list[float] = []
+    for index, plan in enumerate(plans):
+        label = f"cost-calibration plan {index}"
+        require(
+            isinstance(plan, dict)
+            and set(plan)
+            == {
+                "plan_id",
+                "example_ids",
+                "pack_loads",
+                "predicted_cost_seconds",
+                "measured_cost_seconds",
+                "residual_seconds",
+            },
+            f"{label} has an unexpected schema",
+        )
+        plan_id = plan["plan_id"]
+        require(
+            isinstance(plan_id, str) and plan_id and plan_id not in plan_ids,
+            f"{label} has a missing or duplicate plan_id",
+        )
+        plan_ids.add(plan_id)
+        ex_ids = plan["example_ids"]
+        require(
+            isinstance(ex_ids, list)
+            and ex_ids
+            and all(isinstance(x, str) and x for x in ex_ids)
+            and len(set(ex_ids)) == len(ex_ids)
+            and not (set(ex_ids) & calibration_example_ids),
+            f"{label} reuses or omits calibration example IDs",
+        )
+        calibration_example_ids.update(ex_ids)
+        pack_loads = plan["pack_loads"]
+        require(
+            isinstance(pack_loads, list)
+            and 1 <= len(pack_loads) <= max_packs
+            and all(
+                isinstance(load, int)
+                and not isinstance(load, bool)
+                and 1 <= load <= max_seq_len
+                for load in pack_loads
+            ),
+            f"{label} has invalid pack_loads",
+        )
+        pred = predicted_pack_cost(pack_loads, cost_model)
+        meas = plan["measured_cost_seconds"]
+        res = plan["residual_seconds"]
+        require(
+            isinstance(meas, (int, float))
+            and not isinstance(meas, bool)
+            and math.isfinite(meas)
+            and meas > 0
+            and close(plan["predicted_cost_seconds"], pred)
+            and close(res, float(meas) - pred),
+            f"{label} predicted_cost_seconds or residual_seconds does not reproduce",
+        )
+        residuals.append(float(meas) - pred)
+
+    quantile_prob = float(cost_design["reserve_quantile"])
+    require(
+        close(bundle.get("reserve_quantile"), quantile_prob),
+        "cost-calibration bundle reserve_quantile differs from the preregistration",
+    )
+    ordered_residuals = sorted(residuals)
+    q_index = max(0, min(math.ceil(quantile_prob * len(ordered_residuals)) - 1, len(ordered_residuals) - 1))
+    expected_margin = ordered_residuals[q_index]
+    require(
+        expected_margin >= 0 and close(bundle.get("reserve_margin_seconds"), expected_margin),
+        "cost-calibration bundle reserve_margin_seconds does not reproduce the 0.995 residual quantile",
+    )
+    return {
+        "cost_model": cost_model,
+        "worst_case_gate_reserve_seconds": expected_gate_reserve,
+        "reserve_margin_seconds": expected_margin,
+        "calibration_example_ids": calibration_example_ids,
+    }
+
+
+def recompute_round_plans_and_reserves(
+    manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+    section: dict[str, Any],
+    calibration: dict[str, Any],
+    target_slice: str,
+    protected: list[str],
+) -> tuple[set[str], dict[str, str]]:
+    """Verify every round's physical pack plan, source coverage, shortlist selection, and reserve."""
+    window = section["optimizer_window"]
+    selector = section["selector"]
+    gate = section["actual_update_gate"]
+    max_seq_len = window["maximum_sequence_length"]
+    max_packs = window["physical_packs_per_update"]
+    shortlist_size = selector["shortlist_size"]
+    source_floor = float(section["data_roles"]["source_coverage_floor"])
+    require(0 < source_floor <= 1.0 / 3.0, "invalid source_coverage_floor")
+    all_slices = {target_slice, *protected}
+    cell = manifest["run_identity"]["cell"]
+    require_best_fit = cell.endswith("deterministic_best_fit")
+    cost_model = calibration["cost_model"]
+    gate_reserve = calibration["worst_case_gate_reserve_seconds"]
+    margin = calibration["reserve_margin_seconds"]
+    calibration_ids = calibration["calibration_example_ids"]
+    candidate_ids: set[str] = set()
+    candidate_slices_by_id: dict[str, str] = {}
+    for row in rows:
+        label = f"round {row['round']}"
+        decision = row["decision"]
+        charged = row["charged"]
+        sunk_cost = math.fsum(
+            charged[k]
+            for k in ("packing", "reference_gradients", "candidate_scoring", "solving")
+        )
+        plan = row.get("selected_plan")
+        shortlist = row.get("shortlist")
+        if decision == "null_action":
+            require(
+                plan is None and shortlist is None,
+                f"{label} null action cannot carry a selected_plan or shortlist",
+            )
+            continue
+        require(
+            isinstance(plan, dict)
+            and set(plan)
+            == {
+                "plan_id",
+                "example_ids",
+                "source_slices",
+                "packed_lengths",
+                "response_tokens_by_example",
+                "pack_assignments",
+                "u_dot_q_by_slice",
+                "v_dot_q_by_example",
+            },
+            f"{label} selected_plan has an invalid schema",
+        )
+        plan_id = plan["plan_id"]
+        ex_ids = plan["example_ids"]
+        source_slices = plan["source_slices"]
+        lengths = plan["packed_lengths"]
+        resp_tokens = plan["response_tokens_by_example"]
+        assignments = plan["pack_assignments"]
+        u_dot_q_by_slice = plan["u_dot_q_by_slice"]
+        v_dot_q_by_example = plan["v_dot_q_by_example"]
+        require(
+            isinstance(plan_id, str)
+            and plan_id
+            and isinstance(ex_ids, list)
+            and ex_ids
+            and all(isinstance(x, str) and x for x in ex_ids)
+            and len(set(ex_ids)) == len(ex_ids)
+            and not (set(ex_ids) & calibration_ids),
+            f"{label} selected_plan has invalid, duplicate, or calibration-overlapping example_ids",
+        )
+        candidate_ids.update(ex_ids)
+        count = len(ex_ids)
+        require(
+            isinstance(source_slices, list)
+            and len(source_slices) == count
+            and all(isinstance(s, str) and s in all_slices for s in source_slices),
+            f"{label} selected_plan source_slices are invalid",
+        )
+        for ex_id, s_name in zip(ex_ids, source_slices):
+            previous_slice = candidate_slices_by_id.setdefault(ex_id, s_name)
+            require(
+                previous_slice == s_name,
+                f"{label} example {ex_id} changes capability slice across rounds",
+            )
+        for s_name in sorted(all_slices):
+            s_count = sum(1 for s in source_slices if s == s_name)
+            require(
+                s_count >= source_floor * count - TOLERANCE,
+                f"{label} selected_plan violates source_coverage_floor for {s_name}",
+            )
+        require(
+            isinstance(lengths, list)
+            and len(lengths) == count
+            and isinstance(resp_tokens, list)
+            and len(resp_tokens) == count
+            and isinstance(assignments, list)
+            and len(assignments) == count
+            and all(
+                isinstance(n_i, int)
+                and not isinstance(n_i, bool)
+                and isinstance(r_i, int)
+                and not isinstance(r_i, bool)
+                and 1 <= r_i <= n_i <= max_seq_len
+                for n_i, r_i in zip(lengths, resp_tokens)
+            ),
+            f"{label} selected_plan lengths or response tokens are invalid",
+        )
+        n_b = sum(resp_tokens)
+        require(
+            n_b == row["response_tokens"],
+            f"{label} selected_plan response_tokens_by_example do not sum to response_tokens",
+        )
+        require(
+            isinstance(u_dot_q_by_slice, dict)
+            and set(u_dot_q_by_slice) == all_slices
+            and all(
+                isinstance(u_dot_q_by_slice[s_name], list)
+                and len(u_dot_q_by_slice[s_name]) == count
+                and all(
+                    isinstance(val, (int, float))
+                    and not isinstance(val, bool)
+                    and math.isfinite(val)
+                    for val in u_dot_q_by_slice[s_name]
+                )
+                for s_name in all_slices
+            )
+            and isinstance(v_dot_q_by_example, list)
+            and len(v_dot_q_by_example) == count
+            and all(
+                isinstance(val, (int, float))
+                and not isinstance(val, bool)
+                and math.isfinite(val)
+                for val in v_dot_q_by_example
+            ),
+            f"{label} selected_plan per-example sketch inner products are invalid",
+        )
+        recomputed_u_dot_q = {
+            s_name: math.fsum(float(val) for val in u_dot_q_by_slice[s_name]) / n_b
+            for s_name in all_slices
+        }
+        recomputed_v_dot_q = math.fsum(float(val) for val in v_dot_q_by_example) / n_b
+        packs = row["physical_packs"]
+        require(
+            all(
+                isinstance(p, int) and not isinstance(p, bool) and 0 <= p < packs
+                for p in assignments
+            )
+            and set(assignments) == set(range(packs)),
+            f"{label} pack_assignments do not partition the declared physical_packs",
+        )
+        pack_loads = [0] * packs
+        for length, pack_id in zip(lengths, assignments):
+            pack_loads[pack_id] += length
+        require(
+            all(1 <= load <= max_seq_len for load in pack_loads),
+            f"{label} physical pack load exceeds maximum_sequence_length {max_seq_len}",
+        )
+        if require_best_fit:
+            expected_assignments = deterministic_best_fit_packing(
+                ex_ids, lengths, max_seq_len, max_packs
+            )
+            require(
+                assignments == expected_assignments,
+                f"{label} deterministic_best_fit cell does not use the canonical best-fit packing",
+            )
+        expected_reserve = math.fsum(
+            [
+                sunk_cost,
+                predicted_pack_cost(pack_loads, cost_model),
+                margin,
+                gate_reserve,
+            ]
+        )
+        require(
+            close(row["reserve_accelerator_seconds"], expected_reserve),
+            f"{label} reserve_accelerator_seconds does not reproduce from calibrated pack cost + margin + gate reserve",
+        )
+
+        require(
+            isinstance(shortlist, dict)
+            and set(shortlist)
+            == {
+                "learning_rate",
+                "v_norm_sq",
+                "u_dot_v",
+                "trust_radius_sq",
+                "curvature_upper",
+                "candidates",
+            },
+            f"{label} shortlist has an invalid schema",
+        )
+        eta = shortlist["learning_rate"]
+        v_norm_sq = shortlist["v_norm_sq"]
+        round_u_dot_v = shortlist["u_dot_v"]
+        rho_sq = shortlist["trust_radius_sq"]
+        beta_upper = shortlist["curvature_upper"]
+        candidates = shortlist["candidates"]
+        require(
+            close(eta, float(section["adamw"]["learning_rate"]))
+            and isinstance(v_norm_sq, (int, float))
+            and not isinstance(v_norm_sq, bool)
+            and math.isfinite(v_norm_sq)
+            and v_norm_sq >= 0
+            and isinstance(round_u_dot_v, dict)
+            and set(round_u_dot_v) == all_slices
+            and all(
+                isinstance(round_u_dot_v[s], (int, float))
+                and not isinstance(round_u_dot_v[s], bool)
+                and math.isfinite(round_u_dot_v[s])
+                for s in all_slices
+            )
+            and isinstance(rho_sq, (int, float))
+            and not isinstance(rho_sq, bool)
+            and math.isfinite(rho_sq)
+            and rho_sq > 0
+            and isinstance(beta_upper, dict)
+            and set(beta_upper) == set(protected)
+            and all(
+                isinstance(beta_upper[s], (int, float))
+                and not isinstance(beta_upper[s], bool)
+                and math.isfinite(beta_upper[s])
+                and beta_upper[s] > 0
+                for s in protected
+            )
+            and isinstance(candidates, list)
+            and len(candidates) == shortlist_size,
+            f"{label} shortlist parameters or candidate count are invalid",
+        )
+        seen_shortlist_ids: set[str] = set()
+        feasible_candidates: list[tuple[float, float, str]] = []
+        selected_entry: dict[str, Any] | None = None
+        remaining_budget = float(row["remaining_budget_before"])
+        round_tau = float(gate["per_round_tolerance"])
+        for c_idx, cand in enumerate(candidates):
+            c_label = f"{label} shortlist candidate {c_idx}"
+            require(
+                isinstance(cand, dict)
+                and set(cand)
+                == {
+                    "plan_id",
+                    "pack_loads",
+                    "reserve_accelerator_seconds",
+                    "v_dot_q",
+                    "q_norm_sq",
+                    "step_norm_sq_hat",
+                    "step_norm_sq_margin",
+                    "step_norm_sq_upper",
+                    "target_score",
+                    "protected_scores",
+                    "feasible",
+                },
+                f"{c_label} has an unexpected schema",
+            )
+            c_id = cand["plan_id"]
+            require(
+                isinstance(c_id, str) and c_id and c_id not in seen_shortlist_ids,
+                f"{c_label} has a missing or duplicate plan_id",
+            )
+            seen_shortlist_ids.add(c_id)
+            c_loads = cand["pack_loads"]
+            require(
+                isinstance(c_loads, list)
+                and 1 <= len(c_loads) <= max_packs
+                and all(
+                    isinstance(ld, int) and not isinstance(ld, bool) and 1 <= ld <= max_seq_len
+                    for ld in c_loads
+                ),
+                f"{c_label} has invalid pack_loads",
+            )
+            c_reserve = math.fsum(
+                [
+                    sunk_cost,
+                    predicted_pack_cost(c_loads, cost_model),
+                    margin,
+                    gate_reserve,
+                ]
+            )
+            require(
+                close(cand["reserve_accelerator_seconds"], c_reserve),
+                f"{c_label} reserve_accelerator_seconds does not reproduce",
+            )
+            v_dot_q = cand["v_dot_q"]
+            q_norm_sq = cand["q_norm_sq"]
+            q_hat = cand["step_norm_sq_hat"]
+            q_margin = cand["step_norm_sq_margin"]
+            q_upper = cand["step_norm_sq_upper"]
+            require(
+                isinstance(v_dot_q, (int, float))
+                and not isinstance(v_dot_q, bool)
+                and math.isfinite(v_dot_q)
+                and isinstance(q_norm_sq, (int, float))
+                and not isinstance(q_norm_sq, bool)
+                and math.isfinite(q_norm_sq)
+                and q_norm_sq >= 0
+                and isinstance(q_hat, (int, float))
+                and not isinstance(q_hat, bool)
+                and isinstance(q_margin, (int, float))
+                and not isinstance(q_margin, bool)
+                and q_hat >= 0
+                and q_margin >= 0
+                and float(v_dot_q) ** 2
+                <= float(v_norm_sq) * float(q_norm_sq)
+                + TOLERANCE * max(1.0, float(v_norm_sq) * float(q_norm_sq))
+                and close(
+                    q_hat,
+                    float(v_norm_sq)
+                    - 2.0 * float(eta) * float(v_dot_q)
+                    + (float(eta) ** 2) * float(q_norm_sq),
+                )
+                and close(q_upper, float(q_hat) + float(q_margin)),
+                f"{c_label} step_norm_sq_hat or step_norm_sq_upper violates the sketch quadratic or Cauchy-Schwarz bound",
+            )
+            q_bar = float(q_hat) + float(q_margin)
+
+            def check_score_block(
+                block: Any, block_label: str, slice_name: str
+            ) -> float:
+                require(
+                    isinstance(block, dict)
+                    and set(block)
+                    == {"u_dot_v", "u_dot_q", "margin", "hat_s", "lower_s"}
+                    and all(
+                        isinstance(block[k], (int, float))
+                        and not isinstance(block[k], bool)
+                        and math.isfinite(block[k])
+                        for k in ("u_dot_v", "u_dot_q", "margin", "hat_s", "lower_s")
+                    )
+                    and block["margin"] >= 0
+                    and close(block["u_dot_v"], float(round_u_dot_v[slice_name])),
+                    f"{block_label} has an invalid score schema or candidate-varying u_dot_v",
+                )
+                expected_hat = -float(block["u_dot_v"]) + float(eta) * float(block["u_dot_q"])
+                expected_lower = expected_hat - float(block["margin"])
+                require(
+                    close(block["hat_s"], expected_hat)
+                    and close(block["lower_s"], expected_lower),
+                    f"{block_label} hat_s or lower_s does not reproduce from -u^T v + eta u^T q - margin",
+                )
+                return expected_lower
+
+            s0_lower = check_score_block(
+                cand["target_score"], f"{c_label} target_score", target_slice
+            )
+            prot_scores = cand["protected_scores"]
+            require(
+                isinstance(prot_scores, dict) and set(prot_scores) == set(protected),
+                f"{c_label} protected_scores must cover exactly the protected slices",
+            )
+            prot_feasible = True
+            for s_name in protected:
+                sc_lower = check_score_block(
+                    prot_scores[s_name],
+                    f"{c_label} protected_scores[{s_name}]",
+                    s_name,
+                )
+                threshold = 0.5 * float(beta_upper[s_name]) * q_bar - round_tau
+                if sc_lower < threshold - TOLERANCE:
+                    prot_feasible = False
+            is_feasible = (
+                s0_lower >= -TOLERANCE
+                and prot_feasible
+                and q_bar <= float(rho_sq) + TOLERANCE
+                and c_reserve <= remaining_budget + TOLERANCE
+            )
+            require(
+                cand["feasible"] is is_feasible,
+                f"{c_label} feasible flag does not reproduce from Eq. (selection)",
+            )
+            if is_feasible:
+                feasible_candidates.append((s0_lower, -c_reserve, c_id))
+            if c_id == plan_id:
+                selected_entry = cand
+
+        require(
+            selected_entry is not None
+            and selected_entry["pack_loads"] == pack_loads
+            and close(selected_entry["reserve_accelerator_seconds"], expected_reserve)
+            and close(selected_entry["v_dot_q"], recomputed_v_dot_q)
+            and close(
+                selected_entry["target_score"]["u_dot_q"],
+                recomputed_u_dot_q[target_slice],
+            )
+            and all(
+                close(
+                    selected_entry["protected_scores"][s_name]["u_dot_q"],
+                    recomputed_u_dot_q[s_name],
+                )
+                for s_name in protected
+            ),
+            f"{label} selected_plan does not match its shortlist entry or global-N_B per-example sketch aggregation",
+        )
+        require(
+            feasible_candidates,
+            f"{label} selected a non-null plan when no shortlist candidate was feasible",
+        )
+        best_s0 = max(item[0] for item in feasible_candidates)
+        best_ids = {
+            item[2]
+            for item in feasible_candidates
+            if abs(item[0] - best_s0) <= TOLERANCE * max(1.0, abs(best_s0))
+        }
+        require(
+            plan_id in best_ids,
+            f"{label} did not select the feasible shortlist plan maximizing target lower_s",
+        )
+    return candidate_ids, candidate_slices_by_id
 
 
 def replay_ledger(
@@ -607,7 +1279,10 @@ def validate_train_manifest(
     row: dict[str, Any],
     section: dict[str, Any],
     slices_by_setting: dict[str, list[str]],
+    targets_by_setting: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    if targets_by_setting is None:
+        targets_by_setting = target_slices(ROOT, section)
     require(manifest.get("schema_version") == 1, "unsupported run-manifest schema")
     identity = manifest.get("run_identity")
     expected_identity = {
@@ -615,7 +1290,12 @@ def validate_train_manifest(
         for key in ("seed", "target_setting", "budget_fraction", "cell", "protected_tolerance")
     }
     require(identity == expected_identity, "run manifest identity differs from its endpoint row")
-    for key in ("split_manifest_sha256", "initial_state_sha256", "train_ledger_sha256"):
+    for key in (
+        "split_manifest_sha256",
+        "initial_state_sha256",
+        "train_ledger_sha256",
+        "cost_calibration_bundle_sha256",
+    ):
         require(is_sha256(manifest.get(key)), f"run manifest needs {key}")
     reference = manifest.get("reference_cost_accelerator_seconds")
     require(
@@ -627,14 +1307,38 @@ def validate_train_manifest(
         "run budget is not the frozen fraction of the reference cost",
     )
     slices = slices_by_setting[row["target_setting"]]
+    target_slice = targets_by_setting[row["target_setting"]]
     rows = load_ledger(
         safe_child(manifest_root, manifest.get("train_ledger_path")),
         manifest["train_ledger_sha256"],
+    )
+    cost_bundle = load_json_verified(
+        safe_child(manifest_root, manifest.get("cost_calibration_bundle_path")),
+        manifest["cost_calibration_bundle_sha256"],
+        "cost-calibration bundle",
+    )
+    calibration = validate_cost_calibration_bundle(
+        cost_bundle,
+        section,
+        expected_seed=row["seed"],
+        expected_target_setting=row["target_setting"],
+    )
+    candidate_example_ids, candidate_slices_by_id = recompute_round_plans_and_reserves(
+        manifest, rows, section, calibration, target_slice, slices
     )
     closure = replay_ledger(manifest, rows, section, slices)
     gate_partitions, gate_partition_ids = recompute_gate_blocks(
         manifest, manifest_root, rows, section, slices
     )
+    for gate_name, gate_ids in gate_partition_ids.items():
+        require(
+            not (gate_ids & candidate_example_ids),
+            f"candidate plan examples overlap {gate_name} gate partition",
+        )
+        require(
+            not (gate_ids & calibration["calibration_example_ids"]),
+            f"cost-calibration examples overlap {gate_name} gate partition",
+        )
     totals = manifest.get("totals")
     require(isinstance(totals, dict), "run manifest needs ledger totals")
     for key in (
@@ -653,9 +1357,13 @@ def validate_train_manifest(
         **closure,
         "split_manifest_sha256": manifest["split_manifest_sha256"],
         "initial_state_sha256": manifest["initial_state_sha256"],
+        "cost_calibration_bundle_sha256": manifest["cost_calibration_bundle_sha256"],
         "reference_cost_accelerator_seconds": reference,
         "gate_partitions": gate_partitions,
         "gate_partition_ids": gate_partition_ids,
+        "candidate_example_ids": candidate_example_ids,
+        "candidate_slices_by_id": candidate_slices_by_id,
+        "calibration_example_ids": calibration["calibration_example_ids"],
     }
 
 
@@ -670,10 +1378,13 @@ def validate_run(
     if targets_by_setting is None:
         targets_by_setting = target_slices(ROOT, section)
     closure = validate_train_manifest(
-        manifest, manifest_root, row, section, slices_by_setting
+        manifest, manifest_root, row, section, slices_by_setting, targets_by_setting
     )
     slices = slices_by_setting[row["target_setting"]]
     gate_partition_ids = closure.pop("gate_partition_ids")
+    candidate_example_ids = closure.pop("candidate_example_ids")
+    closure.pop("candidate_slices_by_id", None)
+    calibration_example_ids = closure.pop("calibration_example_ids")
     endpoint = manifest.get("audit_endpoint")
     audit_nll: dict[str, dict[str, float]] = {}
     partitions: dict[str, str] = {}
@@ -708,6 +1419,14 @@ def validate_run(
                 entry, name, manifest_root, states
             )
             audit_ids_by_slice[name] = audit_ids
+            require(
+                not (candidate_example_ids & audit_ids),
+                f"candidate plan examples overlap {name} audit partition",
+            )
+            require(
+                not (calibration_example_ids & audit_ids),
+                f"cost-calibration examples overlap {name} audit partition",
+            )
         for gate_name, gate_ids in gate_partition_ids.items():
             for audit_name, audit_ids in audit_ids_by_slice.items():
                 require(
@@ -736,6 +1455,7 @@ def check_pairing(closures: list[tuple[dict[str, Any], dict[str, Any]]]) -> None
     require(len(splits) == 1, "factorial rows do not share one split-manifest hash")
     reference: dict[str, float] = {}
     initial: dict[tuple[Any, str], str] = {}
+    calibration_bundles: dict[tuple[Any, str], str] = {}
     gate_partitions: dict[str, str] = {}
     partitions: dict[str, str] = {}
     initial_nll: dict[tuple[tuple[Any, str], str], float] = {}
@@ -750,6 +1470,13 @@ def check_pairing(closures: list[tuple[dict[str, Any], dict[str, Any]]]) -> None
         require(state == closure["initial_state_sha256"], (
             f"paired runs for {key} do not share an initial state"
         ))
+        calib_sha = calibration_bundles.setdefault(
+            key, closure["cost_calibration_bundle_sha256"]
+        )
+        require(
+            calib_sha == closure["cost_calibration_bundle_sha256"],
+            f"paired runs for {key} do not share a cost-calibration bundle",
+        )
         for name, partition in closure.get("gate_partitions", {}).items():
             shared_gate = gate_partitions.setdefault(name, partition)
             require(shared_gate == partition, f"gate partition for {name} differs across rows")
@@ -877,6 +1604,65 @@ def fixture_audit_entry(
     }
 
 
+@functools.lru_cache(maxsize=64)
+def cached_cost_calibration_bundle_bytes(
+    seed: int,
+    target_setting: str,
+    model_key: str,
+    max_seq_len: int,
+    n_plans: int,
+    quantile_prob: float,
+    n_scales: int,
+    n_slices: int,
+    n_samples: int,
+) -> tuple[bytes, str]:
+    cost_model = {
+        "launch_overhead_seconds": 0.5,
+        "linear_token_coeff": 0.00025,
+        "quadratic_load_coeff": 0.0003125,
+        "max_sequence_length": max_seq_len,
+    }
+    c_fwd = 0.00125
+    gate_reserve = c_fwd * (n_scales + 1) * n_slices * n_samples
+    q_index = max(0, min(math.ceil(quantile_prob * n_plans) - 1, n_plans - 1))
+    plans = []
+    for idx in range(n_plans):
+        pack_loads = [2048 + 256 * ((idx + p) % 5) for p in range(4 + (idx % 5))]
+        pred = predicted_pack_cost(pack_loads, cost_model)
+        if idx < q_index:
+            residual = round(0.02 * (idx + 1), 6)
+        elif idx == q_index:
+            residual = 4.432
+        else:
+            residual = 4.5 + 0.01 * (idx - q_index)
+        plans.append(
+            {
+                "plan_id": f"calib-plan-{idx:03d}",
+                "example_ids": [f"calib-{idx:03d}-ex-{k:02d}" for k in range(len(pack_loads))],
+                "pack_loads": pack_loads,
+                "predicted_cost_seconds": pred,
+                "measured_cost_seconds": pred + residual,
+                "residual_seconds": residual,
+            }
+        )
+    bundle = {
+        "schema_version": 1,
+        "synthetic_audit": True,
+        "empirical_evidence": False,
+        "seed": seed,
+        "target_setting": target_setting,
+        "model_key": model_key,
+        "cost_model": cost_model,
+        "gate_forward_cost_per_example_seconds": c_fwd,
+        "worst_case_gate_reserve_seconds": gate_reserve,
+        "reserve_quantile": quantile_prob,
+        "reserve_margin_seconds": 4.432,
+        "calibration_plans": plans,
+    }
+    payload = (json.dumps(bundle, indent=2, sort_keys=True, allow_nan=False) + "\n").encode()
+    return payload, hashlib.sha256(payload).hexdigest()
+
+
 def build_fixture_run(
     directory: Path,
     section: dict[str, Any],
@@ -905,6 +1691,24 @@ def build_fixture_run(
     reference = 1000.0
     budget = identity["budget_fraction"] * reference
     run_key = path_prefix + canonical_digest(identity)[:16]
+    calib_bytes, calib_sha256 = cached_cost_calibration_bundle_bytes(
+        identity["seed"],
+        identity["target_setting"],
+        section["primary_factorial_model_key"],
+        section["optimizer_window"]["maximum_sequence_length"],
+        section["cost_design"]["independent_cost_calibration_plans"],
+        float(section["cost_design"]["reserve_quantile"]),
+        len(scales),
+        gate["protected_slices"],
+        gate["samples_per_slice_round"],
+    )
+    calib_name = f"{run_key}-cost-calibration.json"
+    (directory / calib_name).write_bytes(calib_bytes)
+    target_name = target_slices(ROOT, section)[identity["target_setting"]]
+    ordered_all_slices = [target_name, *slices]
+    eta = float(section["adamw"]["learning_rate"])
+    shortlist_size = section["selector"]["shortlist_size"]
+    round_tau = float(gate["per_round_tolerance"])
     initial = fake_hash("initial", identity["seed"], identity["target_setting"])
     state = initial
     step = 0
@@ -932,6 +1736,8 @@ def build_fixture_run(
             "committed_scale": None,
             "response_tokens": None,
             "physical_packs": None,
+            "selected_plan": None,
+            "shortlist": None,
         }
         candidate_states = [
             fake_hash("candidate-state", run_key, round_index, scale)
@@ -977,6 +1783,103 @@ def build_fixture_run(
             row["tolerance"] = dict.fromkeys(slices, gate["per_round_tolerance"])
             row["response_tokens"] = 6144
             row["physical_packs"] = section["optimizer_window"]["physical_packs_per_update"]
+            selected_plan_id = f"plan-{round_index:02d}-00"
+            selected_pack_loads = [4096 if p < 4 else 3072 for p in range(8)]
+            resp_by_ex = [256 if k % 2 == 0 else 512 for k in range(16)]
+            u_dot_q_by_slice = {
+                target_name: [
+                    200.0 * 256.0 - 64.0 if k % 2 == 0 else 200.0 * 512.0 + 64.0
+                    for k in range(16)
+                ],
+                **{
+                    s_name: [
+                        (50.0 - 2.0 * s_idx) * 256.0 - 32.0
+                        if k % 2 == 0
+                        else (50.0 - 2.0 * s_idx) * 512.0 + 32.0
+                        for k in range(16)
+                    ]
+                    for s_idx, s_name in enumerate(slices)
+                },
+            }
+            row["selected_plan"] = {
+                "plan_id": selected_plan_id,
+                "example_ids": [f"cand-{round_index:02d}-{k:02d}" for k in range(16)],
+                "source_slices": [ordered_all_slices[k % 3] for k in range(16)],
+                "packed_lengths": [2048 if k < 8 else 1536 for k in range(16)],
+                "response_tokens_by_example": resp_by_ex,
+                "pack_assignments": [k // 2 for k in range(16)],
+                "u_dot_q_by_slice": u_dot_q_by_slice,
+                "v_dot_q_by_example": [-16.0 if k % 2 == 0 else 16.0 for k in range(16)],
+            }
+            v_norm_sq = 0.08
+            round_u_dot_v = {
+                target_name: -0.02,
+                **{s_name: -0.01 - 0.002 * s_idx for s_idx, s_name in enumerate(slices)},
+            }
+            shortlist_candidates = []
+            for m in range(shortlist_size):
+                u_dot_v_0 = round_u_dot_v[target_name]
+                u_dot_q_0 = 200.0 - 5.0 * m if m < 14 else -500.0
+                margin_0 = 0.01
+                hat_s_0 = -u_dot_v_0 + eta * u_dot_q_0
+                lower_s_0 = hat_s_0 - margin_0
+                v_dot_q = -5.0 * m
+                q_norm_sq = 25000.0 * (m + 1)
+                q_hat = v_norm_sq - 2.0 * eta * v_dot_q + (eta**2) * q_norm_sq
+                q_margin = 0.02 if m < 15 else 0.40
+                q_upper = q_hat + q_margin
+                prot_scores = {}
+                prot_ok = True
+                for s_idx, s_name in enumerate(slices):
+                    u_dot_v_c = round_u_dot_v[s_name]
+                    u_dot_q_c = 50.0 - 2.0 * s_idx if m != 13 else -500.0
+                    margin_c = 0.005
+                    hat_s_c = -u_dot_v_c + eta * u_dot_q_c
+                    lower_s_c = hat_s_c - margin_c
+                    prot_scores[s_name] = {
+                        "u_dot_v": u_dot_v_c,
+                        "u_dot_q": u_dot_q_c,
+                        "margin": margin_c,
+                        "hat_s": hat_s_c,
+                        "lower_s": lower_s_c,
+                    }
+                    if lower_s_c < 0.5 * 0.1 * q_upper - round_tau:
+                        prot_ok = False
+                cand_feasible = (
+                    lower_s_0 >= 0.0
+                    and prot_ok
+                    and q_upper <= 0.25
+                    and reserve <= budget - charged_total
+                )
+                shortlist_candidates.append(
+                    {
+                        "plan_id": f"plan-{round_index:02d}-{m:02d}",
+                        "pack_loads": list(selected_pack_loads),
+                        "reserve_accelerator_seconds": reserve,
+                        "v_dot_q": v_dot_q,
+                        "q_norm_sq": q_norm_sq,
+                        "step_norm_sq_hat": q_hat,
+                        "step_norm_sq_margin": q_margin,
+                        "step_norm_sq_upper": q_upper,
+                        "target_score": {
+                            "u_dot_v": u_dot_v_0,
+                            "u_dot_q": u_dot_q_0,
+                            "margin": margin_0,
+                            "hat_s": hat_s_0,
+                            "lower_s": lower_s_0,
+                        },
+                        "protected_scores": prot_scores,
+                        "feasible": cand_feasible,
+                    }
+                )
+            row["shortlist"] = {
+                "learning_rate": eta,
+                "v_norm_sq": v_norm_sq,
+                "u_dot_v": round_u_dot_v,
+                "trust_radius_sq": 0.25,
+                "curvature_upper": dict.fromkeys(slices, 0.1),
+                "candidates": shortlist_candidates,
+            }
             if decision == "accepted":
                 row["committed_scale"] = scales[first_pass]
         if overrun and round_index == 1:
@@ -1048,6 +1951,8 @@ def build_fixture_run(
         "budget_accelerator_seconds": budget,
         "train_ledger_path": ledger_name,
         "train_ledger_sha256": hashlib.sha256(ledger_bytes).hexdigest(),
+        "cost_calibration_bundle_path": calib_name,
+        "cost_calibration_bundle_sha256": calib_sha256,
         "gate_partitions": gate_partitions,
         "gate_loss_records_path": gate_records_name,
         "gate_loss_records_sha256": hashlib.sha256(gate_records_bytes).hexdigest(),
@@ -1407,6 +2312,217 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
             wrong_committed_candidate_state,
         )
 
+        def edit_calibration_bundle(m: dict, change) -> dict:
+            path = directory / m["cost_calibration_bundle_path"]
+            bundle = load_json_verified(
+                path, m["cost_calibration_bundle_sha256"], "cost-calibration bundle"
+            )
+            change(bundle)
+            payload = (json.dumps(bundle, indent=2, sort_keys=True, allow_nan=False) + "\n").encode()
+            path.write_bytes(payload)
+            m["cost_calibration_bundle_sha256"] = hashlib.sha256(payload).hexdigest()
+            return bundle
+
+        mutate(
+            "cost_calibration_plan_count_wrong",
+            lambda r, m, l: edit_calibration_bundle(
+                m, lambda b: b["calibration_plans"].pop()
+            ),
+        )
+        mutate(
+            "cost_calibration_margin_quantile_wrong",
+            lambda r, m, l: edit_calibration_bundle(
+                m, lambda b: b.__setitem__("reserve_margin_seconds", 4.0)
+            ),
+        )
+        mutate(
+            "cost_calibration_overlaps_gate_or_audit",
+            lambda r, m, l: edit_calibration_bundle(
+                m,
+                lambda b: b["calibration_plans"][0]["example_ids"].__setitem__(
+                    0, fixture_gate_ids(protected_name)[0]
+                ),
+            ),
+        )
+
+        def pack_load_exceeds_max(r, m, l):
+            l[0]["selected_plan"]["packed_lengths"][0] = 2049
+            relog(m, l)
+
+        mutate("pack_load_exceeds_maximum_sequence_length", pack_load_exceeds_max)
+
+        def non_best_fit_in_best_fit_cell(r, m, l):
+            l[0]["selected_plan"]["pack_assignments"] = [k % 8 for k in range(16)]
+            l[0]["reserve_accelerator_seconds"] = 39.84
+            l[0]["shortlist"]["candidates"][0]["pack_loads"] = [3584] * 8
+            l[0]["shortlist"]["candidates"][0]["reserve_accelerator_seconds"] = 39.84
+            relog(m, l)
+
+        mutate(
+            "deterministic_best_fit_cell_uses_non_best_fit_packing",
+            non_best_fit_in_best_fit_cell,
+        )
+
+        # Positive control: a fixed_budget_beam cell may use the balanced 3584-load
+        # packing when its reserve matches that packing's calibrated cost (39.84s).
+        _, _, beam_row = build_fixture_run(
+            directory,
+            section,
+            slices_by_setting,
+            {**identity, "cell": "measured_nonlinear__fixed_budget_beam"},
+            -0.2,
+            0.03,
+        )
+        beam_manifest, beam_ledger = load(beam_row)
+        beam_ledger[0]["selected_plan"]["pack_assignments"] = [k % 8 for k in range(16)]
+        beam_ledger[0]["reserve_accelerator_seconds"] = 39.84
+        beam_ledger[0]["shortlist"]["candidates"][0]["pack_loads"] = [3584] * 8
+        beam_ledger[0]["shortlist"]["candidates"][0]["reserve_accelerator_seconds"] = 39.84
+        rewrite_ledger(directory, beam_manifest, beam_ledger)
+        validate_run(beam_manifest, directory, beam_row, section, slices_by_setting)
+
+        def reserve_disagrees_with_calibrated_cost(r, m, l):
+            l[0]["reserve_accelerator_seconds"] -= 0.1
+            relog(m, l)
+
+        mutate(
+            "round_reserve_disagrees_with_calibrated_pack_cost",
+            reserve_disagrees_with_calibrated_cost,
+        )
+
+        def candidate_overlaps_gate_or_audit(r, m, l):
+            l[0]["selected_plan"]["example_ids"][0] = fixture_audit_ids(target_name)[0]
+            relog(m, l)
+
+        mutate("candidate_plan_overlaps_gate_or_audit", candidate_overlaps_gate_or_audit)
+
+        def source_coverage_floor_violated(r, m, l):
+            l[0]["selected_plan"]["source_slices"] = [target_name] * 16
+            relog(m, l)
+
+        mutate(
+            "source_coverage_floor_violated",
+            source_coverage_floor_violated,
+        )
+
+        def shortlist_size_wrong(r, m, l):
+            l[0]["shortlist"]["candidates"].pop()
+            relog(m, l)
+
+        mutate(
+            "shortlist_size_wrong",
+            shortlist_size_wrong,
+        )
+
+        def shortlist_hat_s_mismatch(r, m, l):
+            l[0]["shortlist"]["candidates"][0]["target_score"]["hat_s"] += 0.01
+            l[0]["shortlist"]["candidates"][0]["target_score"]["lower_s"] += 0.01
+            relog(m, l)
+
+        mutate(
+            "shortlist_hat_s_disagrees_with_sketch_equation",
+            shortlist_hat_s_mismatch,
+        )
+
+        def shortlist_protected_constraint_violated(r, m, l):
+            l[0]["shortlist"]["candidates"][13]["feasible"] = True
+            relog(m, l)
+
+        mutate(
+            "shortlist_protected_constraint_violated",
+            shortlist_protected_constraint_violated,
+        )
+
+        def shortlist_trust_radius_violated(r, m, l):
+            l[0]["shortlist"]["candidates"][15]["feasible"] = True
+            relog(m, l)
+
+        mutate(
+            "shortlist_trust_radius_violated",
+            shortlist_trust_radius_violated,
+        )
+
+        def shortlist_non_argmax_selected(r, m, l):
+            l[0]["selected_plan"]["plan_id"] = "plan-00-01"
+            relog(m, l)
+
+        mutate(
+            "shortlist_suboptimal_feasible_plan_selected",
+            shortlist_non_argmax_selected,
+        )
+
+        def shortlist_u_dot_v_varies(r, m, l):
+            cand = l[0]["shortlist"]["candidates"][1]["target_score"]
+            cand["u_dot_v"] -= 0.005
+            cand["hat_s"] += 0.005
+            cand["lower_s"] += 0.005
+            relog(m, l)
+
+        mutate(
+            "shortlist_u_dot_v_varies_across_candidates",
+            shortlist_u_dot_v_varies,
+        )
+
+        def selected_u_dot_q_example_weighted(r, m, l):
+            plan = l[0]["selected_plan"]
+            resp = plan["response_tokens_by_example"]
+            per_ex_rates = [
+                val / tok
+                for val, tok in zip(plan["u_dot_q_by_slice"][target_name], resp)
+            ]
+            wrong_u_dot_q = math.fsum(per_ex_rates) / len(per_ex_rates)
+            cand0 = l[0]["shortlist"]["candidates"][0]["target_score"]
+            eta_val = l[0]["shortlist"]["learning_rate"]
+            cand0["u_dot_q"] = wrong_u_dot_q
+            cand0["hat_s"] = -cand0["u_dot_v"] + eta_val * wrong_u_dot_q
+            cand0["lower_s"] = cand0["hat_s"] - cand0["margin"]
+            relog(m, l)
+
+        mutate(
+            "selected_plan_u_dot_q_example_weighted_instead_of_global_nb",
+            selected_u_dot_q_example_weighted,
+        )
+
+        def selected_v_dot_q_mismatch(r, m, l):
+            l[0]["selected_plan"]["v_dot_q_by_example"][0] += 10.0
+            relog(m, l)
+
+        mutate(
+            "selected_plan_v_dot_q_mismatch",
+            selected_v_dot_q_mismatch,
+        )
+
+        def shortlist_step_norm_quadratic_mismatch(r, m, l):
+            cand = l[0]["shortlist"]["candidates"][0]
+            cand["step_norm_sq_hat"] += 0.005
+            cand["step_norm_sq_upper"] += 0.005
+            relog(m, l)
+
+        mutate(
+            "shortlist_step_norm_sq_hat_disagrees_with_sketch_quadratic",
+            shortlist_step_norm_quadratic_mismatch,
+        )
+
+        def shortlist_cauchy_schwarz_violated(r, m, l):
+            cand = l[0]["shortlist"]["candidates"][1]
+            eta_val = l[0]["shortlist"]["learning_rate"]
+            v_norm_sq = l[0]["shortlist"]["v_norm_sq"]
+            cand["v_dot_q"] = -100.0
+            cand["q_norm_sq"] = 100.0
+            cand["step_norm_sq_hat"] = (
+                v_norm_sq - 2.0 * eta_val * cand["v_dot_q"] + (eta_val**2) * cand["q_norm_sq"]
+            )
+            cand["step_norm_sq_upper"] = cand["step_norm_sq_hat"] + cand["step_norm_sq_margin"]
+            relog(m, l)
+
+        mutate(
+            "shortlist_step_norm_cauchy_schwarz_violated",
+            shortlist_cauchy_schwarz_violated,
+        )
+
+        _, _, base_row = build_fixture_run(
+            directory, section, slices_by_setting, dict(identity), -0.2, 0.03
+        )
         _, _, failed_row = build_fixture_run(
             directory,
             section,
@@ -1433,6 +2549,14 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
             mutations["unpaired_initial_state"] = "rejected"
         else:
             raise LedgerError("unpaired initial state was accepted")
+        unpaired_calib = dict(closures["maximum_rounds"][1])
+        unpaired_calib["cost_calibration_bundle_sha256"] = fake_hash("other-calib")
+        try:
+            check_pairing([closures["reserve_exhausted"], (base_row, unpaired_calib)])
+        except LedgerError:
+            mutations["unpaired_cost_calibration_bundle"] = "rejected"
+        else:
+            raise LedgerError("unpaired cost_calibration_bundle_sha256 was accepted")
         for label, field, value in (
             ("unpaired_gate_partition", "gate_partitions", fake_hash("other-gate-partition")),
             ("unpaired_audit_partition", "audit_partitions", fake_hash("other-partition")),

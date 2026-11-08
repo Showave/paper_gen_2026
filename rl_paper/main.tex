@@ -119,19 +119,29 @@ sampling, asymmetric clipping, and token-level aggregation
 \cite{yu2025dapo}. GSPO uses a length-normalized geometric mean of token ratios
 with response-level clipping \cite{zheng2025gspo}. Recent analyses expose
 negative-gradient pathologies
-\cite{deng2025negative}, U-statistic structure \cite{zhou2026ustatistic}, and
+\cite{deng2025negative}, U-statistic structure \cite{zhou2026ustatistic},
+mean-versus-variance calibration and KL-regularized success-probability
+recurrences \cite{mroueh2026grpo}, and
 the interaction between clipping, entropy, and misaligned rewards
 \cite{chen2026exploration}. Our estimator intentionally omits group
 normalization and PPO clipping so its target expectation remains explicit.
 
 \paragraph{Allocation, baselines, and length.}
 Adaptive rollout allocation predicts prompt difficulty and assigns rollout
-counts under a fixed budget \cite{nguyen2026adaptive}. Cross-prompt shrinkage
+counts under a fixed budget \cite{nguyen2026adaptive}. Dynamic Pruning Policy
+Optimization (DPPO) prunes redundant group rollouts and rescales retained
+samples by importance weights to preserve the full-batch GRPO expectation
+\cite{zhu2026dppo}. Cross-prompt shrinkage
 baselines reduce variance while preserving a policy-gradient target
 \cite{zeng2026shrinkage}. Group-relative reward rescaling addresses length
-inflation \cite{li2026length}. We instead represent length as a constrained
-cost and adapt the stale-source prompt proposal; these components are not
-claimed to subsume those methods.
+inflation \cite{li2026length}, Length-Unbiased Sequence Policy
+Optimization (LUSPO) rectifies the length bias of GSPO by scaling sequence
+objectives by response length to prevent length collapse \cite{liu2026luspo},
+and VL~Norm ($\Delta L$~Normalization) reweights dynamic-length loss aggregation
+toward a minimum-variance unbiased policy-loss target \cite{he2025vlnorm}.
+We instead keep the sequence score unnormalized, represent length as a
+constrained cost, and adapt the stale-source prompt proposal; these components
+are not claimed to subsume those methods.
 Discounted Beta--Bernoulli reward estimation reuses historical reward
 statistics to reduce group-estimator error while explicitly accepting bias
 \cite{kim2026dbb}. It is therefore a required bias--variance comparator:
@@ -183,9 +193,13 @@ does not have that exact claim \cite{liu2025specrl}. MinPRO instead replaces exa
 stabilized minimum-ratio surrogate under policy lag \cite{lei2026minpro}.
 CTPO uses the cumulative product of per-token ratios. Under a token-level
 policy-gradient objective, this is an unbiased prefix correction with lower
-variance than the full-sequence ratio \cite{zhang2026ctpo}. Our estimand is the
+variance than the full-sequence ratio \cite{zhang2026ctpo}, while Proximal~KL
+combines a single current-token ratio with future KL credit so the expected
+update vanishes at the exact proximal optimizer under supported stale behavior
+mixtures without multiplying full-sequence ratios \cite{bai2026proximalkl}. Our estimand is the
 sequence-level score in \cref{eq:score}, so the exact weight is the joint
-mixture ratio of \cref{eq:weight}, not a per-position product.
+mixture ratio of \cref{eq:weight}, not a per-position product or a
+KL-regularized stationary-point surrogate.
 Score centering adds a correction term that cancels persistent drift between
 inference and training engines \cite{marek2026centering}. That mismatch is the
 practical form of our base-versus-decoder fault. We exclude it by requiring
@@ -194,7 +208,12 @@ a practical variant outside the theorem.
 VESPO reshapes sequence-level importance weights through a variance-constrained
 variational kernel without length normalization \cite{shen2026vespo}, while
 GGPO replaces learner-to-behavior ratios with a log-mean-exp contrast of
-KL-adjusted group rewards \cite{zhang2026ggpo}. Both trade exact target-policy
+KL-adjusted group rewards \cite{zhang2026ggpo}. Second-Moment Trust Policy
+Optimization (M2PO) constrains the batch second moment of importance weights to
+mask only extreme high-entropy token outliers under severe staleness
+\cite{zheng2026m2po}, and Coupled Off-Policy Correction (COPC) pairs token-level
+ratio masking with clipped-ratio TD-residual weighting to address advantage
+staleness \cite{hu2026copc}. All four trade exact target-policy
 gradient unbiasedness for stability under severe staleness; our question is
 instead whether a defensive mixture with newly drawn stale trajectories reduces
 variance while keeping the exact one-step expectation.
@@ -261,6 +280,12 @@ s_\theta(Z)
 \right|_{\vartheta=\theta}.
 \label{eq:score}
 \end{align}
+With $g_{\theta,\ell,v}=\nabla_\vartheta z_{\vartheta,\ell,v}|_{\vartheta=\theta}$,
+differentiating \cref{eq:decoder-pmf} gives each step score
+$s_{\theta,\ell}=T_d^{-1}\big(g_{\theta,\ell,Y_\ell}
+-\sum_{v\in\mathcal V_\ell}p_\theta(v\mid Y_{<\ell},X)\,g_{\theta,\ell,v}\big)$,
+which both scales by $T_d^{-1}$ and centers token-logit Jacobians under the
+rollout decoder rather than the unscaled base softmax.
 We do not divide \cref{eq:score} by realized length. Under standard
 score-function conditions,
 $\nabla_\theta\mathcal L=\mathbb E_{P_\theta}[U_\lambda s_\theta]$.
@@ -347,15 +372,38 @@ insufficient. Every attempted row also retains allocated accelerator-seconds,
 including failed and reference draws. Any infrastructure failure blocks
 estimator-claim eligibility rather than allowing a success-conditioned MSE.
 Projected terms are never trusted as declared. A raw-field validator
-recomputes $w$ in log space from frozen header prompt masses and both
-sequence log-probabilities, then $U$, $h$, and $A$, $B$, or $U_\lambda s$ from
-rewards, lengths, the frozen $\lambda$, nuisance predictions, and projected
-scores. The projected ledger must match row for row. The same validator reconstructs
+recomputes each prompt's $\operatorname{SHA-256}(\text{revision}\Vert
+\text{problem\_id})$ hash rank and its exact partition boundary into
+$D_{\mathrm{fit}}$, $D_{\mathrm{select}}$, or $D_{\mathrm{confirm}}$,
+recomputes the adaptive proposal $q_t(x)=\epsilon d(x)+(1-\epsilon)\overline q_t(x)$
+from frozen prior-iteration residual second-moment and cost predictions
+(including the $Z_t^q=0\Rightarrow\overline q_t=D$ fallback), recomputes
+per-step masked temperature-softmax token log-probabilities from raw
+allowed-vocabulary step logits under $T_d$ (requiring their sum to match both
+sequence log-probabilities), recomputes each step's decoder score vector
+$s_{\theta,\ell}=T_d^{-1}(g_{\theta,\ell,Y_\ell}
+-\sum_{v\in\mathcal V_\ell}p_\theta(v\mid Y_{<\ell},X)g_{\theta,\ell,v})$
+from per-token projected logit Jacobians and sums those vectors without length
+normalization to reproduce $s_\theta(Z)$ in \cref{eq:score}, verifies the
+deterministic verifier status-to-reward mapping (including truncation status
+consistency), checks finite-vocabulary sequence-tree
+normalization, sampler--scorer frequency conformance, and the policy-to-behavior
+KL stratum bound, recomputes $w$ in log space from frozen header prompt masses
+and both sequence log-probabilities (together with per-cell, per-source
+maximum weights, $\max(\alpha w)\le1$, and Kish effective sample sizes
+$\operatorname{ESS}=(\sum_iw_i)^2/\sum_iw_i^2$), and then reconstructs $U$, $h$, and $A$,
+$B$, or $U_\lambda s$ from rewards, lengths, the frozen $\lambda$, nuisance
+predictions, and projected scores. The projected ledger must match row for row.
+The same validator reconstructs
 $K_{\mathrm{gen}}$, $K_{\mathrm{ver}}$, $K_{\mathrm{score}}$, and allocated
 accelerator-seconds across candidate, reference, and aborted attempts, and
 rejects rows whose generator or scorer is not the frozen policy pair under the rollout
-decoder, any reused trajectory, nuisance predictions from an unfrozen model or
-one trained on audited prompts, an omitted or spurious added-scoring pass, or
+decoder (including stealth base-logit scoring that spoofs $T_d$, base-softmax
+score centering, or omitted $T_d^{-1}$ score scaling), any token
+outside $\mathcal V_\ell$ or premature EOS, a length-normalized score vector, a
+reward that disagrees with its verifier status, a tampered weight ESS or bound, any reused trajectory, nuisance
+predictions from an unfrozen model or one trained on audited prompts, an
+omitted or spurious added-scoring pass, or
 an action-dependent baseline (\cref{app:gate0}). It fails closed until the
 policy tensors are frozen.
 Before these partitions are formed, every prompt is tied to a pinned source
@@ -897,35 +945,56 @@ that the listed exclusions are necessary, not merely conservative.
 \paragraph{Replay through raw reconstruction.}
 The same law also defines a golden raw ledger. It has one row per cell and
 source for $\alpha=1/2$, the $\alpha=1$ control, and reference rows. Each row
-logs the prompt, both sequence log-probabilities, reward, length, verifier
+logs the prompt, per-step allowed-vocabulary token logits, EOS flags, per-token
+projected logit Jacobians, and step
+score vectors, both
+sequence log-probabilities, verifier status, reward, length, verifier
 call, added cross-policy scoring passes ($1$ for $\alpha<1$ mixture candidates
 and $0$ for $\alpha=1$ and reference rows), nuisance
-predictions, and the score. Reconstructed terms are unbiased for the target
-gradient by enumeration in all three groups to $10^{-12}$, and the
-reconstructed cost ledger recovers $K_{\mathrm{gen}}=24$,
+predictions, and the unnormalized sequence score, while the header logs the
+hash-ranked prompt frame, the verifier status-to-reward table, prior-iteration residual
+second-moment and cost predictions, finite-vocabulary sequence-tree conformance
+counts, the policy-to-behavior KL audit, and per-cell, per-source mixture-weight
+diagnostics ($\max w$, $\max(\alpha w)$, and Kish ESS). Reconstructed terms are unbiased
+for the target gradient by enumeration in all three groups to $10^{-12}$, the
+adaptive proposal $q_t(x)$ and its $Z_t^q=0$ fallback reproduce to $10^{-12}$,
+the 2,048-prompt pilot frame reproduces its $1{,}024/512/512$ hash-rank
+partitions,
+and the reconstructed cost ledger recovers $K_{\mathrm{gen}}=24$,
 $K_{\mathrm{ver}}=12$, and $K_{\mathrm{score}}=16$ for candidates plus
 $K_{\mathrm{gen}}=8$, $K_{\mathrm{ver}}=4$, and $K_{\mathrm{score}}=0$ for
 reference rows; a separate aborted-attempt fixture verifies that failed draws
 retain their incurred token, verifier, and scoring costs without entering any
-gradient estimate. Thirteen raw-ledger and cost-counter mutations fail,
-including dropping an aborted attempt's cost or miscounting added scoring
-passes. They also match an
+gradient estimate. Thirty-one raw-ledger, prompt-frame, proposal, step-logit,
+logit-Jacobian, step-score, verifier-status, conformance, KL, weight-diagnostic,
+and cost-counter mutations fail, including a tampered prompt-selection hash, a
+wrong hash-rank prompt selected, a violated partition boundary, a step score
+centered with base softmax instead of the rollout decoder or missing $T_d^{-1}$
+scaling, a token-logit Jacobian shape mismatch, a
+length-normalized score instead of the unnormalized step sum, a verifier reward
+that disagrees with its status table, a truncated trajectory claiming a
+verified pass, a tampered source-specific weight ESS or maximum weight, mismatched adaptive-proposal moments,
+a violated zero-normalizer fallback, stealth base-logit scoring with a spoofed
+header temperature, a sampled token outside $\mathcal V_\ell$, a premature EOS
+token, an unnormalized conformance sequence tree, a policy-to-behavior KL above
+the stratum bound, dropping an aborted attempt's cost, or miscounting added
+scoring passes. They also match an
 independent producer written directly from the Gate~0 functions. All five
 faults are then replayed through the reconstruction. An omitted prompt ratio
 and clipping at $0.9\max w$ change the producer's projected terms, with
 exact biases $-1.71\times10^{-2}$ and $-1.61\times10^{-3}$, so the row-wise
-comparison rejects them. Base-logit scoring is rejected by its recorded
-temperature. When the validator is relaxed to accept base logits, the
-reconstructed bias equals the Gate~0 value $1.43\times10^{-3}$ to
-$10^{-12}$. Focal nuisance fitting is rejected either through overlap between
-training and audited prompts or through an unfrozen nuisance-model hash.
-Reuse is rejected through a nonzero prior use count or a generator hash from
-the previous policy, which covers both the plain and the ratio-recomputed
-variants. The null controls must pass: a proposal equal to $D$, a clip at
-$1/\alpha$, $T_d=1$, disjoint nuisance training prompts, and fresh draws. The
-ledger cannot reveal a producer that records $T_d$ while scoring other
-logits; the sampler--scorer conformance test remains responsible for that
-case.
+comparison rejects them. Base-logit scoring is rejected both when its recorded
+temperature differs from $T_d$ and when it spoofs $T_d$ while scoring sequence
+log-probabilities with unscaled step logits. When the validator is relaxed to
+accept base logits, the reconstructed bias equals the Gate~0 value
+$1.43\times10^{-3}$ to $10^{-12}$. Focal nuisance fitting is rejected either
+through overlap between training and audited prompts or through an unfrozen
+nuisance-model hash. Reuse is rejected through a nonzero prior use count or a
+generator hash from the previous policy, which covers both the plain and the
+ratio-recomputed variants. The null controls must pass: a proposal equal to $D$
+(including via $Z_t^q=0$), a clip at $1/\alpha$, $T_d=1$, disjoint nuisance
+training prompts, and fresh draws. Raw forward passes that produce the recorded
+step logits on the frozen checkpoints remain site-local hardware measurements.
 
 \subsection{Optional Prefix Gate}
 Prefix continuation is excluded from the core experiments. A later extension
