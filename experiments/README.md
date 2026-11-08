@@ -242,7 +242,12 @@ margin, and worst-case gate reserve. For every non-null round it checks the
 selected candidate subset and physical pack assignment (disjoint candidate IDs,
 pack loads $\le L_{\max}=4096$, per-slice source-coverage floor $\ge0.1|B|$,
 canonical length-descending best-fit assignment
-in best-fit cells, shortlist sketch-score/feasibility/argmax selection across
+in best-fit cells, global-$N_B$-normalized per-example sketch aggregation
+$u_{c,t}^\top q_{B,t}=N_B^{-1}\sum_{i\in B}u_{c,t}^\top q_{i,t}$ and
+$v_t^\top q_{B,t}=N_B^{-1}\sum_{i\in B}v_t^\top q_{i,t}$, candidate-independent
+$u_{c,t}^\top v_t$, sketched step-norm quadratic
+$\|v_t\|_2^2-2\eta_tv_t^\top q_{B,t}+\eta_t^2\|q_{B,t}\|_2^2$ with
+Cauchy--Schwarz bound, shortlist sketch-score/feasibility/argmax selection across
 the 16-plan shortlist, and reserve recomputed from sunk round overhead plus
 calibrated pack cost, 0.995 residual margin, and worst-case gate reserve),
 reserve admission before every round, complete charging of
@@ -269,13 +274,15 @@ stage, validates `train/run_ledger.jsonl` at the `train` stage, and re-executes
 the aggregator at `evaluate`. The aggregator calls this closure for every row
 and requires paired rows to share the split-manifest hash, one gate partition
 per protected slice, one disjoint audit partition per slice, reference cost,
-initial state, cost-calibration bundle, and initial audit NLLs. Forty-four
+initial state, cost-calibration bundle, and initial audit NLLs. Forty-nine
 generated mutations fail,
 including a wrong calibration plan count or 0.995 residual margin, calibration
 or candidate overlap with gate/audit partitions, a pack load above $L_{\max}$,
 a non-best-fit packing in a best-fit cell, a round reserve that disagrees with
 the calibrated pack cost, a violated source-coverage floor, a wrong shortlist
-size, a tampered shortlist sketch score or feasibility flag, a non-argmax
+size, a candidate-varying $u_{c,t}^\top v_t$, an example-uniform instead of
+global-$N_B$ sketch average, a mismatched $v_t^\top q_{B,t}$, a violated
+step-norm quadratic or Cauchy--Schwarz bound, a tampered shortlist sketch score or feasibility flag, a non-argmax
 shortlist selection, post-difference instead of per-example gate clipping,
 token-weighted gate or audit means, foreign gate draws, overlapping gate and
 audit partitions, an accepted state that differs from the committed scale's

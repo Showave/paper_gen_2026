@@ -22,11 +22,18 @@ validator replays the ledger under the frozen SFT preregistration and requires
   candidates, the heuristic upper statistic, largest-passing-scale commitment
   to that scale's candidate state, and the cumulative protected-tolerance
   ledger;
-* each non-null round's 16-plan shortlist re-scoring and selection rule:
-  estimated sketch scores ``widehat S_c = -u_c^T v + eta u_c^T q_B``,
-  penalized lower scores ``underline S_c = widehat S_c - e_c`` across target
-  and protected slices, upper step-norm bound ``overline q = widehat q + e^q``,
-  protected curvature/tolerance and trust-radius feasibility, and selection of
+* each non-null round's 16-plan shortlist re-scoring, per-example sketch
+  aggregation, and selection rule: candidate-independent ``u_c^T v`` across the
+  shortlist, global-``N_B``-normalized selected-plan sketch inner products
+  ``u_c^T q_B = (1/N_B) sum_{i in B} u_c^T q_i`` and
+  ``v^T q_B = (1/N_B) sum_{i in B} v^T q_i``, estimated sketch scores
+  ``widehat S_c = -u_c^T v + eta u_c^T q_B``, penalized lower scores
+  ``underline S_c = widehat S_c - e_c`` across target and protected slices,
+  sketched step-norm quadratic
+  ``widehat q = ||v||_2^2 - 2 eta v^T q_B + eta^2 ||q_B||_2^2`` with
+  Cauchy--Schwarz check ``(v^T q_B)^2 <= ||v||_2^2 ||q_B||_2^2``, upper
+  step-norm bound ``overline q = widehat q + e^q``, protected
+  curvature/tolerance and trust-radius feasibility, and selection of
   the feasible shortlist plan maximizing ``underline S_0`` (or a rejected/null
   round if no shortlist plan is feasible);
 * audit endpoints evaluated on the final ledger state, from which the row's
@@ -444,6 +451,8 @@ def recompute_round_plans_and_reserves(
                 "packed_lengths",
                 "response_tokens_by_example",
                 "pack_assignments",
+                "u_dot_q_by_slice",
+                "v_dot_q_by_example",
             },
             f"{label} selected_plan has an invalid schema",
         )
@@ -453,6 +462,8 @@ def recompute_round_plans_and_reserves(
         lengths = plan["packed_lengths"]
         resp_tokens = plan["response_tokens_by_example"]
         assignments = plan["pack_assignments"]
+        u_dot_q_by_slice = plan["u_dot_q_by_slice"]
+        v_dot_q_by_example = plan["v_dot_q_by_example"]
         require(
             isinstance(plan_id, str)
             and plan_id
@@ -500,10 +511,40 @@ def recompute_round_plans_and_reserves(
             ),
             f"{label} selected_plan lengths or response tokens are invalid",
         )
+        n_b = sum(resp_tokens)
         require(
-            sum(resp_tokens) == row["response_tokens"],
+            n_b == row["response_tokens"],
             f"{label} selected_plan response_tokens_by_example do not sum to response_tokens",
         )
+        require(
+            isinstance(u_dot_q_by_slice, dict)
+            and set(u_dot_q_by_slice) == all_slices
+            and all(
+                isinstance(u_dot_q_by_slice[s_name], list)
+                and len(u_dot_q_by_slice[s_name]) == count
+                and all(
+                    isinstance(val, (int, float))
+                    and not isinstance(val, bool)
+                    and math.isfinite(val)
+                    for val in u_dot_q_by_slice[s_name]
+                )
+                for s_name in all_slices
+            )
+            and isinstance(v_dot_q_by_example, list)
+            and len(v_dot_q_by_example) == count
+            and all(
+                isinstance(val, (int, float))
+                and not isinstance(val, bool)
+                and math.isfinite(val)
+                for val in v_dot_q_by_example
+            ),
+            f"{label} selected_plan per-example sketch inner products are invalid",
+        )
+        recomputed_u_dot_q = {
+            s_name: math.fsum(float(val) for val in u_dot_q_by_slice[s_name]) / n_b
+            for s_name in all_slices
+        }
+        recomputed_v_dot_q = math.fsum(float(val) for val in v_dot_q_by_example) / n_b
         packs = row["physical_packs"]
         require(
             all(
@@ -546,6 +587,8 @@ def recompute_round_plans_and_reserves(
             and set(shortlist)
             == {
                 "learning_rate",
+                "v_norm_sq",
+                "u_dot_v",
                 "trust_radius_sq",
                 "curvature_upper",
                 "candidates",
@@ -553,11 +596,25 @@ def recompute_round_plans_and_reserves(
             f"{label} shortlist has an invalid schema",
         )
         eta = shortlist["learning_rate"]
+        v_norm_sq = shortlist["v_norm_sq"]
+        round_u_dot_v = shortlist["u_dot_v"]
         rho_sq = shortlist["trust_radius_sq"]
         beta_upper = shortlist["curvature_upper"]
         candidates = shortlist["candidates"]
         require(
             close(eta, float(section["adamw"]["learning_rate"]))
+            and isinstance(v_norm_sq, (int, float))
+            and not isinstance(v_norm_sq, bool)
+            and math.isfinite(v_norm_sq)
+            and v_norm_sq >= 0
+            and isinstance(round_u_dot_v, dict)
+            and set(round_u_dot_v) == all_slices
+            and all(
+                isinstance(round_u_dot_v[s], (int, float))
+                and not isinstance(round_u_dot_v[s], bool)
+                and math.isfinite(round_u_dot_v[s])
+                for s in all_slices
+            )
             and isinstance(rho_sq, (int, float))
             and not isinstance(rho_sq, bool)
             and math.isfinite(rho_sq)
@@ -589,6 +646,8 @@ def recompute_round_plans_and_reserves(
                     "plan_id",
                     "pack_loads",
                     "reserve_accelerator_seconds",
+                    "v_dot_q",
+                    "q_norm_sq",
                     "step_norm_sq_hat",
                     "step_norm_sq_margin",
                     "step_norm_sq_upper",
@@ -626,22 +685,42 @@ def recompute_round_plans_and_reserves(
                 close(cand["reserve_accelerator_seconds"], c_reserve),
                 f"{c_label} reserve_accelerator_seconds does not reproduce",
             )
+            v_dot_q = cand["v_dot_q"]
+            q_norm_sq = cand["q_norm_sq"]
             q_hat = cand["step_norm_sq_hat"]
             q_margin = cand["step_norm_sq_margin"]
             q_upper = cand["step_norm_sq_upper"]
             require(
-                isinstance(q_hat, (int, float))
+                isinstance(v_dot_q, (int, float))
+                and not isinstance(v_dot_q, bool)
+                and math.isfinite(v_dot_q)
+                and isinstance(q_norm_sq, (int, float))
+                and not isinstance(q_norm_sq, bool)
+                and math.isfinite(q_norm_sq)
+                and q_norm_sq >= 0
+                and isinstance(q_hat, (int, float))
                 and not isinstance(q_hat, bool)
                 and isinstance(q_margin, (int, float))
                 and not isinstance(q_margin, bool)
                 and q_hat >= 0
                 and q_margin >= 0
+                and float(v_dot_q) ** 2
+                <= float(v_norm_sq) * float(q_norm_sq)
+                + TOLERANCE * max(1.0, float(v_norm_sq) * float(q_norm_sq))
+                and close(
+                    q_hat,
+                    float(v_norm_sq)
+                    - 2.0 * float(eta) * float(v_dot_q)
+                    + (float(eta) ** 2) * float(q_norm_sq),
+                )
                 and close(q_upper, float(q_hat) + float(q_margin)),
-                f"{c_label} step_norm_sq_upper does not equal step_norm_sq_hat + step_norm_sq_margin",
+                f"{c_label} step_norm_sq_hat or step_norm_sq_upper violates the sketch quadratic or Cauchy-Schwarz bound",
             )
             q_bar = float(q_hat) + float(q_margin)
 
-            def check_score_block(block: Any, block_label: str) -> float:
+            def check_score_block(
+                block: Any, block_label: str, slice_name: str
+            ) -> float:
                 require(
                     isinstance(block, dict)
                     and set(block)
@@ -652,8 +731,9 @@ def recompute_round_plans_and_reserves(
                         and math.isfinite(block[k])
                         for k in ("u_dot_v", "u_dot_q", "margin", "hat_s", "lower_s")
                     )
-                    and block["margin"] >= 0,
-                    f"{block_label} has an invalid score schema",
+                    and block["margin"] >= 0
+                    and close(block["u_dot_v"], float(round_u_dot_v[slice_name])),
+                    f"{block_label} has an invalid score schema or candidate-varying u_dot_v",
                 )
                 expected_hat = -float(block["u_dot_v"]) + float(eta) * float(block["u_dot_q"])
                 expected_lower = expected_hat - float(block["margin"])
@@ -664,7 +744,9 @@ def recompute_round_plans_and_reserves(
                 )
                 return expected_lower
 
-            s0_lower = check_score_block(cand["target_score"], f"{c_label} target_score")
+            s0_lower = check_score_block(
+                cand["target_score"], f"{c_label} target_score", target_slice
+            )
             prot_scores = cand["protected_scores"]
             require(
                 isinstance(prot_scores, dict) and set(prot_scores) == set(protected),
@@ -673,7 +755,9 @@ def recompute_round_plans_and_reserves(
             prot_feasible = True
             for s_name in protected:
                 sc_lower = check_score_block(
-                    prot_scores[s_name], f"{c_label} protected_scores[{s_name}]"
+                    prot_scores[s_name],
+                    f"{c_label} protected_scores[{s_name}]",
+                    s_name,
                 )
                 threshold = 0.5 * float(beta_upper[s_name]) * q_bar - round_tau
                 if sc_lower < threshold - TOLERANCE:
@@ -696,8 +780,20 @@ def recompute_round_plans_and_reserves(
         require(
             selected_entry is not None
             and selected_entry["pack_loads"] == pack_loads
-            and close(selected_entry["reserve_accelerator_seconds"], expected_reserve),
-            f"{label} selected_plan does not match its shortlist entry",
+            and close(selected_entry["reserve_accelerator_seconds"], expected_reserve)
+            and close(selected_entry["v_dot_q"], recomputed_v_dot_q)
+            and close(
+                selected_entry["target_score"]["u_dot_q"],
+                recomputed_u_dot_q[target_slice],
+            )
+            and all(
+                close(
+                    selected_entry["protected_scores"][s_name]["u_dot_q"],
+                    recomputed_u_dot_q[s_name],
+                )
+                for s_name in protected
+            ),
+            f"{label} selected_plan does not match its shortlist entry or global-N_B per-example sketch aggregation",
         )
         require(
             feasible_candidates,
@@ -1689,28 +1785,53 @@ def build_fixture_run(
             row["physical_packs"] = section["optimizer_window"]["physical_packs_per_update"]
             selected_plan_id = f"plan-{round_index:02d}-00"
             selected_pack_loads = [4096 if p < 4 else 3072 for p in range(8)]
+            resp_by_ex = [256 if k % 2 == 0 else 512 for k in range(16)]
+            u_dot_q_by_slice = {
+                target_name: [
+                    200.0 * 256.0 - 64.0 if k % 2 == 0 else 200.0 * 512.0 + 64.0
+                    for k in range(16)
+                ],
+                **{
+                    s_name: [
+                        (50.0 - 2.0 * s_idx) * 256.0 - 32.0
+                        if k % 2 == 0
+                        else (50.0 - 2.0 * s_idx) * 512.0 + 32.0
+                        for k in range(16)
+                    ]
+                    for s_idx, s_name in enumerate(slices)
+                },
+            }
             row["selected_plan"] = {
                 "plan_id": selected_plan_id,
                 "example_ids": [f"cand-{round_index:02d}-{k:02d}" for k in range(16)],
                 "source_slices": [ordered_all_slices[k % 3] for k in range(16)],
                 "packed_lengths": [2048 if k < 8 else 1536 for k in range(16)],
-                "response_tokens_by_example": [384] * 16,
+                "response_tokens_by_example": resp_by_ex,
                 "pack_assignments": [k // 2 for k in range(16)],
+                "u_dot_q_by_slice": u_dot_q_by_slice,
+                "v_dot_q_by_example": [-16.0 if k % 2 == 0 else 16.0 for k in range(16)],
+            }
+            v_norm_sq = 0.08
+            round_u_dot_v = {
+                target_name: -0.02,
+                **{s_name: -0.01 - 0.002 * s_idx for s_idx, s_name in enumerate(slices)},
             }
             shortlist_candidates = []
             for m in range(shortlist_size):
-                u_dot_v_0 = -0.02
+                u_dot_v_0 = round_u_dot_v[target_name]
                 u_dot_q_0 = 200.0 - 5.0 * m if m < 14 else -500.0
                 margin_0 = 0.01
                 hat_s_0 = -u_dot_v_0 + eta * u_dot_q_0
                 lower_s_0 = hat_s_0 - margin_0
-                q_hat = 0.08 + 0.002 * m
+                v_dot_q = -5.0 * m
+                q_norm_sq = 25000.0 * (m + 1)
+                q_hat = v_norm_sq - 2.0 * eta * v_dot_q + (eta**2) * q_norm_sq
                 q_margin = 0.02 if m < 15 else 0.40
                 q_upper = q_hat + q_margin
                 prot_scores = {}
                 prot_ok = True
                 for s_idx, s_name in enumerate(slices):
-                    u_dot_v_c = -0.01
+                    u_dot_v_c = round_u_dot_v[s_name]
                     u_dot_q_c = 50.0 - 2.0 * s_idx if m != 13 else -500.0
                     margin_c = 0.005
                     hat_s_c = -u_dot_v_c + eta * u_dot_q_c
@@ -1735,6 +1856,8 @@ def build_fixture_run(
                         "plan_id": f"plan-{round_index:02d}-{m:02d}",
                         "pack_loads": list(selected_pack_loads),
                         "reserve_accelerator_seconds": reserve,
+                        "v_dot_q": v_dot_q,
+                        "q_norm_sq": q_norm_sq,
                         "step_norm_sq_hat": q_hat,
                         "step_norm_sq_margin": q_margin,
                         "step_norm_sq_upper": q_upper,
@@ -1751,6 +1874,8 @@ def build_fixture_run(
                 )
             row["shortlist"] = {
                 "learning_rate": eta,
+                "v_norm_sq": v_norm_sq,
+                "u_dot_v": round_u_dot_v,
                 "trust_radius_sq": 0.25,
                 "curvature_upper": dict.fromkeys(slices, 0.1),
                 "candidates": shortlist_candidates,
@@ -2324,6 +2449,75 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
         mutate(
             "shortlist_suboptimal_feasible_plan_selected",
             shortlist_non_argmax_selected,
+        )
+
+        def shortlist_u_dot_v_varies(r, m, l):
+            cand = l[0]["shortlist"]["candidates"][1]["target_score"]
+            cand["u_dot_v"] -= 0.005
+            cand["hat_s"] += 0.005
+            cand["lower_s"] += 0.005
+            relog(m, l)
+
+        mutate(
+            "shortlist_u_dot_v_varies_across_candidates",
+            shortlist_u_dot_v_varies,
+        )
+
+        def selected_u_dot_q_example_weighted(r, m, l):
+            plan = l[0]["selected_plan"]
+            resp = plan["response_tokens_by_example"]
+            per_ex_rates = [
+                val / tok
+                for val, tok in zip(plan["u_dot_q_by_slice"][target_name], resp)
+            ]
+            wrong_u_dot_q = math.fsum(per_ex_rates) / len(per_ex_rates)
+            cand0 = l[0]["shortlist"]["candidates"][0]["target_score"]
+            eta_val = l[0]["shortlist"]["learning_rate"]
+            cand0["u_dot_q"] = wrong_u_dot_q
+            cand0["hat_s"] = -cand0["u_dot_v"] + eta_val * wrong_u_dot_q
+            cand0["lower_s"] = cand0["hat_s"] - cand0["margin"]
+            relog(m, l)
+
+        mutate(
+            "selected_plan_u_dot_q_example_weighted_instead_of_global_nb",
+            selected_u_dot_q_example_weighted,
+        )
+
+        def selected_v_dot_q_mismatch(r, m, l):
+            l[0]["selected_plan"]["v_dot_q_by_example"][0] += 10.0
+            relog(m, l)
+
+        mutate(
+            "selected_plan_v_dot_q_mismatch",
+            selected_v_dot_q_mismatch,
+        )
+
+        def shortlist_step_norm_quadratic_mismatch(r, m, l):
+            cand = l[0]["shortlist"]["candidates"][0]
+            cand["step_norm_sq_hat"] += 0.005
+            cand["step_norm_sq_upper"] += 0.005
+            relog(m, l)
+
+        mutate(
+            "shortlist_step_norm_sq_hat_disagrees_with_sketch_quadratic",
+            shortlist_step_norm_quadratic_mismatch,
+        )
+
+        def shortlist_cauchy_schwarz_violated(r, m, l):
+            cand = l[0]["shortlist"]["candidates"][1]
+            eta_val = l[0]["shortlist"]["learning_rate"]
+            v_norm_sq = l[0]["shortlist"]["v_norm_sq"]
+            cand["v_dot_q"] = -100.0
+            cand["q_norm_sq"] = 100.0
+            cand["step_norm_sq_hat"] = (
+                v_norm_sq - 2.0 * eta_val * cand["v_dot_q"] + (eta_val**2) * cand["q_norm_sq"]
+            )
+            cand["step_norm_sq_upper"] = cand["step_norm_sq_hat"] + cand["step_norm_sq_margin"]
+            relog(m, l)
+
+        mutate(
+            "shortlist_step_norm_cauchy_schwarz_violated",
+            shortlist_cauchy_schwarz_violated,
         )
 
         _, _, base_row = build_fixture_run(

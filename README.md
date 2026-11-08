@@ -105,7 +105,8 @@ three-way reference bootstrap from a generated trajectory ledger, and the
 evaluation paper's 189-condition fractional simulation layout. They also
 replay SFT endpoint rows against hash-bound train ledgers and 200-plan
 cost-calibration bundles, verify physical pack plans, per-slice source-coverage
-floors, shortlist sketch-score/feasibility/argmax selection, and canonical
+floors, global-$N_B$ per-example sketch aggregation, candidate-independent
+$u_{c,t}^\top v_t$, sketched step-norm quadratics, shortlist sketch-score/feasibility/argmax selection, and canonical
 length-descending best-fit assignments, recompute every
 round's gate mean changes from per-draw clipped gate-loss records across
 paired scale candidates, and recompute audit

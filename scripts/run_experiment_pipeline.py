@@ -409,7 +409,7 @@ def validate_preregistration_section(
             fail(f"SFT train-ledger self-test failed: {exc}")
         if (
             sft_ledger_audit.get("empirical_evidence") is not False
-            or sft_ledger_audit.get("mutations_rejected", 0) < 44
+            or sft_ledger_audit.get("mutations_rejected", 0) < 49
         ):
             fail("SFT train-ledger self-test did not pass")
         window = nested(section, "optimizer_window")

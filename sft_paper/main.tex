@@ -116,9 +116,13 @@ LESS stores low-rank, Adam-aware gradient features and retrieves examples
 aligned with target examples \cite{xia2024less}. SmallToLarge summarizes proxy
 model loss trajectories \cite{yang2024smalltolarge}; SHED moves Shapley
 valuation to cluster representatives \cite{he2024shed}; FisherSFT selects for
-last-layer-linearized information gain \cite{deb2025fishersft}; and influence
+last-layer-linearized information gain \cite{deb2025fishersft}; influence
 distillation amortizes expensive influence computations through landmarks
-\cite{nikdan2025influence}. Large-pool studies caution that expensive selectors
+\cite{nikdan2025influence}; IPROX compresses and aligns a smaller proxy directly
+from the target model to preserve gradient influence \cite{chen2026iprox}; and
+GradFiltering scores examples with a LoRA-ensemble gradient signal-to-noise
+ratio on a lightweight proxy without validation queries
+\cite{yuan2026gradfiltering}. Large-pool studies caution that expensive selectors
 can underperform simple representation-similarity selection
 \cite{ivison2025largescale}.
 A controlled ICML study separates representation from subset optimization and
@@ -309,9 +313,14 @@ q_{B,t}=\frac1{N_B}\sum_{i\in B}q_{i,t},\qquad v_t=R_td_t,
 and uses
 \begin{equation}
 \widehat S_{c,t}(B)=-u_{c,t}^\top v_t+
-\eta_tu_{c,t}^\top q_{B,t}.
+\eta_tu_{c,t}^\top q_{B,t},
 \label{eq:sketch-score}
 \end{equation}
+with $u_{c,t}^\top q_{B,t}=N_B^{-1}\sum_{i\in B}u_{c,t}^\top q_{i,t}$,
+$v_t^\top q_{B,t}=N_B^{-1}\sum_{i\in B}v_t^\top q_{i,t}$, and sketched
+squared-displacement proxy
+$\widehat q_t(B)=\|v_t-\eta_tq_{B,t}\|_2^2
+=\|v_t\|_2^2-2\eta_tv_t^\top q_{B,t}+\eta_t^2\|q_{B,t}\|_2^2$.
 This includes response-token weighting and the candidate-independent optimizer
 term. The projection reduces matching cost, not the backward passes needed to
 obtain individual gradients, and any claim applies
@@ -857,9 +866,16 @@ $1\le|\operatorname{range}(\pi)|\le P$ packs within $L_{\max}=4096$, sum to
 $N_B\in[4096,8192]$ response tokens, satisfy the per-slice source-coverage
 floor ($\ge0.1|B|$ examples per capability slice, matched against retained
 provenance in real runs), match the canonical length-descending
-best-fit packing $\pi^{\mathrm{BF}}(B)$ in best-fit cells, reproduce every
+best-fit packing $\pi^{\mathrm{BF}}(B)$ in best-fit cells, reproduce the
+selected plan's global-$N_B$-normalized sketch inner products
+$u_{c,t}^\top q_{B,t}=N_B^{-1}\sum_{i\in B}u_{c,t}^\top q_{i,t}$ and
+$v_t^\top q_{B,t}=N_B^{-1}\sum_{i\in B}v_t^\top q_{i,t}$, verify candidate-independent
+$u_{c,t}^\top v_t$ and the Cauchy--Schwarz bound
+$(v_t^\top q_{B,t})^2\le\|v_t\|_2^2\|q_{B,t}\|_2^2$, reproduce every
 shortlist candidate's sketch score $\widehat S_{c,t}=-u_{c,t}^\top v_t+\eta_tu_{c,t}^\top q_{B,t}$,
-penalized lower score $\underline S_{c,t}=\widehat S_{c,t}-e_{c,t}$, upper
+penalized lower score $\underline S_{c,t}=\widehat S_{c,t}-e_{c,t}$, sketched
+step-norm quadratic
+$\widehat q_t=\|v_t\|_2^2-2\eta_tv_t^\top q_{B,t}+\eta_t^2\|q_{B,t}\|_2^2$, upper
 step-norm bound $\overline q_t=\widehat q_t+e_t^q$, and \cref{eq:selection}
 feasibility (requiring the selected plan to maximize $\underline S_{0,t}$ among
 feasible shortlist candidates), and reproduce the
@@ -888,12 +904,15 @@ protocol-failure run must leave its sealed audits
 unopened. Paired rows must share one split-manifest hash, one gate partition
 per protected slice, and one disjoint audit partition per slice, the reference
 cost within a target setting, and the initial state, cost-calibration bundle,
-and initial audit NLLs within seed and target setting. Forty-four generated
+and initial audit NLLs within seed and target setting. Forty-nine generated
 mutations fail, including a wrong calibration plan count or $0.995$ residual
 margin, a calibration or candidate example overlapping gate or audit
 partitions, a pack load above $L_{\max}$, a non-best-fit packing in a best-fit
 cell, a round reserve that disagrees with the calibrated pack cost, a violated
-source-coverage floor, a wrong shortlist size, a tampered sketch score or
+source-coverage floor, a wrong shortlist size, a candidate-varying $u_{c,t}^\top v_t$,
+an example-uniform instead of global-$N_B$ sketch average, a mismatched
+$v_t^\top q_{B,t}$, a violated step-norm quadratic or Cauchy--Schwarz bound, a
+tampered sketch score or
 protected/trust-radius feasibility flag, a non-argmax shortlist selection, a hidden
 charge, a rejected update that advances the
 optimizer, a smaller-than-largest passing scale, a reused gate block, a

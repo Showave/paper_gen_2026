@@ -58,7 +58,7 @@
       "validator_dependencies": [],
       "blocking_gaps": [
         "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
-        "build, train, and evaluation stages close the 200-plan cost-calibration bundle (0.995 residual margin and worst-case gate reserve), physical pack plans, per-slice source-coverage floors, shortlist sketch-score/feasibility/argmax selection, per-draw gate blocks, and per-example audit-loss records against the run manifest and split manifest, but per-example forward passes and hardware timing measurements are not yet tied to a reviewed hardware execution attestation",
+        "build, train, and evaluation stages close the 200-plan cost-calibration bundle (0.995 residual margin and worst-case gate reserve), physical pack plans, per-slice source-coverage floors, global-N_B per-example sketch aggregation, sketched step-norm quadratics, shortlist sketch-score/feasibility/argmax selection, per-draw gate blocks, and per-example audit-loss records against the run manifest and split manifest, but per-example forward passes and hardware timing measurements are not yet tied to a reviewed hardware execution attestation",
         "site-local sealed-resource access isolation is required but not enforced by the repository runner"
       ],
       "required_before_freezing": [
@@ -224,7 +224,7 @@
     },
     "train_ledger_contract": {
       "validator_path": "scripts/validate_sft_train_ledger.py",
-      "validator_sha256": "dbf48844abd1a58915ba2988a14a109360f760a055b7a8ac5377400e8ccbda89",
+      "validator_sha256": "8c3e8bbd489f594d829e72d4439c41d962069a8969731202ce12c858c07ed82b",
       "aggregator_path": "scripts/aggregate_sft_factorial.py",
       "aggregator_sha256": "9c45ba798479dde41c23254c293f93ba27392b9fbd3b5c7bd97f6ed020d797ee",
       "required_status": "pass",
@@ -244,7 +244,7 @@
         "protocol_failure"
       ],
       "pairing_rule": "all factorial rows share one split-manifest hash, one gate-partition hash per protected slice, and one disjoint audit-partition hash per slice; rows share the reference cost within a target setting and the initial state, cost-calibration bundle, and initial audit NLLs within seed and target setting",
-      "interpretation": "Endpoint rows are replayed against hash-bound 200-plan cost-calibration bundles and per-round ledgers: state and optimizer-step chain, physical pack plan, per-slice source-coverage floor, shortlist sketch-score/feasibility/argmax selection, and canonical length-descending best-fit assignment for best-fit cells, reserve admission recomputed from calibrated pack cost plus the 0.995 residual quantile margin and worst-case gate reserve, complete charging, stop rule, fresh per-slice gate blocks, per-draw clipped gate-loss recomputation across paired scale candidates, largest passing scale committed to its candidate state, tolerance ledger, and final-state audit endpoint. Every declared initial and final audit NLL is recomputed from hash-bound per-example loss records as the row-uniform mean of response-token-mean NLL, evaluated on the exact initial and final states over exactly the identified audit partition; protocol-failure runs keep audits sealed. The real runner validates the build cost-calibration bundles at the build stage, validates train/run_ledger.jsonl at the train stage, and re-executes the aggregation over evaluate/endpoints.jsonl at the evaluate stage. Per-example forward passes and hardware timings remain site-local measurements."
+      "interpretation": "Endpoint rows are replayed against hash-bound 200-plan cost-calibration bundles and per-round ledgers: state and optimizer-step chain, physical pack plan, per-slice source-coverage floor, global-N_B per-example sketch aggregation, candidate-independent u_c^T v, sketched step-norm quadratic with Cauchy--Schwarz bound, shortlist sketch-score/feasibility/argmax selection, and canonical length-descending best-fit assignment for best-fit cells, reserve admission recomputed from calibrated pack cost plus the 0.995 residual quantile margin and worst-case gate reserve, complete charging, stop rule, fresh per-slice gate blocks, per-draw clipped gate-loss recomputation across paired scale candidates, largest passing scale committed to its candidate state, tolerance ledger, and final-state audit endpoint. Every declared initial and final audit NLL is recomputed from hash-bound per-example loss records as the row-uniform mean of response-token-mean NLL, evaluated on the exact initial and final states over exactly the identified audit partition; protocol-failure runs keep audits sealed. The real runner validates the build cost-calibration bundles at the build stage, validates train/run_ledger.jsonl at the train stage, and re-executes the aggregation over evaluate/endpoints.jsonl at the evaluate stage. Per-example forward passes and hardware timings remain site-local measurements."
     }
   },
   "rl": {
