@@ -12,13 +12,18 @@ validator independently recomputes
   pi(i,c,h,o) = w_i * a_(c|i) * rho_h / 2;
 * each batch's candidate-mixture law p_b = eps*pi + (1-eps)*r_b from the
   committed candidate multiset, EVI values, annotation costs, and temperature;
-* predictability: the batch commitment hash and fit slots strictly before the
-  batch, plus predictable response propensities e_b(x) in [e_min, 1];
+* predictability and categorical coherence: the batch commitment hash, fit
+  slots strictly before the batch, predictable response propensities
+  e_b(x) in [e_min, 1], three-category working-prediction simplex coherence
+  |m_b(x)| + m_{b,0}(x) <= 1, and exact nested marginal/conditional assignment
+  probabilities p_t^root(I_t) * p_t^var(C_t|I_t) * p_t^rater(H_t|I_t,C_t) *
+  p_t^order(O_t|I_t,C_t,H_t) = p_t(X_t);
 * the draw-level augmented Hansen--Hurwitz contributions, their worst-case
   nonresponse endpoints, the tie-rate analogue, the tie-subtype decomposition
   (equally_good vs both_unacceptable), the secondary MAR inverse-response-weighted
   contributions psi_t^MAR, the joint (Delta_hat_T, tau_hat_T) sample covariance,
-  ESS, and maximum weight;
+  the prequential three-category Brier score, the frame-weighted AB/BA
+  working-prediction swap discrepancy, ESS, and maximum weight;
 * the complete-outcome studentized interval or the martingale--Hoeffding
   interval when any slot is missing, the response-drift widenings, and the
   terminal four-way action;
@@ -471,6 +476,8 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
         "bundle frame count does not match the hierarchy human_target_units",
     )
     mass = {}
+    unit_tuples: dict[str, tuple[str, str, str, int]] = {}
+    tuple_to_unit: dict[tuple[str, str, str, int], str] = {}
     seen_tuples: set[tuple[str, str, str, int]] = set()
     for row in frame:
         require(isinstance(row, dict), "frame unit must be an object")
@@ -496,8 +503,13 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
             f"frame unit {unit_id} target_mass disagrees with w_i * a_(c|i) * rho_h / 2",
         )
         seen_tuples.add(tuple_key)
+        unit_tuples[unit_id] = tuple_key
+        tuple_to_unit[tuple_key] = unit_id
         mass[unit_id] = float(row["target_mass"])
     require(abs(sum(mass.values()) - 1.0) <= TOLERANCE, "frame masses must sum to one")
+    paired_order_triples = sorted(
+        {(r_uid, v_id, h_id) for r_uid, v_id, h_id, _ in seen_tuples}
+    )
 
     batches = sorted(bundle["batches"], key=lambda row: row["batch"])
     require(
@@ -505,6 +517,8 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
         "batch indices must be contiguous from zero",
     )
     laws: dict[int, dict[str, float]] = {}
+    full_batch_probs: dict[int, dict[str, float]] = {}
+    batch_swap_discrepancies: list[float] = []
     expected_start = 0
     for batch in batches:
         index = batch["batch"]
@@ -534,12 +548,17 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
             all(-1.0 <= value <= 1.0 for value in batch["predictions"].values())
             and all(0.0 <= value <= 1.0 for value in batch["tie_predictions"].values())
             and all(
+                abs(float(batch["predictions"][u])) + float(batch["tie_predictions"][u])
+                <= 1.0 + TOLERANCE
+                for u in mass
+            )
+            and all(
                 isinstance(value, (int, float))
                 and not isinstance(value, bool)
                 and float(e_min) - TOLERANCE <= float(value) <= 1.0 + TOLERANCE
                 for value in batch["response_propensities"].values()
             ),
-            f"batch {index} predictions or response_propensities are outside their bounded ranges",
+            f"batch {index} predictions or response_propensities are outside their bounded ranges or violate three-category simplex coherence |m_b(x)| + m_b,0(x) <= 1",
         )
         if batch["policy"] == "evi_candidate_mixture":
             multiset = batch["candidate_multiset"]
@@ -567,6 +586,22 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
                 f"batch {index} draw law does not normalize",
             )
         laws[index] = law
+        full_probs = {
+            u: draw_probability(u, law, mass, batch["policy"], eps) for u in mass
+        }
+        full_batch_probs[index] = full_probs
+        swap_disc = math.fsum(
+            (
+                mass[tuple_to_unit[(r_uid, v_id, h_id, 1)]]
+                + mass[tuple_to_unit[(r_uid, v_id, h_id, -1)]]
+            )
+            * abs(
+                float(batch["predictions"][tuple_to_unit[(r_uid, v_id, h_id, 1)]])
+                - float(batch["predictions"][tuple_to_unit[(r_uid, v_id, h_id, -1)]])
+            )
+            for r_uid, v_id, h_id in paired_order_triples
+        )
+        batch_swap_discrepancies.append(swap_disc)
     require(expected_start == total_slots, "batches must cover exactly the fixed budget")
 
     slots = sorted(bundle["slots"], key=lambda row: row["slot"])
@@ -585,6 +620,7 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
     unacc_weights: list[float] = []
     mar_psi: list[float] = []
     mar_tie_psi: list[float] = []
+    brier_losses: list[float] = []
     weights: list[float] = []
     missing = 0
     for row in slots:
@@ -606,6 +642,48 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
             f"slot {row['slot']} logged probability does not reproduce",
         )
         require(p >= eps * mass[unit] - TOLERANCE, f"slot {row['slot']} violates positivity")
+        r_uid, v_id, h_id, _ = unit_tuples[unit]
+        b_probs = full_batch_probs[batch["batch"]]
+        p_root = math.fsum(
+            prob for u_id, prob in b_probs.items() if unit_tuples[u_id][0] == r_uid
+        )
+        p_cell = math.fsum(
+            prob
+            for u_id, prob in b_probs.items()
+            if unit_tuples[u_id][0] == r_uid and unit_tuples[u_id][1] == v_id
+        )
+        p_rater = math.fsum(
+            prob
+            for u_id, prob in b_probs.items()
+            if unit_tuples[u_id][0] == r_uid
+            and unit_tuples[u_id][1] == v_id
+            and unit_tuples[u_id][2] == h_id
+        )
+        expected_nested = {
+            "root": p_root,
+            "variant_given_root": p_cell / p_root,
+            "rater_given_cell": p_rater / p_cell,
+            "order_given_unit": p / p_rater,
+        }
+        nested_probs = row.get("nested_probabilities")
+        require(
+            isinstance(nested_probs, dict)
+            and set(nested_probs) == set(expected_nested)
+            and all(
+                isinstance(nested_probs[k], (int, float))
+                and not isinstance(nested_probs[k], bool)
+                and close(float(nested_probs[k]), expected_nested[k])
+                for k in expected_nested
+            )
+            and close(
+                float(nested_probs["root"])
+                * float(nested_probs["variant_given_root"])
+                * float(nested_probs["rater_given_cell"])
+                * float(nested_probs["order_given_unit"]),
+                p,
+            ),
+            f"slot {row['slot']} nested_probabilities do not reproduce or multiply to logged_probability",
+        )
         e_prop = float(batch["response_propensities"][unit])
         require(
             isinstance(row.get("logged_response_propensity"), (int, float))
@@ -644,6 +722,14 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
             unacc_weights.append(weight if subtype == "both_unacceptable" else 0.0)
             mar_psi.append(m_bar + (weight / e_prop) * (row["outcome"] - m))
             mar_tie_psi.append(tie_bar + (weight / e_prop) * (float(row["outcome"] == 0) - m0))
+            p_plus = 0.5 * (1.0 - float(m0) + float(m))
+            p_zero = float(m0)
+            p_minus = 0.5 * (1.0 - float(m0) - float(m))
+            brier_losses.append(
+                (float(row["outcome"] == 1) - p_plus) ** 2
+                + (float(row["outcome"] == 0) - p_zero) ** 2
+                + (float(row["outcome"] == -1) - p_minus) ** 2
+            )
         else:
             require(
                 row["outcome"] is None and subtype is None,
@@ -738,6 +824,9 @@ def recompute(bundle: dict[str, Any], preregistration: dict[str, Any]) -> dict[s
             "variance": mar_variance,
             "tie_estimate": mar_tie_estimate,
         },
+        "prequential_brier_score": sum(brier_losses) / len(brier_losses),
+        "mean_batch_ab_ba_swap_discrepancy": sum(batch_swap_discrepancies)
+        / len(batch_swap_discrepancies),
         "response_drift": drift,
         "maximum_weight": max(weights),
         "effective_sample_size": sum(weights) ** 2 / sum(w * w for w in weights),
@@ -1243,6 +1332,19 @@ def build_fixture(
     raw = [round(row["target_mass"] * 64) for row in frame]
     mass_fraction = {u: Fraction(r, sum(raw)) for u, r in zip(units, raw)}
     rater_by_unit = {row["unit_id"]: row["rater_id"] for row in frame}
+    unit_tuples = {
+        row["unit_id"]: (
+            row["row_uid"],
+            row["variant_id"],
+            row["rater_id"],
+            row["display_order"],
+        )
+        for row in frame
+    }
+    tuple_to_unit = {val: key for key, val in unit_tuples.items()}
+    paired_triples = sorted(
+        {(r_uid, v_id, h_id) for r_uid, v_id, h_id, _ in unit_tuples.values()}
+    )
     config = {
         "exploration_epsilon": 0.25,
         "evi_temperature": 2.0,
@@ -1265,6 +1367,7 @@ def build_fixture(
     batches: list[dict[str, Any]] = []
     slots: list[dict[str, Any]] = []
     exact_rows: list[dict[str, Any]] = []
+    exact_batch_swaps: list[Fraction] = []
     for index in range(4):
         start = index * config["batch_size"]
         policy = "target_random" if index == 0 else "evi_candidate_mixture"
@@ -1308,6 +1411,19 @@ def build_fixture(
         prop = {u: Fraction(str(v)) for u, v in batch["response_propensities"].items()}
         m_bar = sum(mass_fraction[u] * pred[u] for u in units)
         tie_bar = sum(mass_fraction[u] * tie_pred[u] for u in units)
+        exact_batch_swaps.append(
+            sum(
+                (
+                    mass_fraction[tuple_to_unit[(r_uid, v_id, h_id, 1)]]
+                    + mass_fraction[tuple_to_unit[(r_uid, v_id, h_id, -1)]]
+                )
+                * abs(
+                    pred[tuple_to_unit[(r_uid, v_id, h_id, 1)]]
+                    - pred[tuple_to_unit[(r_uid, v_id, h_id, -1)]]
+                )
+                for r_uid, v_id, h_id in paired_triples
+            )
+        )
         for slot in range(start, start + config["batch_size"]):
             unit = rng.choices(units, weights=[float(law[u]) for u in units])[0]
             win, tie = response[unit]
@@ -1319,6 +1435,28 @@ def build_fixture(
                 if (observed and outcome == 0)
                 else None
             )
+            r_uid, v_id, h_id, _ = unit_tuples[unit]
+            p_root = sum(
+                prob for u_id, prob in law.items() if unit_tuples[u_id][0] == r_uid
+            )
+            p_cell = sum(
+                prob
+                for u_id, prob in law.items()
+                if unit_tuples[u_id][0] == r_uid and unit_tuples[u_id][1] == v_id
+            )
+            p_rater = sum(
+                prob
+                for u_id, prob in law.items()
+                if unit_tuples[u_id][0] == r_uid
+                and unit_tuples[u_id][1] == v_id
+                and unit_tuples[u_id][2] == h_id
+            )
+            nested_frac = {
+                "root": p_root,
+                "variant_given_root": p_cell / p_root,
+                "rater_given_cell": p_rater / p_cell,
+                "order_given_unit": law[unit] / p_rater,
+            }
             slots.append(
                 {
                     "slot": slot,
@@ -1326,6 +1464,9 @@ def build_fixture(
                     "batch_commitment_sha256": batch["commitment_sha256"],
                     "unit_id": unit,
                     "logged_probability": float(law[unit]),
+                    "nested_probabilities": {
+                        k: float(val) for k, val in nested_frac.items()
+                    },
                     "logged_response_propensity": float(prop[unit]),
                     "observed": observed,
                     "outcome": outcome if observed else None,
@@ -1344,6 +1485,16 @@ def build_fixture(
                 if observed
                 else tie_bar
             )
+            p_plus_f = Fraction(1, 2) * (1 - tie_pred[unit] + pred[unit])
+            p_zero_f = tie_pred[unit]
+            p_minus_f = Fraction(1, 2) * (1 - tie_pred[unit] - pred[unit])
+            brier_val = (
+                (Fraction(int(outcome == 1)) - p_plus_f) ** 2
+                + (Fraction(int(outcome == 0)) - p_zero_f) ** 2
+                + (Fraction(int(outcome == -1)) - p_minus_f) ** 2
+                if observed
+                else None
+            )
             exact_rows.append(
                 {
                     "rater_id": rater_by_unit[unit],
@@ -1353,6 +1504,9 @@ def build_fixture(
                     "unacc": weight if subtype == "both_unacceptable" else Fraction(0),
                     "mar_psi": mar_psi_val,
                     "mar_tie": mar_tie_val,
+                    "brier": brier_val,
+                    "nested": nested_frac,
+                    "logged_p": law[unit],
                     "weight": weight,
                     "lower": psi if observed else m_bar + weight * (-1 - pred[unit]),
                     "upper": psi if observed else m_bar + weight * (1 - pred[unit]),
@@ -1400,7 +1554,11 @@ def build_fixture(
         "audit_slots": audit_slots,
         "reported": {},
     }
-    return bundle, {"rows": exact_rows, "audit_rows": exact_audit_rows}
+    return bundle, {
+        "rows": exact_rows,
+        "audit_rows": exact_audit_rows,
+        "batch_swaps": exact_batch_swaps,
+    }
 
 
 def fill_reported(bundle: dict[str, Any], preregistration: dict[str, Any]) -> None:
@@ -1449,6 +1607,26 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
             and close(recomputed["secondary_mar"]["tie_estimate"], float(mar_tie)),
             "secondary MAR estimate or variance differs from Fraction",
         )
+        observed_briers = [row["brier"] for row in rows if row["brier"] is not None]
+        exact_brier = sum(observed_briers) / len(observed_briers)
+        exact_swap = sum(exact["batch_swaps"]) / len(exact["batch_swaps"])
+        require(
+            close(recomputed["prequential_brier_score"], float(exact_brier))
+            and close(
+                recomputed["mean_batch_ab_ba_swap_discrepancy"], float(exact_swap)
+            ),
+            "prequential Brier score or AB/BA swap discrepancy differs from Fraction",
+        )
+        for row in rows:
+            n_frac = row["nested"]
+            require(
+                n_frac["root"]
+                * n_frac["variant_given_root"]
+                * n_frac["rater_given_cell"]
+                * n_frac["order_given_unit"]
+                == row["logged_p"],
+                "exact Fraction nested probabilities do not multiply to logged_p",
+            )
         if not missing:
             estimate = sum(row["psi"] for row in rows) / count
             variance = sum((row["psi"] - estimate) ** 2 for row in rows) / (count - 1)
@@ -1690,6 +1868,46 @@ def self_test(preregistration: dict[str, Any]) -> dict[str, Any]:
         "delta_tie_covariance_tampered",
         lambda b: b["reported"].__setitem__(
             "delta_tie_covariance", b["reported"]["delta_tie_covariance"] + 0.01
+        ),
+    )
+
+    def violate_categorical_simplex(b: dict[str, Any]) -> None:
+        batch = b["batches"][1]
+        first_unit = next(iter(batch["predictions"]))
+        batch["predictions"][first_unit] = 0.85
+        batch["tie_predictions"][first_unit] = 0.25
+        batch["commitment_sha256"] = canonical_digest(commitment_payload(batch))
+        for row in b["slots"]:
+            if row["batch"] == 1:
+                row["batch_commitment_sha256"] = batch["commitment_sha256"]
+
+    mutate("categorical_prediction_simplex_violated", violate_categorical_simplex)
+
+    def tamper_nested_stage_factor(b: dict[str, Any]) -> None:
+        nested = b["slots"][0]["nested_probabilities"]
+        nested["root"] *= 0.5
+        nested["variant_given_root"] *= 2.0
+
+    mutate("nested_stage_probability_mismatch", tamper_nested_stage_factor)
+
+    mutate(
+        "nested_probability_product_disagrees_with_logged_p",
+        lambda b: b["slots"][0]["nested_probabilities"].__setitem__(
+            "order_given_unit",
+            b["slots"][0]["nested_probabilities"]["order_given_unit"] * 0.9,
+        ),
+    )
+    mutate(
+        "prequential_brier_score_tampered",
+        lambda b: b["reported"].__setitem__(
+            "prequential_brier_score", b["reported"]["prequential_brier_score"] + 0.01
+        ),
+    )
+    mutate(
+        "ab_ba_swap_discrepancy_tampered",
+        lambda b: b["reported"].__setitem__(
+            "mean_batch_ab_ba_swap_discrepancy",
+            b["reported"]["mean_batch_ab_ba_swap_discrepancy"] + 0.01,
         ),
     )
 

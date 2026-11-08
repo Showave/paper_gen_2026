@@ -122,9 +122,11 @@ fields and replay all five Gate 0 faults (including stealth base-logit scoring)
 through that reconstruction. They
 recompute the evaluation paper's root `SHA-256` hash ranks, paired-response
 coupling and AB/BA display-order swap symmetry, root--prompt--order
-cells, human target-unit product masses, sequential decision bundle, tie
+cells, human target-unit product masses, nested assignment probability
+factorizations, three-category working-prediction simplex coherence, sequential decision bundle, tie
 subtypes, joint $(\widehat\Delta_T,\widehat\tau_T)$ covariance, secondary MAR
-inverse-response-weighted contributions, and
+inverse-response-weighted contributions, prequential three-category Brier
+score, frame-weighted AB/BA prediction swap discrepancy, and
 shared-rater cluster-robust (CR1) adaptive-minus-audit covariance from exact
 rational golden fixtures, and they recompute committed EVI values from the
 frozen Laplace posterior under both fixed- and estimated-discrimination

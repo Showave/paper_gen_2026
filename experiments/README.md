@@ -454,24 +454,30 @@ make eval-bundle-audit
 `SHA-256(revision || question_id)` root ranks, selected roots, prompt-variant
 weights, paired-response coupling and AB/BA display-order swap symmetry with
 stripped model identifiers, root--prompt--order cells, model-jury call counts, human target-unit
-product masses $\pi(i,c,h,o)=w_i a_{c\mid i}\rho_h/2$, and every batch draw law
-from its commitment, checks commitment hashes, predictable response
-propensities $e_b(x)\in[e_{\min},1]$, and strictly earlier predictor fit slots,
+product masses $\pi(i,c,h,o)=w_i a_{c\mid i}\rho_h/2$, every batch draw law
+from its commitment, and exact nested marginal/conditional assignment
+probabilities
+$p_t^{\mathrm{root}}(I_t)p_t^{\mathrm{var}}(C_t\mid I_t)p_t^{\mathrm{rater}}(H_t\mid I_t,C_t)p_t^{\mathrm{order}}(O_t\mid I_t,C_t,H_t)=p_t(X_t)$,
+checks commitment hashes, predictable response
+propensities $e_b(x)\in[e_{\min},1]$, three-category working-prediction simplex
+coherence $|m_b(x)|+m_{b,0}(x)\le1$, and strictly earlier predictor fit slots,
 and requires all fixed slots exactly once while keeping sealed audit slots
 absent during the train stage. It reproduces the sequential
 contributions, tie subtypes (`equally_good` vs `both_unacceptable`), joint
 $(\widehat\Delta_T,\widehat\tau_T)$ sample covariance, secondary MAR
-inverse-response-weighted contributions $\psi_t^{\mathrm{MAR}}$, worst-case nonresponse bounds, intervals, drift widenings,
+inverse-response-weighted contributions $\psi_t^{\mathrm{MAR}}$, prequential
+three-category Brier score across observed slots, frame-weighted AB/BA
+working-prediction swap discrepancy across batches, worst-case nonresponse bounds, intervals, drift widenings,
 terminal action, maximum weight, and ESS, and at the evaluation stage it
 validates the 200 fixed audit slots and recomputes the shared-rater
 cluster-robust (CR1) adaptive-minus-audit variance
 $V_{\mathrm{diff}}^{\mathrm{CR1}}=V_{\mathrm{adap}}^{\mathrm{CR1}}+V_{\mathrm{aud}}^{\mathrm{CR1}}-2C_{\mathrm{adap,aud}}^{\mathrm{CR1}}$
 with $M/(M-1)$ small-cluster adjustment and worst-case nonresponse contrast
 bounds. Golden bundles have exact rational
-draw probabilities, unit weights, MAR contributions, tie-subtype rates, and CR1 cluster-robust covariance components
+draw probabilities, nested conditional probabilities, unit weights, MAR contributions, tie-subtype rates, Brier losses, AB/BA prediction swap discrepancies, and CR1 cluster-robust covariance components
 and are checked against an independent
 `Fraction` computation, and the self-test also validates the full 528-root,
-2,112-cell, 8,448-jury-call, 168,960-unit pilot hierarchy; thirty-one mutations
+2,112-cell, 8,448-jury-call, 168,960-unit pilot hierarchy; thirty-six mutations
 must fail. Real bundles are refused while any
 estimand-defining artifact hash in the preregistration is null or while the
 bundle fails to bind `process/cell_manifest.json`.

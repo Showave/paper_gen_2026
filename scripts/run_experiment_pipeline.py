@@ -640,7 +640,7 @@ def validate_preregistration_section(
             fail(f"evaluation sequential-bundle self-test failed: {exc}")
         if (
             bundle_audit.get("empirical_evidence") is not False
-            or bundle_audit.get("mutations_rejected", 0) < 31
+            or bundle_audit.get("mutations_rejected", 0) < 36
         ):
             fail("evaluation sequential-bundle self-test did not pass")
         require_bound_files(
