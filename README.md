@@ -114,9 +114,9 @@ NLLs from per-example loss records, and run the exact RL Gate 0 base-versus-deco
 reuse fault injections. They rebuild RL prompt-frame `SHA-256` hash ranks and
 1,024/512/512 partition laws, adaptive prompt proposals (including
 the $Z_t^q=0$ fallback), per-step masked temperature-softmax token
-log-probabilities, unnormalized per-step score sums, deterministic verifier
+log-probabilities, per-token logit-Jacobian step scores, unnormalized per-step score sums, deterministic verifier
 status rewards, finite-vocabulary sequence-tree conformance, the KL-stratum
-bound, projected terms, and the candidate,
+bound, per-cell/source mixture-weight diagnostics, projected terms, and the candidate,
 reference, and aborted `K_gen`/`K_ver`/`K_score` cost ledger from raw trajectory
 fields and replay all five Gate 0 faults (including stealth base-logit scoring)
 through that reconstruction. They

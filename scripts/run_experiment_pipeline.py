@@ -624,7 +624,7 @@ def validate_preregistration_section(
         if (
             reconstruction["status"] != "pass"
             or reconstruction["empirical_evidence"] is not False
-            or reconstruction.get("mutations_rejected", 0) < 26
+            or reconstruction.get("mutations_rejected", 0) < 31
         ):
             fail("RL raw trajectory reconstruction self-test did not pass")
     else:

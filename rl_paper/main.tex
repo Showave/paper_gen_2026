@@ -134,9 +134,11 @@ samples by importance weights to preserve the full-batch GRPO expectation
 \cite{zhu2026dppo}. Cross-prompt shrinkage
 baselines reduce variance while preserving a policy-gradient target
 \cite{zeng2026shrinkage}. Group-relative reward rescaling addresses length
-inflation \cite{li2026length}, while Length-Unbiased Sequence Policy
+inflation \cite{li2026length}, Length-Unbiased Sequence Policy
 Optimization (LUSPO) rectifies the length bias of GSPO by scaling sequence
-objectives by response length to prevent length collapse \cite{liu2026luspo}.
+objectives by response length to prevent length collapse \cite{liu2026luspo},
+and VL~Norm ($\Delta L$~Normalization) reweights dynamic-length loss aggregation
+toward a minimum-variance unbiased policy-loss target \cite{he2025vlnorm}.
 We instead keep the sequence score unnormalized, represent length as a
 constrained cost, and adapt the stale-source prompt proposal; these components
 are not claimed to subsume those methods.
@@ -191,9 +193,13 @@ does not have that exact claim \cite{liu2025specrl}. MinPRO instead replaces exa
 stabilized minimum-ratio surrogate under policy lag \cite{lei2026minpro}.
 CTPO uses the cumulative product of per-token ratios. Under a token-level
 policy-gradient objective, this is an unbiased prefix correction with lower
-variance than the full-sequence ratio \cite{zhang2026ctpo}. Our estimand is the
+variance than the full-sequence ratio \cite{zhang2026ctpo}, while Proximal~KL
+combines a single current-token ratio with future KL credit so the expected
+update vanishes at the exact proximal optimizer under supported stale behavior
+mixtures without multiplying full-sequence ratios \cite{bai2026proximalkl}. Our estimand is the
 sequence-level score in \cref{eq:score}, so the exact weight is the joint
-mixture ratio of \cref{eq:weight}, not a per-position product.
+mixture ratio of \cref{eq:weight}, not a per-position product or a
+KL-regularized stationary-point surrogate.
 Score centering adds a correction term that cancels persistent drift between
 inference and training engines \cite{marek2026centering}. That mismatch is the
 practical form of our base-versus-decoder fault. We exclude it by requiring
@@ -274,6 +280,12 @@ s_\theta(Z)
 \right|_{\vartheta=\theta}.
 \label{eq:score}
 \end{align}
+With $g_{\theta,\ell,v}=\nabla_\vartheta z_{\vartheta,\ell,v}|_{\vartheta=\theta}$,
+differentiating \cref{eq:decoder-pmf} gives each step score
+$s_{\theta,\ell}=T_d^{-1}\big(g_{\theta,\ell,Y_\ell}
+-\sum_{v\in\mathcal V_\ell}p_\theta(v\mid Y_{<\ell},X)\,g_{\theta,\ell,v}\big)$,
+which both scales by $T_d^{-1}$ and centers token-logit Jacobians under the
+rollout decoder rather than the unscaled base softmax.
 We do not divide \cref{eq:score} by realized length. Under standard
 score-function conditions,
 $\nabla_\theta\mathcal L=\mathbb E_{P_\theta}[U_\lambda s_\theta]$.
@@ -368,22 +380,28 @@ from frozen prior-iteration residual second-moment and cost predictions
 (including the $Z_t^q=0\Rightarrow\overline q_t=D$ fallback), recomputes
 per-step masked temperature-softmax token log-probabilities from raw
 allowed-vocabulary step logits under $T_d$ (requiring their sum to match both
-sequence log-probabilities), sums per-step decoder score vectors without length
+sequence log-probabilities), recomputes each step's decoder score vector
+$s_{\theta,\ell}=T_d^{-1}(g_{\theta,\ell,Y_\ell}
+-\sum_{v\in\mathcal V_\ell}p_\theta(v\mid Y_{<\ell},X)g_{\theta,\ell,v})$
+from per-token projected logit Jacobians and sums those vectors without length
 normalization to reproduce $s_\theta(Z)$ in \cref{eq:score}, verifies the
 deterministic verifier status-to-reward mapping (including truncation status
 consistency), checks finite-vocabulary sequence-tree
 normalization, sampler--scorer frequency conformance, and the policy-to-behavior
 KL stratum bound, recomputes $w$ in log space from frozen header prompt masses
-and both sequence log-probabilities, and then reconstructs $U$, $h$, and $A$,
+and both sequence log-probabilities (together with per-cell, per-source
+maximum weights, $\max(\alpha w)\le1$, and Kish effective sample sizes
+$\operatorname{ESS}=(\sum_iw_i)^2/\sum_iw_i^2$), and then reconstructs $U$, $h$, and $A$,
 $B$, or $U_\lambda s$ from rewards, lengths, the frozen $\lambda$, nuisance
 predictions, and projected scores. The projected ledger must match row for row.
 The same validator reconstructs
 $K_{\mathrm{gen}}$, $K_{\mathrm{ver}}$, $K_{\mathrm{score}}$, and allocated
 accelerator-seconds across candidate, reference, and aborted attempts, and
 rejects rows whose generator or scorer is not the frozen policy pair under the rollout
-decoder (including stealth base-logit scoring that spoofs $T_d$), any token
+decoder (including stealth base-logit scoring that spoofs $T_d$, base-softmax
+score centering, or omitted $T_d^{-1}$ score scaling), any token
 outside $\mathcal V_\ell$ or premature EOS, a length-normalized score vector, a
-reward that disagrees with its verifier status, any reused trajectory, nuisance
+reward that disagrees with its verifier status, a tampered weight ESS or bound, any reused trajectory, nuisance
 predictions from an unfrozen model or one trained on audited prompts, an
 omitted or spurious added-scoring pass, or
 an action-dependent baseline (\cref{app:gate0}). It fails closed until the
@@ -927,7 +945,8 @@ that the listed exclusions are necessary, not merely conservative.
 \paragraph{Replay through raw reconstruction.}
 The same law also defines a golden raw ledger. It has one row per cell and
 source for $\alpha=1/2$, the $\alpha=1$ control, and reference rows. Each row
-logs the prompt, per-step allowed-vocabulary token logits, EOS flags, and step
+logs the prompt, per-step allowed-vocabulary token logits, EOS flags, per-token
+projected logit Jacobians, and step
 score vectors, both
 sequence log-probabilities, verifier status, reward, length, verifier
 call, added cross-policy scoring passes ($1$ for $\alpha<1$ mixture candidates
@@ -935,7 +954,8 @@ and $0$ for $\alpha=1$ and reference rows), nuisance
 predictions, and the unnormalized sequence score, while the header logs the
 hash-ranked prompt frame, the verifier status-to-reward table, prior-iteration residual
 second-moment and cost predictions, finite-vocabulary sequence-tree conformance
-counts, and the policy-to-behavior KL audit. Reconstructed terms are unbiased
+counts, the policy-to-behavior KL audit, and per-cell, per-source mixture-weight
+diagnostics ($\max w$, $\max(\alpha w)$, and Kish ESS). Reconstructed terms are unbiased
 for the target gradient by enumeration in all three groups to $10^{-12}$, the
 adaptive proposal $q_t(x)$ and its $Z_t^q=0$ fallback reproduce to $10^{-12}$,
 the 2,048-prompt pilot frame reproduces its $1{,}024/512/512$ hash-rank
@@ -945,13 +965,15 @@ $K_{\mathrm{ver}}=12$, and $K_{\mathrm{score}}=16$ for candidates plus
 $K_{\mathrm{gen}}=8$, $K_{\mathrm{ver}}=4$, and $K_{\mathrm{score}}=0$ for
 reference rows; a separate aborted-attempt fixture verifies that failed draws
 retain their incurred token, verifier, and scoring costs without entering any
-gradient estimate. Twenty-six raw-ledger, prompt-frame, proposal, step-logit,
-step-score, verifier-status, conformance, KL,
+gradient estimate. Thirty-one raw-ledger, prompt-frame, proposal, step-logit,
+logit-Jacobian, step-score, verifier-status, conformance, KL, weight-diagnostic,
 and cost-counter mutations fail, including a tampered prompt-selection hash, a
-wrong hash-rank prompt selected, a violated partition boundary, a
+wrong hash-rank prompt selected, a violated partition boundary, a step score
+centered with base softmax instead of the rollout decoder or missing $T_d^{-1}$
+scaling, a token-logit Jacobian shape mismatch, a
 length-normalized score instead of the unnormalized step sum, a verifier reward
 that disagrees with its status table, a truncated trajectory claiming a
-verified pass, mismatched adaptive-proposal moments,
+verified pass, a tampered source-specific weight ESS or maximum weight, mismatched adaptive-proposal moments,
 a violated zero-normalizer fallback, stealth base-logit scoring with a spoofed
 header temperature, a sampled token outside $\mathcal V_\ell$, a premature EOS
 token, an unnormalized conformance sequence tree, a policy-to-behavior KL above

@@ -288,7 +288,7 @@
       "validator_dependencies": [],
       "blocking_gaps": [
         "the multi-field overlap schema is executable for small exhaustive fixtures, but all source-specific inventories are null and the external engine still indexes record pairs rather than field segments",
-        "the raw trajectory, prompt-frame hash-rank partition, adaptive proposal, per-step token-logit, unnormalized step-score sum, verifier status-to-reward, finite-vocabulary conformance, KL-stratum, and K_gen/K_ver/K_score cost-ledger reconstruction validator is executed by the runner but fails closed until the current and behavior policy tensor hashes, decoder specification, and verifier revision are frozen",
+        "the raw trajectory, prompt-frame hash-rank partition, adaptive proposal, per-step token-logit, per-token logit-Jacobian step-score, unnormalized step-score sum, verifier status-to-reward, finite-vocabulary conformance, KL-stratum, per-source mixture-weight ESS/bound, and K_gen/K_ver/K_score cost-ledger reconstruction validator is executed by the runner but fails closed until the current and behavior policy tensor hashes, decoder specification, and verifier revision are frozen",
         "hardware forward passes producing the recorded per-step logits and empirical sampler-scorer conformance counts on the frozen model pair are not yet bound to a reviewed hardware execution attestation"
       ],
       "required_before_freezing": [
@@ -518,20 +518,21 @@
     },
     "raw_reconstruction_contract": {
       "validator_path": "scripts/reconstruct_rl_trajectories.py",
-      "validator_sha256": "cf3d19882aa5a0037079014aba240155cce7223a636435e9c5cbe0a7048ea504",
+      "validator_sha256": "8c22d376231bbda2e38aff30cb09f2d88094a4c96b650eac87c1da0a27d84181",
       "required_status": "pass",
       "current_status": "golden_fixture_only",
       "raw_artifacts": [
         "train/raw_trajectory_header.json",
         "train/raw_trajectory_ledger.jsonl"
       ],
-      "reconstructed_terms": "prompt_frame SHA-256(revision || problem_id) hash ranks and nuisance_fit/select/confirm partitions; q_t(x)=eps*d(x)+(1-eps)*q_bar_t(x) from prior-iteration moment/cost predictions (with Z_t^q=0 -> q_bar_t=D fallback); log pi(y|x)=sum_l log softmax(z_(theta,l)/T_d)[y_l] and log mu(y|x)=sum_l log softmax(z_(mu,l)/T_d)[y_l] over allowed vocabulary V_l; s(Z)=sum_l s_l without length normalization; R(Z)=verifier_reward_table[verifier_status]; log P=log d(x)+log pi(y|x); log G=log q(x)+log mu(y|x); w=P/(alpha P+(1-alpha)G); U=R-lambda C; h=h^R-lambda h^C; current A=(h-b)s+alpha*w*(U-h)s, stale B=w*(U-h)s, reference U*s; K_gen=sum C(z), K_ver=sum 1{verifier called}, K_score=sum C(z)*N_added_score(z)",
+      "reconstructed_terms": "prompt_frame SHA-256(revision || problem_id) hash ranks and nuisance_fit/select/confirm partitions; q_t(x)=eps*d(x)+(1-eps)*q_bar_t(x) from prior-iteration moment/cost predictions (with Z_t^q=0 -> q_bar_t=D fallback); log pi(y|x)=sum_l log softmax(z_(theta,l)/T_d)[y_l] and log mu(y|x)=sum_l log softmax(z_(mu,l)/T_d)[y_l] over allowed vocabulary V_l; s_l=(1/T_d)*(g_(theta,l,y_l)-sum_v p_theta(v|x,y_<l)g_(theta,l,v)) and s(Z)=sum_l s_l without length normalization; R(Z)=verifier_reward_table[verifier_status]; log P=log d(x)+log pi(y|x); log G=log q(x)+log mu(y|x); w=P/(alpha P+(1-alpha)G) plus per-cell/source max_weight, max(alpha*w)<=1, and Kish weight_ess; U=R-lambda C; h=h^R-lambda h^C; current A=(h-b)s+alpha*w*(U-h)s, stale B=w*(U-h)s, reference U*s; K_gen=sum C(z), K_ver=sum 1{verifier called}, K_score=sum C(z)*N_added_score(z)",
       "raw_field_detectors": [
         "prompt-frame SHA-256(revision || problem_id) hash ranks, selected prompt cutoff, and exact 1024/512/512 nuisance_fit/select/confirm partition boundaries",
         "both sequence log-probabilities recomputed from per-step allowed-vocabulary token logits under the frozen decoder temperature, catching stealth base-logit scoring even when the header temperature is spoofed",
-        "projected_score recomputed as the unnormalized sum of per-step projected_step_score vectors across 1..|Y|, rejecting token-average or length-normalized score functions",
+        "projected_step_score recomputed at each step as (1/T_d)*(g_(theta,l,y_l)-sum_v p_theta(v|x,y_<l)g_(theta,l,v)) from per-token projected logit Jacobians and summed across 1..|Y| without length normalization to reproduce projected_score, rejecting base-softmax score centering, omitted 1/T_d scaling, and length-normalized score functions",
         "deterministic verifier status-to-reward mapping and truncation status consistency across verified_pass, verified_fail, parse_error, timeout, sandbox_error, and truncated outcomes",
         "finite-vocabulary sequence-tree probability normalization, empirical sampler--scorer frequency conformance, and policy-to-behavior KL <= maximum_policy_kl",
+        "per-cell, per-source maximum mixture weights, max(alpha*w)<=1, and Kish effective sample sizes ESS=(sum w_i)^2/sum w_i^2",
         "adaptive prompt proposal masses recomputed from frozen prior-iteration residual second-moment and cost predictions, including the Z_t^q=0 target-law fallback",
         "generator equals the frozen current tensor for current rows and the frozen behavior tensor for stale rows",
         "zero prior uses and the frozen iteration freeze record",
@@ -549,8 +550,8 @@
         "consumed-trajectory reuse with and without a recomputed ratio"
       ],
       "term_relative_tolerance": 1e-09,
-      "real_execution_rule": "The train stage passes only if train/trajectory_ledger.jsonl and train/costs.json equal the raw reconstruction of prompt-frame partitions, adaptive proposals, per-step token log-probabilities, unnormalized sequence scores, verifier rewards, projected terms, and the K_gen/K_ver/K_score/accelerator-seconds cost ledger; reconstruction fails closed while the frozen current or behavior tensor hash is null.",
-      "interpretation": "Golden four-cell Gate 0 law with exact enumeration, 2048-prompt pilot-frame hash-rank check, adaptive-proposal/step-logit/step-score/verifier-status/conformance/KL checks, and aborted-attempt cost retention; software evidence only. Raw forward passes producing the step logits and step score vectors remain site-local hardware measurements."
+      "real_execution_rule": "The train stage passes only if train/trajectory_ledger.jsonl and train/costs.json equal the raw reconstruction of prompt-frame partitions, adaptive proposals, per-step token log-probabilities, logit-Jacobian step scores, unnormalized sequence scores, verifier rewards, weight diagnostics, projected terms, and the K_gen/K_ver/K_score/accelerator-seconds cost ledger; reconstruction fails closed while the frozen current or behavior tensor hash is null.",
+      "interpretation": "Golden four-cell Gate 0 law with exact enumeration, 2048-prompt pilot-frame hash-rank check, adaptive-proposal/step-logit/logit-Jacobian/step-score/verifier-status/conformance/KL/weight-diagnostic checks, and aborted-attempt cost retention; software evidence only. Raw forward passes producing the step logits and token-logit Jacobians remain site-local hardware measurements."
     }
   },
   "eval": {

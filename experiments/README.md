@@ -369,25 +369,28 @@ row—including infrastructure-failed/aborted attempts—carries `response_token
 and `0` for `alpha=1` and reference rows), and `allocated_accelerator_seconds`;
 successful rows also carry prompt IDs, generator hash,
 scoring policies and temperature, per-step allowed-vocabulary token logits,
-EOS flags, and step score vectors, both sequence log-probabilities, verifier
+EOS flags, per-token projected logit Jacobians, and step score vectors, both sequence log-probabilities, verifier
 status, reward,
 termination, nuisance predictions, prior use count, and the
 projected score. The validator recomputes the prompt-frame `SHA-256` hash ranks
 and 1,024/512/512 partition laws, the adaptive proposal
 $q_t(x)=\epsilon d(x)+(1-\epsilon)\overline q_t(x)$ (including the
 $Z_t^q=0\Rightarrow\overline q_t=D$ fallback), per-step masked
-temperature-softmax token log-probabilities, unnormalized per-step score sums,
+temperature-softmax token log-probabilities, per-step decoder score vectors
+$s_{\theta,\ell}=T_d^{-1}(g_{\theta,\ell,Y_\ell}-\sum_{v\in\mathcal V_\ell}p_\theta(v\mid Y_{<\ell},X)g_{\theta,\ell,v})$
+from per-token projected logit Jacobians, unnormalized per-step score sums,
 deterministic verifier status-to-reward mapping, finite-vocabulary sequence-tree
 normalization, sampler--scorer frequency conformance, the KL-stratum bound, and
 `w=P/M` in log space from header
-prompt masses and both log-probabilities, then `U`, `h`, and the `A`, `B`, or
+prompt masses and both log-probabilities (together with per-cell, per-source
+maximum weights, $\max(\alpha w)\le1$, and Kish ESS), then `U`, `h`, and the `A`, `B`, or
 `U*s` term, plus per-attempt `generated_tokens`, `verifier_calls`, and
 `added_score_tokens = response_tokens * added_score_passes`. It requires zero
 prior uses, the frozen generator and scorer pair,
 the frozen nuisance model, training prompts disjoint from audited prompts, one
 baseline per prompt, `q>=epsilon*d`, consistent truncation and EOS steps, and exact agreement
 with the header's candidate, reference, aborted, per-cell, and total cost
-buckets. In a real
+buckets and weight diagnostics. In a real
 train stage, the runner requires `train/trajectory_ledger.jsonl` and
 `train/costs.json` to equal the
 reconstruction row for row. That check currently fails closed because the
@@ -403,11 +406,11 @@ largest weight, base-versus-decoder scoring (both honest temperature mismatch
 and stealth base-logit scoring with a spoofed header temperature), focal
 nuisance fitting, and
 consumed-trajectory reuse. Each is rejected and each null control passes;
-twenty-six raw-ledger, prompt-frame, proposal, step-logit, step-score,
-verifier-status, conformance, KL, and cost-counter
+thirty-one raw-ledger, prompt-frame, proposal, step-logit, logit-Jacobian, step-score,
+verifier-status, conformance, KL, weight-diagnostic, and cost-counter
 mutations fail. The
 reconstructed base-scoring bias equals the Gate 0 module's exact value.
-Raw forward passes producing the step logits and step score vectors remain
+Raw forward passes producing the step logits and token-logit Jacobians remain
 site-local hardware measurements.
 
 The Gate 0 fault injections run by exact enumeration:

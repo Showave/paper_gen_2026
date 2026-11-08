@@ -21,10 +21,14 @@ trusting the producer:
   must sum to ``current_sequence_log_prob`` and ``behavior_sequence_log_prob``,
   catching even a producer that spoofs the header temperature while scoring
   with base logits;
-* per-step decoder score vectors ``s_l = d log pi_theta(y_l|x,y_<l)/d theta``
-  are summed across steps ``1..|Y|`` without length normalization and must
-  equal ``projected_score``, rejecting token-average or length-normalized score
-  functions;
+* per-step decoder score vectors
+  ``s_l = (1/T_d)*(g_(theta,l,y_l) - sum_{v in V_l} p_theta(v|x,y_<l) g_(theta,l,v))``
+  are recomputed from per-token projected logit Jacobians
+  ``g_(theta,l,v) = d z_(theta,l,v)/d theta`` and the masked
+  temperature-softmax distribution ``p_theta(.|x,y_<l)`` under ``T_d``, then
+  summed across steps ``1..|Y|`` without length normalization to equal
+  ``projected_score``, rejecting base-softmax score centering, omitted ``1/T_d``
+  temperature scaling, and token-average or length-normalized score functions;
 * deterministic verifier status mapping: every successful trajectory records a
   verifier status in ``{verified_pass, verified_fail, parse_error, timeout,
   sandbox_error, truncated}`` consistent with ``termination`` and mapped
@@ -32,7 +36,9 @@ trusting the producer:
 * finite-vocabulary sequence-tree normalization, empirical sampler--scorer
   frequency agreement, and the policy-to-behavior KL stratum bound are
   verified from the header conformance and KL-audit blocks;
-* ``w = P / (alpha P + (1 - alpha) G)`` is recomputed in log space;
+* ``w = P / (alpha P + (1 - alpha) G)`` is recomputed in log space, together
+  with per-cell, per-source maximum mixture weights, ``max(alpha * w) <= 1``,
+  and Kish effective sample sizes ``ESS = (sum w_i)^2 / sum w_i^2``;
 * ``U = R - lambda C`` and ``h = h^R - lambda h^C`` use the frozen lambda;
 * current rows give ``A=(h-b)s+alpha*w*(U-h)s``, stale rows ``B=w*(U-h)s``,
   and reference rows ``U*s``;
@@ -351,9 +357,9 @@ def frozen_constants(section: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def recompute_step_log_prob(
+def recompute_step_distribution(
     logits: Any, allowed_token_ids: Any, token_id: Any, temperature: float
-) -> float:
+) -> tuple[float, list[float]]:
     require(
         isinstance(allowed_token_ids, list)
         and allowed_token_ids
@@ -378,8 +384,51 @@ def recompute_step_log_prob(
     )
     scaled = [float(val) / temperature for val in logits]
     top = max(scaled)
-    log_norm = top + math.log(math.fsum(math.exp(val - top) for val in scaled))
-    return scaled[allowed_token_ids.index(token_id)] - log_norm
+    exp_vals = [math.exp(val - top) for val in scaled]
+    norm = math.fsum(exp_vals)
+    log_norm = top + math.log(norm)
+    probs = [val / norm for val in exp_vals]
+    return scaled[allowed_token_ids.index(token_id)] - log_norm, probs
+
+
+def recompute_step_log_prob(
+    logits: Any, allowed_token_ids: Any, token_id: Any, temperature: float
+) -> float:
+    log_prob, _ = recompute_step_distribution(
+        logits, allowed_token_ids, token_id, temperature
+    )
+    return log_prob
+
+
+def recompute_step_score_from_logit_gradients(
+    logit_gradients: Any,
+    probs: list[float],
+    allowed_token_ids: list[int],
+    token_id: int,
+    temperature: float,
+    dimension: int,
+    label: str,
+) -> list[float]:
+    require(
+        isinstance(logit_gradients, list)
+        and len(logit_gradients) == len(allowed_token_ids),
+        f"{label} projected_token_logit_gradients must match allowed_token_ids",
+    )
+    checked_grads = [
+        finite_vector(grad, dimension, f"{label} token_logit_gradient[{idx}]")
+        for idx, grad in enumerate(logit_gradients)
+    ]
+    sampled_grad = checked_grads[allowed_token_ids.index(token_id)]
+    return [
+        (
+            sampled_grad[dim_idx]
+            - math.fsum(
+                prob * grad[dim_idx] for prob, grad in zip(probs, checked_grads)
+            )
+        )
+        / temperature
+        for dim_idx in range(dimension)
+    ]
 
 
 def validate_header(header: Any, frozen: dict[str, Any]) -> dict[str, Any]:
@@ -773,8 +822,74 @@ def compare_cost_ledger(observed: Any, expected: dict[str, Any]) -> None:
         compare_cost_bucket(by_cell[cell_key], expected_bucket, f"cost_ledger.by_cell[{cell_key}]")
 
 
+def reconstruct_weight_diagnostics(
+    weights_by_cell_source: dict[tuple[str, str], list[float]],
+    alpha_by_cell: dict[str, float],
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Reconstruct per-cell, per-source max weight, max(alpha*w), and Kish ESS."""
+    diagnostics: dict[str, dict[str, dict[str, Any]]] = {}
+    for (cell_key, source), weights in sorted(weights_by_cell_source.items()):
+        require(bool(weights), f"empty weight stratum for {cell_key} {source}")
+        alpha = alpha_by_cell[cell_key]
+        count = len(weights)
+        max_w = max(weights)
+        max_aw = max(alpha * w for w in weights)
+        sum_w = math.fsum(weights)
+        sum_w_sq = math.fsum(w * w for w in weights)
+        require(sum_w > 0 and sum_w_sq > 0, f"nonpositive weights for {cell_key} {source}")
+        ess = (sum_w * sum_w) / sum_w_sq
+        require(
+            max_aw <= 1.0 + MASS_TOLERANCE
+            and 1.0 - MASS_TOLERANCE <= ess <= count + MASS_TOLERANCE,
+            f"weight diagnostics for {cell_key} {source} violate bound or ESS range",
+        )
+        diagnostics.setdefault(cell_key, {})[source] = {
+            "count": count,
+            "max_weight": max_w,
+            "max_alpha_times_weight": max_aw,
+            "weight_ess": ess,
+        }
+    return diagnostics
+
+
+def compare_weight_diagnostics(
+    observed: Any, expected: dict[str, dict[str, dict[str, Any]]]
+) -> None:
+    require(
+        isinstance(observed, dict) and set(observed) == set(expected),
+        "raw trajectory header weight_diagnostics cell keys do not reproduce",
+    )
+    for cell_key, expected_sources in expected.items():
+        obs_sources = observed[cell_key]
+        require(
+            isinstance(obs_sources, dict) and set(obs_sources) == set(expected_sources),
+            f"weight_diagnostics[{cell_key}] source keys do not reproduce",
+        )
+        for source, exp_entry in expected_sources.items():
+            obs_entry = obs_sources[source]
+            label = f"weight_diagnostics[{cell_key}][{source}]"
+            require(
+                isinstance(obs_entry, dict)
+                and set(obs_entry)
+                == {"count", "max_weight", "max_alpha_times_weight", "weight_ess"}
+                and obs_entry["count"] == exp_entry["count"],
+                f"{label} schema or count does not reproduce",
+            )
+            for key in ("max_weight", "max_alpha_times_weight", "weight_ess"):
+                require(
+                    is_number(obs_entry[key])
+                    and abs(float(obs_entry[key]) - exp_entry[key])
+                    <= MASS_TOLERANCE * max(1.0, exp_entry[key]),
+                    f"{label}.{key} does not reproduce from reconstructed weights",
+                )
+
+
 def reconstruct(
-    header: Any, raw_rows: list[dict[str, Any]], frozen: dict[str, Any]
+    header: Any,
+    raw_rows: list[dict[str, Any]],
+    frozen: dict[str, Any],
+    *,
+    verify_logit_score_identity: bool = True,
 ) -> dict[str, Any]:
     checked = validate_header(header, frozen)
     declared = checked["declared"]
@@ -790,6 +905,8 @@ def reconstruct(
     baselines: dict[tuple[str, str], float] = {}
     rows: list[dict[str, Any]] = []
     max_alpha_weight = 0.0
+    weights_by_cell_source: dict[tuple[str, str], list[float]] = defaultdict(list)
+    alpha_by_cell: dict[str, float] = {}
     for index, raw in enumerate(raw_rows):
         label = f"raw row {index}"
         require(isinstance(raw, dict), f"{label} must be an object")
@@ -973,6 +1090,7 @@ def reconstruct(
                     "allowed_token_ids",
                     "current_logits",
                     "behavior_logits",
+                    "projected_token_logit_gradients",
                     "projected_step_score",
                 }
                 and isinstance(step["is_eos"], bool),
@@ -983,14 +1101,13 @@ def reconstruct(
                 step["is_eos"] is expected_eos,
                 f"{step_label} is_eos violates the EOS/truncation rule",
             )
-            recomputed_cur_steps.append(
-                recompute_step_log_prob(
-                    step["current_logits"],
-                    step["allowed_token_ids"],
-                    step["token_id"],
-                    float(declared["decoder_temperature"]),
-                )
+            cur_step_lp, cur_probs = recompute_step_distribution(
+                step["current_logits"],
+                step["allowed_token_ids"],
+                step["token_id"],
+                float(declared["decoder_temperature"]),
             )
+            recomputed_cur_steps.append(cur_step_lp)
             recomputed_beh_steps.append(
                 recompute_step_log_prob(
                     step["behavior_logits"],
@@ -1002,6 +1119,23 @@ def reconstruct(
             step_score = finite_vector(
                 step["projected_step_score"], dimension, f"{step_label} projected_step_score"
             )
+            expected_step_score = recompute_step_score_from_logit_gradients(
+                step["projected_token_logit_gradients"],
+                cur_probs,
+                step["allowed_token_ids"],
+                step["token_id"],
+                float(declared["decoder_temperature"]),
+                dimension,
+                step_label,
+            )
+            if verify_logit_score_identity:
+                require(
+                    all(
+                        abs(a - b) <= MASS_TOLERANCE * max(1.0, abs(a), abs(b))
+                        for a, b in zip(step_score, expected_step_score)
+                    ),
+                    f"{step_label} projected_step_score disagrees with (1/T_d)*(g_y - sum_v p_theta(v) g_v)",
+                )
             for dim_idx, val in enumerate(step_score):
                 recomputed_step_scores[dim_idx][step_idx] = val
         require(
@@ -1044,6 +1178,9 @@ def reconstruct(
             log_g = math.log(masses["proposal_mass"]) + log_behavior
             weight = mixture_weight(log_p, log_g, alpha)
             max_alpha_weight = max(max_alpha_weight, alpha * weight)
+            cell_key = f"{law}|{alpha}|{raw['allocation_id']}"
+            alpha_by_cell[cell_key] = alpha
+            weights_by_cell_source[(cell_key, source)].append(weight)
             if source == "current":
                 coefficient = (h - baseline) + alpha * weight * (utility - h)
                 semantics = "A=(h-b)s+alpha*w*(U-h)s"
@@ -1064,12 +1201,17 @@ def reconstruct(
     require(max_alpha_weight <= 1.0 + MASS_TOLERANCE, "a mixture weight exceeds 1/alpha")
     cost_ledger = reconstruct_cost_ledger(rows)
     compare_cost_ledger(header.get("cost_ledger"), cost_ledger)
+    weight_diagnostics = reconstruct_weight_diagnostics(
+        weights_by_cell_source, alpha_by_cell
+    )
+    compare_weight_diagnostics(header.get("weight_diagnostics"), weight_diagnostics)
     return {
         "rows": rows,
         "attempts": len(rows),
         "successful_trajectories": len(trajectory_ids),
         "maximum_alpha_times_weight": max_alpha_weight,
         "cost_ledger": cost_ledger,
+        "weight_diagnostics": weight_diagnostics,
     }
 
 
@@ -1364,6 +1506,31 @@ def build_pilot_prompt_frame(section: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def golden_weight_diagnostics(
+    proposal: tuple[float, float] = gate0.STALE_PROMPT_MASS,
+    current_success: tuple[float, float] = gate0.DECODER_SUCCESS,
+) -> dict[str, dict[str, dict[str, Any]]]:
+    half_weights = [
+        mixture_weight(
+            math.log(gate0.PROMPT_MASS[x]) + log_mass(current_success, x, y),
+            math.log(proposal[x]) + log_mass(gate0.STALE_SUCCESS, x, y),
+            gate0.ALPHA,
+        )
+        for x, y in gate0.CELLS
+    ]
+    return reconstruct_weight_diagnostics(
+        {
+            ("select|0.5|half", "current"): list(half_weights),
+            ("select|0.5|half", "stale"): list(half_weights),
+            ("select|1.0|on-policy", "current"): [1.0, 1.0, 1.0, 1.0],
+        },
+        {
+            "select|0.5|half": gate0.ALPHA,
+            "select|1.0|on-policy": 1.0,
+        },
+    )
+
+
 def golden_header(
     frozen: dict[str, Any],
     proposal: tuple[float, float] = gate0.STALE_PROMPT_MASS,
@@ -1464,6 +1631,7 @@ def golden_header(
             "batch_action": "admit",
         },
         "cost_ledger": copy.deepcopy(cost_ledger) if cost_ledger is not None else golden_cost_ledger(),
+        "weight_diagnostics": golden_weight_diagnostics(proposal, current_success),
     }
 
 
@@ -1498,6 +1666,7 @@ def build_token_steps(
                 0.0,
                 decoder_temperature * gate0.logit(gate0.STALE_SUCCESS[x]),
             ],
+            "projected_token_logit_gradients": [[0.0], [decoder_temperature]],
             "projected_step_score": [first_step_score],
         }
     ]
@@ -1511,6 +1680,7 @@ def build_token_steps(
                 "allowed_token_ids": [tok_id],
                 "current_logits": [0.0],
                 "behavior_logits": [0.0],
+                "projected_token_logit_gradients": [[0.0]],
                 "projected_step_score": [0.0],
             }
         )
@@ -1780,6 +1950,7 @@ def self_test() -> dict[str, Any]:
         golden_header(relaxed, current_success=base_success),
         relaxed_base_rows,
         relaxed,
+        verify_logit_score_identity=False,
     )["rows"]
     gate0_base = gate0.run_base_decoder_fault()
     unit_frozen = golden_frozen(temperature=1.0)
@@ -1932,6 +2103,27 @@ def self_test() -> dict[str, Any]:
         ),
         "truncated_trajectory_claims_verified_pass": rejected(
             lambda: reconstruct(header, truncated_claims_pass(golden_raw_rows(frozen)), frozen)
+        ),
+        "step_score_centered_with_base_softmax_instead_of_decoder": rejected(
+            lambda: reconstruct(
+                header, center_step_score_with_base_softmax(golden_raw_rows(frozen)), frozen
+            )
+        ),
+        "step_score_omits_inverse_temperature_scaling": rejected(
+            lambda: reconstruct(
+                header, omit_temperature_in_step_score(golden_raw_rows(frozen)), frozen
+            )
+        ),
+        "token_logit_gradients_shape_mismatch": rejected(
+            lambda: reconstruct(
+                header, drop_token_logit_gradient(golden_raw_rows(frozen)), frozen
+            )
+        ),
+        "header_weight_ess_tampered": rejected(
+            lambda: reconstruct(tamper_header_weight_ess(header), golden_raw_rows(frozen), frozen)
+        ),
+        "header_max_weight_tampered": rejected(
+            lambda: reconstruct(tamper_header_max_weight(header), golden_raw_rows(frozen), frozen)
         ),
     }
     require(
@@ -2181,6 +2373,51 @@ def truncated_claims_pass(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             row["verifier_status"] = "verified_pass"
             row["reward"] = 1.0
             break
+    return changed
+
+
+def center_step_score_with_base_softmax(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    changed = copy.deepcopy(rows)
+    step = changed[0]["token_steps"][0]
+    logits = step["current_logits"]
+    top = max(logits)
+    exp_vals = [math.exp(v - top) for v in logits]
+    base_probs = [v / sum(exp_vals) for v in exp_vals]
+    grads = step["projected_token_logit_gradients"]
+    sampled_grad = grads[step["allowed_token_ids"].index(step["token_id"])][0]
+    expected_grad = sum(p * g[0] for p, g in zip(base_probs, grads))
+    wrong_step = (sampled_grad - expected_grad) / gate0.DECODER_TEMPERATURE
+    step["projected_step_score"] = [wrong_step]
+    changed[0]["projected_score"] = [wrong_step]
+    return changed
+
+
+def omit_temperature_in_step_score(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    changed = copy.deepcopy(rows)
+    step = changed[0]["token_steps"][0]
+    unscaled = step["projected_step_score"][0] * gate0.DECODER_TEMPERATURE
+    step["projected_step_score"] = [unscaled]
+    changed[0]["projected_score"] = [unscaled]
+    return changed
+
+
+def drop_token_logit_gradient(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    changed = copy.deepcopy(rows)
+    changed[0]["token_steps"][0]["projected_token_logit_gradients"].pop()
+    return changed
+
+
+def tamper_header_weight_ess(header: dict[str, Any]) -> dict[str, Any]:
+    changed = copy.deepcopy(header)
+    changed["weight_diagnostics"]["select|0.5|half"]["stale"]["weight_ess"] += 0.05
+    return changed
+
+
+def tamper_header_max_weight(header: dict[str, Any]) -> dict[str, Any]:
+    changed = copy.deepcopy(header)
+    changed["weight_diagnostics"]["select|0.5|half"]["current"]["max_weight"] -= 0.05
     return changed
 
 
